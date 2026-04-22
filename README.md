@@ -4,90 +4,53 @@ Aplicação web para gestão de custos de shipping (Duty & Freight) com integra�
 
 ## Funcionalidades
 
-- Autenticação de utilizadores
+### 1. Módulo BILL (Duty & Freight)
 - CRUD de tabelas de custos
 - Gestão de contentores (containers)
 - Registro de pagamentos parciais/totais
 - Cálculo automático de diferenças e saldos
+
+### 2. Módulo TEAM (Relatórios de Equipa)
+- Gestão de equipas e grupos de trabalho
+- Relatórios de produtividade e pagamentos internos
+- Agrupamento dinâmico de registos por categoria
+
+### 3. Módulo TERM (Prazos de Contentor)
+- Controlo de ETA (Estimated Time of Arrival) e prazos
+- Automação de status (**PENDING** vs **NEXT**) baseada no calendário
+- Destaque visual para pagamentos efetuados (**PAID**)
+- Cálculos de 50% e balanço por contentor
+
+### Funcionalidades Globais
+- Autenticação de utilizadores
 - Exportação de tabelas como PNG
-- Dashboard com resumo geral
-- Isolamento de dados por utilizador
+- Dashboard unificado com resumo geral
+- Isolamento de dados por utilizador (Segurança via PB)
 
 ## Tecnologias
 
 - Frontend: HTML5, CSS3, JavaScript vanilla
-- UI: Tailwind CSS
+- UI: Tailwind CSS (Configuração neo-brutalista)
 - Backend: PocketBase (externo)
 - Servidor: Node.js + Express (para deploy)
 
-## Configuração Local
+## Configuração do PocketBase
 
-1. Clone o repositório:
-   ```bash
-   git clone https://github.com/Importmoz/bill-check.git
-   cd bill-check
-   ```
+A aplicação requer um servidor PocketBase com as seguintes coleções configuradas. Para todas as coleções, aplique a regra de API: `user_id = @request.auth.id`.
 
-2. Instale as dependências:
-   ```bash
-   npm install
-   ```
+### Módulo BILL
+- **tables**: `name`, `user_id`
+- **containers**: `table_id`, `container_id`, `duty`, `freight`, `user_id`
+- **balance**: `table_id`, `amount`, `date`, `user_id`
 
-3. Configure a variável de ambiente (opcional):
-   ```bash
-   cp .env.example .env
-   # Edite o .env com a URL do seu PocketBase
-   ```
+### Módulo TEAM
+- **team_tables**: `name`, `user_id`
+- **team_groups**: `name`, `table_id`, `user_id`
+- **team_records**: `table_id`, `group_id`, `user_id`, `name`, `interna_val`, `interna_month`, `interna_paid`
 
-4. Inicie o servidor:
-   ```bash
-   npm start
-   ```
-   A aplicação estará disponível em `http://localhost:3000`
-
-## Deploy no Coolify
-
-### Método 1: Usando o repositório Git
-
-1. No Coolify, adicione um novo serviço
-2. Selecione "Git Repository" e informe a URL do repositório:
-   ```
-   https://github.com/Importmoz/bill-check.git
-   ```
-3. Selecione o branch `main`
-4. Escolha o tipo de serviço: **Web Application**
-5. Configuração automática:
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Port**: `3000`
-   - **Pasta Pública**: `/` (raiz)
-
-6. Adicione as variáveis de ambiente:
-   - `POCKETBASE_URL`: URL do seu servidor PocketBase
-   - `PORT`: 3000 (geralmente automático)
-   - `NODE_ENV`: production
-
-7. Clique em "Deploy"
-
-### Método 2: Usando Docker
-
-O projeto inclui `Dockerfile` e `docker-compose.yml` para deploy com Docker.
-
-1. No Coolify, selecione "Docker Compose" ou "Dockerfile"
-2. Para Docker Compose, use o arquivo `docker-compose.yml`
-3. Para Dockerfile, o Coolify detectará automaticamente
-
-### Configuração do PocketBase
-
-A aplicação requer um servidor PocketBase com as seguintes coleções:
-
-1. **users** (padrão do PocketBase)
-2. **tables** com campos: `name`, `user_id`
-3. **containers** com campos: `table_id`, `container_id`, `duty`, `freight`, `user_id`
-4. **balance** com campos: `table_id`, `amount`, `date`, `user_id`
-
-**Importante**: Configure as regras de API no PocketBase para restringir acesso por `user_id`:
-- Para cada coleção, adicione regra: `user_id = @request.auth.id`
+### Módulo TERM
+- **term_v2_tables**: `name`, `user_id`
+- **term_v2_records**: `table_id`, `user_id`, `container_id_str`, `eta`, `tcs`, `unit`, `status`
 
 ## Variáveis de Ambiente
 
