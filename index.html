@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Controlo | Duty & Freight</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- SDK do PocketBase -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pocketbase/0.21.1/pocketbase.umd.js"></script>
+    <!-- SheetJS para processamento de Excel/Sheets -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body class="p-4 md:p-10 pb-24">
+
+    <!-- Indicador de Carregamento -->
+    <div id="loader" class="fixed inset-0 loading-overlay flex items-center justify-center">
+        <div class="flex flex-col items-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
+            <p class="mt-4 text-xs font-bold uppercase tracking-widest text-black">A processar pedido...</p>
+        </div>
+    </div>
+
+    <!-- VISÃO: LOGIN -->
+    <div id="view-login" class="fixed inset-0 flex items-center justify-center z-[100] bg-gray-100">
+        <div class="bg-white p-8 rounded-2xl border-2 border-gray-600 shadow-2xl w-full max-w-sm">
+            <div class="text-center mb-8">
+                <div
+                    class="bg-black text-white w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-4 font-black text-3xl shadow-lg">
+                    CTR</div>
+            </div>
+            <div class="space-y-4 text-black">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">E-mail de Acesso</label>
+                    <input type="email" id="login-user" placeholder="seu@email.com"
+                        class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold bg-white transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold uppercase text-gray-400 mb-1">Palavra-passe</label>
+                    <input type="password" id="login-pass" placeholder="********"
+                        class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold bg-white transition-all">
+                </div>
+                <button onclick="handleLogin()"
+                    class="w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-sm mt-4 hover:bg-gray-800 transition-all active:scale-95">Entrar</button>
+            </div>
+            <div id="login-error" class="mt-4 hidden">
+                <div class="bg-red-50 p-3 rounded border border-red-200">
+                    <p class="text-red-700 text-[10px] font-bold uppercase mb-1">Erro de Ligação:</p>
+                    <p id="error-message" class="text-red-600 text-[10px] leading-tight"></p>
+                    <p class="text-gray-400 text-[8px] mt-2 italic">* Verifique se o servidor PocketBase está online e
+                        permite CORS.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VISÃO: HUB PRINCIPAL -->
+    <div id="view-hub" class="max-w-screen-2xl mx-auto hidden min-h-[60vh] flex flex-col justify-center py-12">
+        <div class="text-center mb-16">
+            <h1 class="text-4xl font-black text-gray-900 tracking-tighter uppercase mb-2">CTR Systems</h1>
+            <p class="text-gray-400 text-xs font-bold uppercase tracking-[0.3em]">Central de Operações Integradas</p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 px-4">
+            <!-- Módulo BILL -->
+            <div onclick="showDashboard()"
+                class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
+                <div
+                    class="absolute top-0 right-0 bg-black text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
+                    Ativo</div>
+                <div
+                    class="bg-black text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
+                        <line x1="2" y1="10" x2="22" y2="10"></line>
+                    </svg>
+                </div>
+                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">BILL</h3>
+                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Gestão de Custos
+                    Duty & Freight</p>
+                <div class="mt-6 flex items-center text-black font-bold text-[10px] uppercase tracking-wider gap-2">
+                    Aceder Módulo
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Módulo FINANCE -->
+            <div onclick="showFinance()"
+                class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
+                <div
+                    class="absolute top-0 right-0 bg-blue-600 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest italic">
+                    Pendente</div>
+                <div
+                    class="bg-blue-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                    </svg>
+                </div>
+                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">FINANCE</h3>
+                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Gestão
+                    Financeira e Fluxo de Caixa</p>
+                <div class="mt-6 flex items-center text-blue-600 font-bold text-[10px] uppercase tracking-wider gap-2">
+                    Configurar Módulo
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Módulo TEAM -->
+            <div onclick="showTeam()"
+                class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
+                <div
+                    class="absolute top-0 right-0 bg-orange-500 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
+                    Novo</div>
+                <div
+                    class="bg-orange-500 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="9" cy="7" r="4"></circle>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                    </svg>
+                </div>
+                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">TEAM</h3>
+                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Relatórios e
+                    Controlo de Equipes</p>
+                <div
+                    class="mt-6 flex items-center text-orange-600 font-bold text-[10px] uppercase tracking-wider gap-2">
+                    Aceder Módulo
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Módulo TERM -->
+            <div onclick="showTerm()"
+                class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
+                <div
+                    class="absolute top-0 right-0 bg-green-600 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
+                    Novo</div>
+                <div
+                    class="bg-green-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                </div>
+                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">TERM</h3>
+                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Controlo de
+                    Contentores e Prazos</p>
+                <div class="mt-6 flex items-center text-green-600 font-bold text-[10px] uppercase tracking-wider gap-2">
+                    Aceder Módulo
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-20 text-center">
+            <button onclick="handleLogout()"
+                class="text-gray-400 hover:text-red-600 font-bold text-xs uppercase tracking-widest transition-all">Sair
+                do Sistema</button>
+        </div>
+    </div>
+
+    <!-- VISÃO: PAINEL DE CONTROLO -->
+    <div id="view-dashboard" class="max-w-6xl mx-auto hidden">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <button onclick="showHub()"
+                    class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">BILL</h1>
+            </div>
+            <div class="flex gap-3 text-black">
+                <button onclick="handleLogout()"
+                    class="text-gray-400 hover:text-red-600 font-bold text-xs uppercase px-4 py-2 transition-all">Sair</button>
+                <button onclick="openNewTableModal()"
+                    class="bg-black text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 hover:bg-gray-800 transition-all shadow-lg active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Nova Tabela
+                </button>
+            </div>
+        </div>
+        <div id="dashboard-summary" class="mb-8"></div>
+        <div id="tables-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-black"></div>
+    </div>
+
+    <!-- VISÃO: TABELA ESPECÍFICA -->
+    <div id="view-table" class="max-w-6xl mx-auto hidden">
+        <div class="mb-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <button onclick="showDashboard()"
+                    class="text-gray-600 hover:text-black flex items-center gap-1 font-bold text-xs uppercase transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Painel
+                </button>
+                <span class="text-gray-300">|</span>
+                <span id="current-table-title" class="font-bold text-gray-800 uppercase text-xs tracking-widest"></span>
+            </div>
+            <button onclick="downloadTableAsImage()"
+                class="bg-white border-2 border-gray-600 text-black px-4 py-2 rounded-lg font-bold text-[10px] uppercase flex items-center gap-2 hover:bg-gray-50 transition-all active:scale-95">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Baixar PNG
+            </button>
+        </div>
+        <div id="capture-area" class="p-2 bg-white rounded-lg border border-gray-200">
+            <table class="excel-table shadow-sm">
+                <thead>
+                    <tr>
+                        <th colspan="4" class="header-main py-6 bg-slate-50 border-b-2 border-gray-600"
+                            id="table-display-name">Duty & Freight Payments</th>
+                    </tr>
+                    <tr class="bg-white">
+                        <th class="column-header w-32">Container</th>
+                        <th class="column-header">Duty Paid in China</th>
+                        <th class="column-header">Freight Paid in MOZ</th>
+                        <th class="column-header">Difference</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+                <tbody id="footer-logic"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- VISÃO: FINANCE (CONSOLIDATOR) -->
+    <div id="view-finance" class="max-w-6xl mx-auto hidden">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <div>
+                <button onclick="showHub()"
+                    class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">FINANCE</h1>
+            </div>
+            <div class="flex gap-2 w-full md:w-auto">
+                <button onclick="handleManualFinanceRefresh()"
+                    class="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl text-[10px] font-bold uppercase transition-all hover:border-black active:scale-95">
+                    <svg id="finance-refresh-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+                        <path d="M3 3v5h5"></path>
+                        <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path>
+                        <path d="M16 16h5v5"></path>
+                    </svg>
+                    Actualizar
+                </button>
+                <button onclick="openFinanceSheetModal()"
+                    class="flex-1 md:flex-none bg-black text-white px-6 py-3 rounded-xl font-bold text-[10px] uppercase flex items-center justify-center gap-2 hover:bg-gray-800 transition-all shadow-lg active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Nova Folha
+                </button>
+                <button onclick="openFinanceGroupModal()"
+                    class="flex-1 md:flex-none bg-white border-2 border-gray-600 text-black px-4 py-3 rounded-xl font-bold text-[10px] uppercase hover:bg-gray-50 transition-all active:scale-95">
+                    Novo Grupo
+                </button>
+            </div>
+        </div>
+
+        <div id="finance-summary" class="mb-10"></div>
+        <div id="finance-content" class="space-y-12"></div>
+    </div>
+
+    <!-- VISÃO: TEAM DASHBOARD -->
+    <div id="view-team-dashboard" class="max-w-6xl mx-auto hidden">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <button onclick="showHub()"
+                    class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">TEAM REPORTS</h1>
+            </div>
+            <div class="flex gap-3 text-black">
+                <button onclick="openNewTeamTableModal()"
+                    class="bg-orange-600 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 hover:bg-orange-700 transition-all shadow-lg active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Novo Relatório
+                </button>
+            </div>
+        </div>
+        <div id="team-tables-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-black"></div>
+    </div>
+
+    <!-- VISÃO: TEAM TABLE DETAILS -->
+    <div id="view-team-table" class="max-w-7xl mx-auto hidden pb-20">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <button onclick="showHub()"
+                    class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">TEAM</h1>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="openTeamGroupModal()"
+                    class="bg-white border-2 border-gray-600 text-black px-4 py-2 rounded-lg font-bold text-xs uppercase hover:bg-gray-50 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all">Novo
+                    Lote</button>
+                <button onclick="downloadTeamTableAsImage()"
+                    class="bg-black text-white px-4 py-2 rounded-lg font-bold text-xs uppercase flex items-center gap-2 hover:bg-gray-800 transition-all">Baixar
+                    PNG</button>
+            </div>
+        </div>
+
+        <div id="team-summary" class="mb-6"></div>
+
+        <div id="team-capture-area" class="overflow-x-auto p-4 bg-white rounded-xl border-2 border-gray-200">
+            <table class="excel-table min-w-full">
+                <thead>
+                    <tr class="bg-slate-50">
+                        <th rowspan="2" class="column-header">Contentor</th>
+                        <th colspan="2" class="column-header border-b-2 border-slate-300">Interna</th>
+                        <th colspan="2" class="column-header border-b-2 border-slate-300">Maputo</th>
+                        <th colspan="2" class="column-header border-b-2 border-slate-300">Matola</th>
+                        <th colspan="2" class="column-header border-b-2 border-slate-300">Termos</th>
+                    </tr>
+                    <tr class="bg-slate-50">
+                        <th class="column-header !text-[9px]">Valor</th>
+                        <th class="column-header !text-[9px]">Mês</th>
+                        <th class="column-header !text-[9px]">Valor</th>
+                        <th class="column-header !text-[9px]">Mês</th>
+                        <th class="column-header !text-[9px]">Valor</th>
+                        <th class="column-header !text-[9px]">Mês</th>
+                        <th class="column-header !text-[9px]">Valor</th>
+                        <th class="column-header !text-[9px]">Mês</th>
+                    </tr>
+                </thead>
+                <tbody id="team-table-body"></tbody>
+                <tfoot id="team-table-footer"></tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- VISÃO: TERM DASHBOARD -->
+    <div id="view-term-dashboard" class="max-w-6xl mx-auto hidden">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <button onclick="showHub()"
+                    class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">TERM</h1>
+            </div>
+            <div class="flex gap-3 text-black">
+                <button onclick="openNewTermTableModal()"
+                    class="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Novo Relatório
+                </button>
+            </div>
+        </div>
+        <div id="term-tables-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-black"></div>
+    </div>
+
+    <!-- VISÃO: TERM TABLE DETAILS -->
+    <div id="view-term-table" class="max-w-7xl mx-auto hidden pb-20">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <button onclick="showHub()"
+                    class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">TERM</h1>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="downloadTermTableAsImage()"
+                    class="bg-black text-white px-4 py-2 rounded-lg font-bold text-xs uppercase flex items-center gap-2 hover:bg-gray-800 transition-all">Baixar
+                    PNG</button>
+            </div>
+        </div>
+
+        <div id="term-summary" class="mb-6"></div>
+
+        <div id="term-capture-area" class="overflow-x-auto p-4 bg-white rounded-xl border-2 border-gray-200">
+            <table class="excel-table min-w-full">
+                <thead>
+                    <tr class="bg-slate-50">
+                        <th class="column-header">CONTAINER</th>
+                        <th class="column-header">ETA</th>
+                        <th class="column-header">TCS</th>
+                        <th class="column-header">UNIT</th>
+                        <th class="column-header">VALUE PER CTR</th>
+                        <th class="column-header">50%</th>
+                        <th class="column-header">STATUS</th>
+                        <th class="column-header">BALANCE</th>
+                    </tr>
+                </thead>
+                <tbody id="term-table-body"></tbody>
+                <tfoot id="term-table-footer"></tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- Botões Flutuantes -->
+    <div id="table-actions" class="fixed bottom-8 right-8 flex flex-col gap-3 hidden">
+        <button onclick="openPaymentModal()" title="Quitar Balanço"
+            class="fab bg-green-600 text-white w-14 h-14 rounded-full flex items-center justify-center active:scale-90">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+        </button>
+        <button onclick="openContainerModal()" title="Novo Contentor"
+            class="fab bg-black text-white w-14 h-14 rounded-full flex items-center justify-center active:scale-90">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Modais -->
+    <div id="modal-new-table" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600">
+            <div
+                class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl text-black">
+                <h3 class="font-bold uppercase text-xs" id="modal-table-title">Nova Tabela de Registo</h3>
+                <button onclick="closeModal('modal-new-table')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome da Referência</label>
+                    <input type="text" id="input-table-name" placeholder="Ex: Carga Abril 2024"
+                        class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
+                <button id="modal-table-submit" onclick="createNewTable()"
+                    class="w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-xs hover:bg-gray-800 transition-all">Criar
+                    Tabela</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-container" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600 text-black">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl">
+                <h3 class="font-bold uppercase text-xs" id="modal-container-title">Registo de Contentor</h3>
+                <button onclick="closeModal('modal-container')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="edit-id">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">ID / Número</label>
+                    <input type="text" id="input-id"
+                        class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg text-center text-lg uppercase">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[9px] font-bold uppercase mb-1 text-gray-400">Duty China</label>
+                        <input type="number" id="input-duty"
+                            class="w-full p-2 border-2 border-gray-100 focus:border-black outline-none rounded-lg text-center">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-bold uppercase mb-1 text-gray-400">Freight MOZ</label>
+                        <input type="number" id="input-freight"
+                            class="w-full p-2 border-2 border-gray-100 focus:border-black outline-none rounded-lg text-center">
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
+                <button onclick="saveContainer()"
+                    class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs">Guardar</button>
+                <button id="btn-delete" onclick="deleteContainer()"
+                    class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-payment" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600 text-black">
+            <div class="p-4 border-b border-gray-400 bg-green-50 flex justify-between items-center rounded-t-xl">
+                <h3 class="font-bold uppercase text-xs text-green-800">Registo de Pagamento</h3>
+                <button onclick="closeModal('modal-payment')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-4 text-center">
+                <div>
+                    <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1" id="balance-label">
+                        Saldo Disponível</p>
+                    <p class="text-xl font-bold" id="current-balance-display">MZN 0,00</p>
+                </div>
+                <div class="pt-2 border-t border-gray-100 text-left space-y-3">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500"
+                            id="payment-amount-label">Valor a Pagar</label>
+                        <input type="number" id="input-pay-amount" step="0.01" min="0.01"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-center text-lg"
+                            placeholder="0,00">
+                        <p class="text-[8px] text-gray-400 mt-1 italic" id="payment-hint">Insira valor parcial ou deixe
+                            para pagar total</p>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Data da
+                            Transação</label>
+                        <input type="date" id="input-pay-date"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold">
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-black rounded-b-xl flex gap-2">
+                <button onclick="confirmPayment()"
+                    class="flex-1 bg-green-700 text-white py-4 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95">Registrar
+                    Pagamento</button>
+                <button onclick="confirmPaymentFull()"
+                    class="flex-1 bg-blue-700 text-white py-4 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95"
+                    id="pay-full-button">Pagar Total</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-finance-group" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600">
+            <div
+                class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl text-black">
+                <h3 class="font-bold uppercase text-[10px]" id="modal-finance-group-title">Novo Grupo Financeiro</h3>
+                <button onclick="closeModal('modal-finance-group')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6">
+                <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome do Grupo</label>
+                <input type="text" id="input-finance-group-name" placeholder="Ex: Semana 1 - Importações"
+                    class="w-full p-4 border-2 border-gray-100 focus:border-black outline-none rounded-xl font-bold text-black uppercase text-sm">
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
+                <button onclick="saveFinanceGroup()"
+                    class="w-full bg-black text-white py-4 rounded-xl font-bold uppercase text-[10px] shadow-lg active:scale-95">Criar
+                    Grupo</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-finance-sheet" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border-2 border-gray-600">
+            <div
+                class="p-5 border-b border-gray-200 bg-gray-50 flex justify-between items-center rounded-t-2xl text-black">
+                <h3 class="font-black uppercase text-xs tracking-widest">Adicionar Nova Folha</h3>
+                <button onclick="closeModal('modal-finance-sheet')"
+                    class="font-bold p-1 hover:rotate-90 transition-transform">✕</button>
+            </div>
+            <div class="p-8 space-y-6">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase mb-2 text-gray-400 tracking-widest">Link do
+                        Google Sheets ou Excel Online</label>
+                    <input type="url" id="input-finance-sheet-url"
+                        placeholder="https://docs.google.com/spreadsheets/d/..."
+                        class="w-full p-4 border-2 border-gray-100 focus:border-black outline-none rounded-xl text-xs font-medium text-black transition-all">
+                    <p class="text-[9px] text-gray-400 mt-2 italic">* Certifique-se de que o link é público ou 'Qualquer
+                        pessoa com o link'.</p>
+                </div>
+            </div>
+            <div class="p-5 bg-gray-50 border-t border-gray-200 rounded-b-2xl">
+                <button onclick="addFinanceSheet()"
+                    class="w-full bg-black text-white py-4 rounded-xl font-black uppercase text-[10px] shadow-xl hover:bg-gray-800 transition-all active:scale-95">Vincular
+                    e Extrair Dados</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modais TEAM -->
+    <div id="modal-team-table" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600">
+            <div
+                class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl text-black">
+                <h3 class="font-bold uppercase text-xs">Novo Relatório de Equipes</h3>
+                <button onclick="closeModal('modal-team-table')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6">
+                <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome do Relatório</label>
+                <input type="text" id="input-team-table-name" placeholder="Ex: Relatório Março 2025"
+                    class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
+                <button onclick="createTeamTable()"
+                    class="w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-xs">Criar
+                    Relatório</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-team-record" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-2xl rounded-xl shadow-xl border-2 border-gray-600 text-black">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl">
+                <h3 class="font-bold uppercase text-xs" id="team-record-modal-title">Registo de Contentor (Equipes)</h3>
+                <button onclick="closeModal('modal-team-record')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-6">
+                <input type="hidden" id="team-record-id">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">Contentor ID</label>
+                        <input type="text" id="input-team-container-id"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">Lote / Grupo</label>
+                        <select id="select-team-group"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold bg-white"></select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Equipe INTERNA -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-black text-xs uppercase text-slate-400 tracking-widest">Interna</h4>
+                            <div class="flex gap-1">
+                                <button onclick="document.getElementById('team-val-interna').value='115000'"
+                                    class="px-2 py-0.5 bg-gray-200 hover:bg-black hover:text-white rounded text-[8px] font-bold transition-all">115K</button>
+                                <button onclick="document.getElementById('team-val-interna').value='105000'"
+                                    class="px-2 py-0.5 bg-gray-200 hover:bg-black hover:text-white rounded text-[8px] font-bold transition-all">105K</button>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-interna" placeholder="Valor"
+                                class="p-2 border border-gray-200 rounded text-xs font-bold">
+                            <input type="date" id="team-month-interna"
+                                class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-interna" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                    <!-- Equipe MAPUTO -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Maputo</h4>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-maputo" placeholder="Valor"
+                                class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="date" id="team-month-maputo"
+                                class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-maputo" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                    <!-- Equipe MATOLA -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Matola</h4>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-matola" placeholder="Valor"
+                                class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="date" id="team-month-matola"
+                                class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-matola" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                    <!-- Equipe TERMOS -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Termos</h4>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-termos" placeholder="Valor"
+                                class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="date" id="team-month-termos"
+                                class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-termos" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
+                <button onclick="saveTeamRecord()"
+                    class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Guardar
+                    Registo</button>
+                <button id="btn-team-record-delete" onclick="deleteTeamRecord()"
+                    class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Botões Flutuantes TEAM -->
+    <div id="team-table-actions" class="fixed bottom-8 right-8 flex flex-col gap-3 hidden">
+        <button onclick="openTeamRecordModal()" title="Novo Registo de Equipe"
+            class="fab bg-orange-600 text-white w-14 h-14 rounded-full flex items-center justify-center active:scale-90">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Botões Flutuantes TERM -->
+    <div id="term-table-actions" class="fixed bottom-8 right-8 flex flex-col gap-3 hidden">
+        <button onclick="openTermRecordModal()" title="Novo Registo TERM"
+            class="fab bg-green-600 text-white w-14 h-14 rounded-full flex items-center justify-center active:scale-90">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+    </div>
+
+    <!-- Modais TERM -->
+    <div id="modal-term-table" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600">
+            <div
+                class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl text-black">
+                <h3 class="font-bold uppercase text-xs">Novo Relatório TERM</h3>
+                <button onclick="closeModal('modal-term-table')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6">
+                <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome do Relatório</label>
+                <input type="text" id="input-term-table-name" placeholder="Ex: Termos de Carga Março"
+                    class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
+                <button onclick="createTermTable()"
+                    class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold uppercase text-xs">Criar
+                    Relatório</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-term-record" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-lg rounded-xl shadow-xl border-2 border-gray-600 text-black">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl">
+                <h3 class="font-bold uppercase text-xs" id="term-record-modal-title">Registo de Contentor (TERM)</h3>
+                <button onclick="closeModal('modal-term-record')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="term-record-id">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">Contentor ID</label>
+                        <input type="text" id="input-term-container-id"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">ETA</label>
+                        <input type="date" id="input-term-eta" onchange="handleTermDateChange()"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">TCS</label>
+                        <input type="number" id="input-term-tcs"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">UNIT</label>
+                        <input type="number" id="input-term-unit"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase mb-1 text-gray-500">Status</label>
+                    <select id="select-term-status"
+                        class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-bold bg-white">
+                        <option value="PENDING">PENDING</option>
+                        <option value="NEXT">NEXT</option>
+                        <option value="PAID">PAID</option>
+                    </select>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
+                <button onclick="saveTermRecord()"
+                    class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Guardar
+                    Registo</button>
+                <button id="btn-term-record-delete" onclick="deleteTermRecord()"
+                    class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/config.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+
+</html>
