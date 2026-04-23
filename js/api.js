@@ -29,6 +29,12 @@ export const state = {
         tables: [],
         currentTableId: null,
         records: []
+    },
+    confirm: {
+        sheetId: localStorage.getItem('confirm_sheet_id') || '',
+        data: [],
+        columns: [],
+        driveFiles: []
     }
 };
 
@@ -44,6 +50,122 @@ export async function login(email, pass) {
  */
 export function logout() {
     pb.authStore.clear();
+}
+
+/** --- MÓDULO CONFIRM (GOOGLE API) --- **/
+
+export async function readGSheet(spreadsheetId, range = 'A1:Z1000') {
+    const res = await fetch('/api/google/sheet/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spreadsheetId, range })
+    });
+    if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao ler GSheet");
+    }
+    const data = await res.json();
+    state.confirm.data = data;
+    if (data && data.length > 0) state.confirm.columns = data[0];
+    return data;
+}
+
+export async function updateGSheet(spreadsheetId, range, values) {
+    const res = await fetch('/api/google/sheet/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spreadsheetId, range, values })
+    });
+    if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao atualizar GSheet");
+    }
+    return await res.json();
+}
+
+export async function listGDriveFiles(folderId) {
+    const res = await fetch('/api/google/drive/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId })
+    });
+    if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao listar GDrive");
+    }
+    const files = await res.json();
+    state.confirm.driveFiles = files || [];
+    return state.confirm.driveFiles;
+}
+
+export async function createGDriveFolder(name, parentId) {
+    const res = await fetch('/api/google/drive/create-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, parentId })
+    });
+    
+    if (!res.ok) {
+        const text = await res.text();
+        let errorMsg = "Erro ao criar pasta";
+        try {
+            const error = JSON.parse(text);
+            errorMsg = error.error || errorMsg;
+        } catch (e) {
+            console.error("Servidor retornou HTML/Texto:", text);
+        }
+        throw new Error(errorMsg);
+    }
+    
+    return await res.json();
+}
+
+export async function uploadGDriveFile(file, parentId) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('parentId', parentId);
+    
+    const res = await fetch('/api/google/drive/upload', {
+        method: 'POST',
+        body: formData
+    });
+    
+    if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao fazer upload");
+    }
+    
+    return await res.json();
+}
+
+export async function deleteGDriveFile(fileId) {
+    const res = await fetch(`/api/google/drive/file/${fileId}`, {
+        method: 'DELETE'
+    });
+    
+    if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao apagar ficheiro");
+    }
+    
+    return await res.json();
+}
+
+// --- POCKETBASE: CONFIRM PROJECTS ---
+export async function getConfirmProjects() {
+    return await pb.collection('confirm_projects').getFullList({ sort: '-created' });
+}
+
+export async function saveConfirmProject(data) {
+    if (data.id) {
+        return await pb.collection('confirm_projects').update(data.id, data);
+    } else {
+        return await pb.collection('confirm_projects').create(data);
+    }
+}
+
+export async function deleteConfirmProject(id) {
+    return await pb.collection('confirm_projects').delete(id);
 }
 
 /**

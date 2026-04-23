@@ -16,6 +16,25 @@
 
 <body class="p-4 md:p-10 pb-24">
 
+    <!-- MODAL DE PRÉ-VISUALIZAÇÃO DE FICHEIRO -->
+    <div id="modal-file-preview" class="modal-bg fixed inset-0 z-[150] hidden flex items-center justify-center p-4 backdrop-blur-md">
+        <div class="bg-white w-full max-w-4xl h-[90vh] rounded-3xl shadow-2xl border border-gray-200 text-black flex flex-col overflow-hidden scale-in">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 id="preview-filename" class="font-black uppercase text-xs truncate pr-4 text-gray-700">PRÉ-VISUALIZAÇÃO</h3>
+                <div class="flex gap-2">
+                    <a id="preview-download-link" href="#" target="_blank" class="bg-black text-white px-4 py-2 rounded-xl font-bold hover:bg-gray-800 transition-all text-xs flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        ABRIR ORIGINAL
+                    </a>
+                    <button onclick="closeModal('modal-file-preview')" class="bg-white border border-gray-200 px-4 py-2 rounded-xl font-bold hover:bg-red-50 hover:text-red-600 transition-all text-xs">FECHAR</button>
+                </div>
+            </div>
+            <div id="preview-content" class="flex-1 bg-gray-100 flex items-center justify-center overflow-auto p-4">
+                <!-- Conteúdo do ficheiro será inserido aqui -->
+            </div>
+        </div>
+    </div>
+
     <!-- Indicador de Carregamento -->
     <div id="loader" class="fixed inset-0 loading-overlay flex items-center justify-center">
         <div class="flex flex-col items-center">
@@ -169,6 +188,32 @@
                 <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Controlo de
                     Contentores e Prazos</p>
                 <div class="mt-6 flex items-center text-green-600 font-bold text-[10px] uppercase tracking-wider gap-2">
+                    Aceder Módulo
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </div>
+            </div>
+
+            <!-- Módulo CONFIRM -->
+            <div onclick="showConfirm()"
+                class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
+                <div
+                    class="absolute top-0 right-0 bg-yellow-400 text-black px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
+                    Novo</div>
+                <div
+                    class="bg-yellow-400 text-black w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                </div>
+                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">CONFIRM</h3>
+                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Confirmação GSheet & Drive</p>
+                <div class="mt-6 flex items-center text-yellow-600 font-bold text-[10px] uppercase tracking-wider gap-2">
                     Aceder Módulo
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
                         stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -853,7 +898,250 @@
             </div>
         </div>
     </div>
+    <!-- VISÃO: CONFIRM DASHBOARD (GSheet & Drive) -->
+    <div id="view-confirm-dashboard" class="max-w-6xl mx-auto hidden pb-20">
+        <div class="mb-8 px-4 flex justify-between items-end gap-4 flex-wrap">
+            <div class="flex-1 min-w-[200px]">
+                <button onclick="showHub()"
+                    class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h2 class="text-3xl font-black uppercase tracking-tighter">CONFIRM</h2>
+            </div>
+            
+            <!-- Barra de Pesquisa de Projetos -->
+            <div class="relative flex-1 max-w-sm">
+                <input type="text" id="input-confirm-project-search" oninput="handleConfirmProjectSearch()"
+                    placeholder="PROCURAR PROJETO..."
+                    class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl font-bold text-[10px] outline-none focus:border-black transition-all">
+                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                </span>
+            </div>
 
+            <button onclick="openConfirmProjectModal()" 
+                class="bg-black text-white px-6 py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest shadow-lg hover:translate-x-1 hover:translate-y-1 transition-all flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                NOVO PROJETO
+            </button>
+        </div>
+
+
+        <div id="confirm-projects-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 px-4">
+            <!-- Projetos vindos do PocketBase serão renderizados aqui -->
+            <div class="col-span-full py-20 text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-black mx-auto mb-4"></div>
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">A carregar os seus projetos...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- VISÃO: CONFIRM LIST -->
+    <div id="view-confirm-table" class="max-w-[95%] mx-auto hidden pb-20">
+        <div class="flex flex-col md:flex-row gap-6">
+            <!-- Lista de Clientes (GSheet) -->
+            <div class="flex-1">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-8 px-4 gap-4">
+                    <div class="flex flex-col gap-1">
+                        <button onclick="showConfirm()"
+                            class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                            Configuração
+                        </button>
+                        <h2 id="confirm-project-active-name" class="text-2xl font-black uppercase tracking-tighter">CONFIRM</h2>
+                    </div>
+
+                    <!-- Totais Rápidos -->
+                    <div id="confirm-totals-bar" class="hidden flex gap-4 bg-gray-50 p-2 rounded-2xl border border-gray-100">
+                        <div class="px-4 py-2">
+                            <p class="text-[8px] font-bold text-gray-400 uppercase text-center">Total Clientes</p>
+                            <p id="confirm-total-clients" class="text-xs font-black text-black text-center">0</p>
+                        </div>
+                        <div class="w-[1px] bg-gray-200"></div>
+                        <div class="px-4 py-2">
+                            <p class="text-[8px] font-bold text-gray-400 uppercase">Total Duty</p>
+                            <p id="confirm-total-duty" class="text-xs font-black text-black">MZN 0,00</p>
+                        </div>
+                        <div class="w-[1px] bg-gray-200"></div>
+                        <div class="px-4 py-2">
+                            <p class="text-[8px] font-bold text-gray-400 uppercase">Total Frete</p>
+                            <p id="confirm-total-freight" class="text-xs font-black text-black">MZN 0,00</p>
+                        </div>
+                    </div>
+
+                    
+                    <!-- Barra de Pesquisa -->
+                    <div class="relative w-full max-w-md">
+                        <input type="text" id="input-confirm-search" oninput="handleConfirmSearch()"
+                            placeholder="PESQUISAR CLIENTE OU ID..."
+                            class="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl font-bold text-xs outline-none focus:bg-yellow-50 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm transition-all">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Contentor da Lista de Cards -->
+                <div id="confirm-list-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 px-4">
+                    <!-- Cards de Clientes Dinâmicos -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VISÃO: CONFIRM CLIENT DETAIL (Página Completa) -->
+    <div id="view-confirm-client-detail" class="max-w-7xl mx-auto hidden pb-20 px-4">
+        <div class="mb-8">
+            <button onclick="ui.showView('view-confirm-table')"
+                class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="19" y1="12" x2="5" y2="12"></line>
+                    <polyline points="12 19 5 12 12 5"></polyline>
+                </svg>
+                Voltar à Lista
+            </button>
+            <div class="flex flex-col md:flex-row justify-between items-start gap-4">
+                <div>
+                    <h2 id="confirm-client-detail-name" class="text-3xl font-black uppercase tracking-tighter leading-none mb-1">CLIENTE</h2>
+                    <p id="confirm-client-detail-id" class="text-xs font-bold text-gray-400 uppercase tracking-widest">ID CODE: ---</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Ordens / Linhas do GSheet -->
+            <div class="lg:col-span-2 space-y-6">
+                <div class="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
+                    <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
+                        <h4 class="font-black uppercase text-xs text-gray-600">Ordens de Importação</h4>
+                    </div>
+                    <div id="confirm-client-orders" class="divide-y divide-gray-100 p-4">
+                        <!-- Linhas do cliente aqui -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Coluna Lateral: SUPORTES DRIVE -->
+            <div class="space-y-6">
+                <div class="bg-white border border-gray-200 p-6 rounded-3xl shadow-sm sticky top-4">
+                    <div class="flex items-center justify-between mb-6">
+                        <h4 class="font-black uppercase text-xs flex items-center gap-2 text-gray-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            SUPORTES DRIVE
+                        </h4>
+                        <button onclick="driveGoBack()" class="text-[9px] font-black uppercase bg-gray-100 px-3 py-1.5 rounded-lg hover:bg-black hover:text-white transition-all flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                            VOLTAR
+                        </button>
+                    </div>
+                    
+                    <input type="hidden" id="input-confirm-drive-id">
+                    <input type="file" id="input-confirm-drive-upload" class="hidden" onchange="window.handleFileUpload(this)">
+                    
+                    <div id="confirm-drive-files" class="space-y-2 overflow-y-auto max-h-[60vh] text-[10px] pr-2 custom-scrollbar">
+                        <div class="p-4 text-center text-xs font-bold text-gray-300 uppercase italic">A carregar suportes...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- MODAL: DETALHES DO CLIENTE -->
+    <div id="modal-confirm-detail" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 text-black overflow-hidden scale-in">
+            <div id="confirm-detail-header" class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <div>
+                    <h3 id="detail-client-name" class="text-xl font-black uppercase tracking-tight">NOME DO CLIENTE</h3>
+                    <p id="detail-client-id" class="text-xs font-bold text-gray-500 mt-1">ID CODE: XXX</p>
+                </div>
+                <button onclick="closeModal('modal-confirm-detail')" class="bg-white border border-gray-200 p-2 rounded-lg font-bold hover:bg-gray-100 text-gray-500 hover:text-black transition-all">✕</button>
+            </div>
+            
+            <div class="p-6 max-h-[70vh] overflow-y-auto">
+                <div id="confirm-detail-body" class="flex flex-col gap-6 mb-4">
+                    <!-- Registos agrupados do cliente -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: GESTÃO DE PROJETO CONFIRM -->
+    <div id="modal-confirm-project" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border-4 border-black text-black scale-in">
+            <div class="p-6">
+                <button onclick="closeModal('modal-confirm-project')" class="float-right font-bold bg-gray-50 px-2 py-1 rounded">✕</button>
+                <h3 id="confirm-project-modal-title" class="text-xl font-black uppercase mb-6">NOVO PROJETO</h3>
+                
+                <input type="hidden" id="input-project-id">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400">Nome do Projeto</label>
+                        <input type="text" id="input-project-name" placeholder="Ex: Conferência Abril"
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-bold text-xs bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400">ID da Folha (Google Sheet)</label>
+                        <input type="text" id="input-project-sheet-id" placeholder="1_xxx..."
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-bold text-xs bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400">ID da Pasta (Google Drive)</label>
+                        <input type="text" id="input-project-drive-id" placeholder="1x_xxx..."
+                            class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-bold text-xs bg-gray-50">
+                    </div>
+
+                    <div class="pt-4 flex gap-2">
+                        <button onclick="saveConfirmProject()" 
+                            class="flex-1 bg-black text-white py-4 rounded-xl font-bold uppercase text-[10px] shadow-lg active:scale-95 transition-all">GRAVAR PROJETO</button>
+                    </div>
+                    <div id="confirm-project-delete-container" class="hidden">
+                        <button onclick="deleteConfirmProject()" 
+                            class="w-full text-red-500 font-bold uppercase text-[8px] hover:underline mt-2">Eliminar Projeto</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="modal-confirm-action" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-xl border border-gray-200 text-black scale-in">
+            <div class="p-6">
+                <button onclick="closeModal('modal-confirm-action')" class="float-right font-bold text-gray-400 hover:text-black bg-gray-50 px-2 py-1 rounded">✕</button>
+                <h3 class="text-lg font-black uppercase mb-6 text-gray-800">REGISTAR CONFIRMAÇÃO</h3>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Estado da Confirmação</label>
+                        <select id="select-confirm-status" class="w-full p-3 border border-gray-200 rounded-lg font-bold bg-gray-50 outline-none focus:ring-2 focus:ring-yellow-400">
+                            <option value="CONFIRMADO">✅ CONFIRMADO</option>
+                            <option value="RE-VERIFICANDO">🔍 RE-VERIFICANDO</option>
+                            <option value="SEM COMPROVATIVO">❌ SEM COMPROVATIVO</option>
+                            <option value="COMPROVATIVO ERRADO">⚠️ COMPROVATIVO ERRADO</option>
+                        </select>
+                    </div>
+                    
+                    <div id="payment-dates-inputs" class="space-y-3 pt-2">
+                        <!-- Inputs de data gerados -->
+                    </div>
+
+                    <div class="pt-6 flex gap-2">
+                        <button onclick="saveConfirmToSheet()" 
+                            class="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 py-3.5 rounded-xl font-bold uppercase text-[10px] shadow-sm transition-all">GRAVAR NO GSHEET</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <script src="/config.js"></script>
     <script type="module" src="app.js"></script>
 </body>

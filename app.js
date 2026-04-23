@@ -8,6 +8,7 @@ import * as utils from './js/utils.js';
 const { state, pb } = api;
 
 // --- EXPOSIÇÃO GLOBAL (Compatibilidade com onclick no HTML) ---
+window.ui = ui;
 window.handleLogin = handleLogin;
 window.handleLogout = handleLogout;
 window.showHub = showHub;
@@ -57,6 +58,28 @@ window.saveTermRecord = saveTermRecord;
 window.deleteTermRecord = deleteTermRecord;
 window.downloadTermTableAsImage = downloadTermTableAsImage;
 window.handleTermDateChange = handleTermDateChange;
+
+// --- CONFIRM MODULE ---
+window.showConfirm = showConfirm;
+window.openConfirmProjectModal = openConfirmProjectModal;
+window.saveConfirmProject = saveConfirmProject;
+window.deleteConfirmProject = deleteConfirmProject;
+window.selectConfirmProject = selectConfirmProject;
+window.openDriveExplorer = openDriveExplorer;
+window.saveConfirmToSheet = saveConfirmToSheet;
+window.handleConfirmSearch = handleConfirmSearch;
+window.handleConfirmProjectSearch = handleConfirmProjectSearch;
+window.navigateToFolder = navigateToFolder;
+
+window.driveGoBack = driveGoBack;
+window.onConfirmRow = onConfirmRow;
+window.showFilePreview = ui.showFilePreview;
+window.autoOpenClientFolder = autoOpenClientFolder;
+window.handleCreateFolder = handleCreateFolder;
+window.handleFileUpload = handleFileUpload;
+window.triggerFileUpload = triggerFileUpload;
+
+
 
 // --- LÓGICA DE APLICAÇÃO ---
 
@@ -851,5 +874,394 @@ function handleTermDateChange() {
     // Deixamos habilitado para que o usuário possa trocar para PAID se necessário
     // Mas o valor automático PENDING/NEXT é sugerido pela data
     statusSelect.disabled = false; 
+}
+
+// --- MÓDULO CONFIRM ---
+let currentConfirmRow = null;
+let driveHistory = [];
+let currentProjectSheetId = null; 
+let currentProjectRootFolderId = null; 
+let projectFoldersCache = null; // Cache de pastas para abertura instantânea
+
+
+
+
+async function showConfirm() {
+    ui.showView('view-confirm-dashboard');
+    loadConfirmProjects();
+}
+
+async function loadConfirmProjects() {
+    try {
+        const projects = await api.getConfirmProjects();
+        ui.renderConfirmProjects(projects);
+    } catch (err) {
+        console.error("Erro ao carregar projetos:", err);
+    }
+}
+
+async function openConfirmProjectModal(projectId = null) {
+    const title = document.getElementById('confirm-project-modal-title');
+    const idInput = document.getElementById('input-project-id');
+    const nameInput = document.getElementById('input-project-name');
+    const sheetInput = document.getElementById('input-project-sheet-id');
+    const driveInput = document.getElementById('input-project-drive-id');
+    const delContainer = document.getElementById('confirm-project-delete-container');
+
+    if (projectId) {
+        // Modo Edição (busca no estado ou recarrega?)
+        // Por simplicidade, assumimos que o estado api.state tem ou buscamos do DOM
+        title.innerText = "EDITAR PROJETO";
+        idInput.value = projectId;
+        delContainer.classList.remove('hidden');
+        
+        // Buscar dados do projeto clicado (via atributo ou cache)
+        const projects = api.state.confirm?.projects || [];
+        const p = projects.find(x => x.id === projectId);
+        if (p) {
+            nameInput.value = p.name;
+            sheetInput.value = p.sheetId;
+            driveInput.value = p.folderId;
+        }
+    } else {
+        title.innerText = "NOVO PROJETO";
+        idInput.value = "";
+        nameInput.value = "";
+        sheetInput.value = "";
+        driveInput.value = "";
+        delContainer.classList.add('hidden');
+    }
+    ui.openModal('modal-confirm-project');
+}
+
+async function saveConfirmProject() {
+    const extractId = (str) => {
+        if (!str) return "";
+        // Extrair ID de URL do Sheets ou Drive
+        const match = str.match(/[-\w]{25,}/);
+        return match ? match[0] : str.trim();
+    };
+
+    const data = {
+        id: document.getElementById('input-project-id').value,
+        name: document.getElementById('input-project-name').value.trim(),
+        sheetId: extractId(document.getElementById('input-project-sheet-id').value),
+        folderId: extractId(document.getElementById('input-project-drive-id').value),
+    };
+
+    if (!data.name || !data.sheetId) return alert("Nome e ID da Folha são obrigatórios.");
+
+    ui.setLoader(true);
+    try {
+        await api.saveConfirmProject(data);
+        ui.closeModal('modal-confirm-project');
+        loadConfirmProjects();
+    } catch (err) {
+        alert("Erro ao gravar projeto: " + err.message);
+    } finally {
+        ui.setLoader(false);
+    }
+}
+
+async function deleteConfirmProject() {
+    const id = document.getElementById('input-project-id').value;
+    if (!confirm("Tem a certeza que deseja eliminar este projeto?")) return;
+
+    ui.setLoader(true);
+    try {
+        await api.deleteConfirmProject(id);
+        ui.closeModal('modal-confirm-project');
+        loadConfirmProjects();
+    } catch (err) {
+        alert("Erro ao eliminar: " + err.message);
+    } finally {
+        ui.setLoader(false);
+    }
+}
+
+async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") {
+    ui.setLoader(true);
+    currentProjectSheetId = sheetId; // Guardar para recarregar depois
+    
+    // Atualizar título da página
+    const nameEl = document.getElementById('confirm-project-active-name');
+    if (nameEl) nameEl.innerText = projectName;
+
+    try {
+        // Carrega o GSheet
+        const data = await api.readGSheet(sheetId);
+        ui.renderConfirmList(data);
+        
+        // Configura o explorador de Drive
+        currentProjectRootFolderId = folderId;
+        driveHistory = [folderId]; 
+        ui.showView('view-confirm-table');
+        
+        // Carregar cache de pastas em background para abertura instantânea depois
+        projectFoldersCache = null;
+        api.listGDriveFiles(folderId).then(files => {
+            projectFoldersCache = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+            console.log(`[CACHE] ${projectFoldersCache.length} pastas mapeadas para este projeto.`);
+        }).catch(err => console.error("Erro ao carregar cache de pastas:", err));
+
+        // Carrega o drive explorer somente ao abrir um cliente (autoOpenClientFolder cuidará disso)
+        // if (folderId && folderId.trim() !== "") {
+        //     openDriveExplorer(folderId, true); 
+        // } else {
+        //
+        // }
+
+
+
+
+    } catch (err) {
+        alert("Erro ao carregar projeto: " + err.message);
+    } finally {
+        ui.setLoader(false);
+    }
+}
+
+function handleConfirmSearch() {
+    const filterText = document.getElementById('input-confirm-search').value;
+    ui.renderConfirmList(api.state.confirm.data, filterText);
+}
+
+function handleConfirmProjectSearch() {
+    const filterText = document.getElementById('input-confirm-project-search').value.toLowerCase();
+    const projects = api.state.confirm?.projects || [];
+    const filtered = projects.filter(p => p.name.toLowerCase().includes(filterText));
+    ui.renderConfirmProjects(filtered, true); 
+}
+
+
+async function autoOpenClientFolder(clientCode, clientName) {
+    const rootId = currentProjectRootFolderId;
+    if (!rootId) return;
+
+    // Limpar o código de eventuais decimais (.0) que vêm do Excel
+    const cleanCode = String(clientCode).split('.')[0].split(',')[0].trim();
+    // Normalizar nome da pasta: remover acentos, converter para maiúsculas e trocar espaços por underscores
+    const cleanName = clientName
+        .normalize('NFD')
+        .replace(/\p{Diacritic}/gu, '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '_');
+    const targetPattern = `${cleanCode}-${cleanName}`;
+
+    console.log(`[AUTO-DRIVE] Tentando abertura instantânea: "${targetPattern}"`);
+
+    // Mostrar loader imediatamente
+    const explorerContainer = document.getElementById('confirm-drive-files');
+    if (explorerContainer) explorerContainer.innerHTML = '<div class="p-4 text-center text-xs animate-pulse font-bold text-gray-400">A LOCALIZAR PASTA...</div>';
+
+    // Tentar usar o cache primeiro para ser instantâneo
+    let targetFolder = null;
+    if (projectFoldersCache) {
+        targetFolder = projectFoldersCache.find(f => {
+            const folderName = f.name.toUpperCase().replace(/\s+/g, '_');
+            return folderName.includes(targetPattern);
+        });
+    }
+
+    if (targetFolder) {
+        console.log(`[AUTO-DRIVE] Encontrado no cache!`);
+        openDriveExplorer(targetFolder.id);
+        return;
+    }
+
+    // Se não estiver no cache (ou cache ainda carregando), tenta a API uma última vez
+    try {
+        const files = await api.listGDriveFiles(rootId);
+        targetFolder = files.find(f => {
+            if (f.mimeType !== 'application/vnd.google-apps.folder') return false;
+            const folderName = f.name.toUpperCase().replace(/\s+/g, '_');
+            return folderName.includes(targetPattern);
+        });
+
+        if (targetFolder) {
+            openDriveExplorer(targetFolder.id);
+        } else {
+            console.warn(`[AUTO-DRIVE] Pasta não localizada.`);
+            ui.renderDriveError("Pasta do cliente não encontrada no Drive.", targetPattern, rootId);
+        }
+    } catch (err) {
+        ui.renderDriveError("Erro ao procurar pasta do cliente.", targetPattern, rootId);
+    }
+}
+
+async function handleCreateFolder(name, parentId) {
+    ui.setLoader(true);
+    try {
+        const folder = await api.createGDriveFolder(name, parentId);
+        // Limpar cache para forçar recarregamento na próxima vez
+        projectFoldersCache = null;
+        // Abrir a nova pasta
+        openDriveExplorer(folder.id);
+    } catch (err) {
+        alert("Erro ao criar pasta: " + err.message);
+    } finally {
+        ui.setLoader(false);
+    }
+}
+
+function triggerFileUpload(folderId) {
+    const input = document.getElementById('input-confirm-drive-upload');
+    if (input) {
+        input.dataset.parentId = folderId;
+        input.click();
+    }
+}
+
+async function handleFileUpload(input) {
+    const file = input.files[0];
+    const parentId = input.dataset.parentId;
+    if (!file || !parentId) return;
+
+    ui.setLoader(true);
+    const explorerContainer = document.getElementById('confirm-drive-files');
+    if (explorerContainer) explorerContainer.innerHTML = '<div class="p-4 text-center text-xs animate-pulse font-bold text-gray-400">A ENVIAR FICHEIRO...</div>';
+
+    try {
+        await api.uploadGDriveFile(file, parentId);
+        // Recarregar pasta
+        openDriveExplorer(parentId);
+    } catch (err) {
+        alert("Erro no upload: " + err.message);
+        openDriveExplorer(parentId);
+    } finally {
+        ui.setLoader(false);
+        input.value = ''; // Limpar input
+    }
+}
+
+async function confirmAndDeleteFile(fileId, fileName, parentId) {
+    if (!confirm(`Tem a certeza que deseja apagar o ficheiro "${fileName}"?`)) return;
+
+    ui.setLoader(true);
+    try {
+        await api.deleteGDriveFile(fileId);
+        // Recarregar pasta
+        openDriveExplorer(parentId);
+    } catch (err) {
+        alert("Erro ao apagar ficheiro: " + err.message);
+        openDriveExplorer(parentId);
+    } finally {
+        ui.setLoader(false);
+    }
+}
+
+window.confirmAndDeleteFile = confirmAndDeleteFile;
+window.triggerFileUpload = triggerFileUpload;
+window.handleFileUpload = handleFileUpload;
+window.navigateToFolder = navigateToFolder;
+window.driveGoBack = driveGoBack;
+window.showFilePreview = ui.showFilePreview;
+window.showConfirmClientDetail = showConfirmClientDetail;
+window.onConfirmRow = onConfirmRow;
+window.saveConfirmToSheet = saveConfirmToSheet;
+
+async function openDriveExplorer(folderId = null, isBack = false) {
+    const input = document.getElementById('input-confirm-drive-id');
+    const id = folderId || (input ? input.value.trim() : null);
+    
+    const explorerContainer = document.getElementById('confirm-drive-files');
+    if (!id) {
+        if (explorerContainer) explorerContainer.innerHTML = '<div class="p-4 text-center text-xs font-bold text-gray-400 italic">PASTA NÃO CONFIGURADA</div>';
+        return;
+    }
+
+    if (!isBack && folderId && input && input.value && input.value !== folderId) {
+        driveHistory.push(input.value);
+    }
+
+    if (folderId && input) input.value = id; 
+
+    if (explorerContainer) explorerContainer.innerHTML = '<div class="p-4 text-center text-xs animate-pulse font-bold text-gray-400">A CARREGAR DRIVE...</div>';
+
+    try {
+        const files = await api.listGDriveFiles(id);
+        ui.renderDriveFiles(files, id);
+    } catch (err) { 
+        console.error("Erro ao carregar Drive:", err);
+        if (err.message.includes('AUTH_REQUIRED')) {
+            alert("Sessão Google expirada ou não autorizada. Por favor, re-autorize a aplicação.");
+            window.location.href = '/api/google/auth';
+        } else {
+            alert("Não foi possível aceder à pasta. Verifique se o ID está correto e se autorizou o acesso à sua conta Google.");
+        }
+    }
+}
+
+function navigateToFolder(folderId) {
+    openDriveExplorer(folderId);
+}
+
+function driveGoBack() {
+    if (driveHistory.length > 0) {
+        const prevId = driveHistory.pop();
+        openDriveExplorer(prevId, true);
+    }
+}
+
+function onConfirmRow(rowIndex, rowData) {
+    currentConfirmRow = { index: rowIndex, data: rowData };
+    const columns = api.state.confirm.columns;
+    const idCodeIdx = columns.findIndex(c => String(c).includes('ID CODE'));
+    const statusIdx = columns.findIndex(c => String(c).includes('CONFIRMATION'));
+    
+    document.getElementById('confirm-action-title').textContent = `CONFIRMAR: ${rowData[idCodeIdx] || 'Registo'}`;
+    document.getElementById('select-confirm-status').value = rowData[statusIdx] || 'CONFIRMADO';
+    
+    const datesContainer = document.getElementById('payment-dates-inputs');
+    if (datesContainer) {
+        datesContainer.innerHTML = '';
+        ['PAG 1', 'PAG 2', 'PAG 3'].forEach(label => {
+            const idx = columns.findIndex(c => String(c).trim() === label);
+            if (idx !== -1) {
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <label class="block text-[9px] font-bold uppercase mb-1 text-gray-500">${label}</label>
+                    <input type="text" id="input-pay-date-${label.replace(' ', '')}" 
+                        class="w-full p-2 border-2 border-gray-100 rounded-lg font-bold" 
+                        value="${rowData[idx] || ''}" placeholder="DD/MM/YYYY">
+                `;
+                datesContainer.appendChild(div);
+            }
+        });
+    }
+    
+    ui.openModal('modal-confirm-action');
+}
+
+async function saveConfirmToSheet() {
+    if (!currentConfirmRow) return;
+    
+    const spreadsheetId = localStorage.getItem('confirm_sheet_id');
+    const columns = api.state.confirm.columns;
+    const statusIdx = columns.findIndex(c => String(c).includes('CONFIRMATION'));
+    
+    const updatedRow = [...currentConfirmRow.data];
+    updatedRow[statusIdx] = document.getElementById('select-confirm-status').value;
+    
+    ['PAG 1', 'PAG 2', 'PAG 3'].forEach(label => {
+        const idx = columns.findIndex(c => String(c).trim() === label);
+        if (idx !== -1) {
+            updatedRow[idx] = document.getElementById(`input-pay-date-${label.replace(' ', '')}`).value;
+        }
+    });
+
+    ui.setLoader(true);
+    try {
+        await api.updateGSheet(spreadsheetId, `A${currentConfirmRow.index + 1}`, [updatedRow]);
+        ui.closeModal('modal-confirm-action');
+        
+        // Recarregar a lista atual
+        if (currentProjectSheetId) {
+            const data = await api.readGSheet(currentProjectSheetId);
+            ui.renderConfirmList(data);
+        }
+    } catch (err) { alert("Erro ao gravar: " + err.message); }
+    finally { ui.setLoader(false); }
 }
 

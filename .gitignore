@@ -19,3 +19,8 @@ build/
 # Sistema
 .DS_Store
 Thumbs.db
+
+# Google Credentials (SENSITIVE)
+google-credentials.json
+google-oauth.json
+tokens.json

@@ -16,7 +16,7 @@ export function setLoader(show) {
  * Utilitário para ocultar todas as visões principais
  */
 function hideAllViews() {
-    ['view-login', 'view-hub', 'view-dashboard', 'view-table', 'view-finance', 'view-team-dashboard', 'view-team-table', 'view-term-dashboard', 'view-term-table'].forEach(id => {
+    ['view-login', 'view-hub', 'view-dashboard', 'view-table', 'view-finance', 'view-team-dashboard', 'view-team-table', 'view-term-dashboard', 'view-term-table', 'view-confirm-dashboard', 'view-confirm-table'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
@@ -33,13 +33,13 @@ export function showView(viewId) {
         // Garantir que ações da tabela e outros elementos flutuantes sejam geridos
         const actions = document.getElementById('table-actions');
         const teamActions = document.getElementById('team-table-actions');
-        
+
         if (actions) actions.classList.add('hidden');
         if (teamActions) teamActions.classList.add('hidden');
 
         if (viewId === 'view-table' && actions) actions.classList.remove('hidden');
         if (viewId === 'view-team-table' && teamActions) teamActions.classList.remove('hidden');
-        
+
         const termActions = document.getElementById('term-table-actions');
         if (termActions) termActions.classList.add('hidden');
         if (viewId === 'view-term-table' && termActions) termActions.classList.remove('hidden');
@@ -49,8 +49,15 @@ export function showView(viewId) {
 /**
  * Fecha um modal por ID
  */
-export function closeModal(id) { 
-    document.getElementById(id).classList.add('hidden'); 
+export function closeModal(id) {
+    document.getElementById(id).classList.add('hidden');
+}
+
+/**
+ * Abre um modal por ID
+ */
+export function openModal(id) {
+    document.getElementById(id).classList.remove('hidden');
 }
 
 /**
@@ -59,9 +66,9 @@ export function closeModal(id) {
 export function renderDashboard(onOpenTable, onOpenActions) {
     const list = document.getElementById('tables-list');
     if (!list) return;
-    
+
     list.innerHTML = '';
-    
+
     if (state.tables.length === 0) {
         list.innerHTML = '<div class="col-span-full text-center py-12 text-gray-400 uppercase text-[9px] font-bold tracking-widest">Sem tabelas ativas.</div>';
         return;
@@ -71,7 +78,7 @@ export function renderDashboard(onOpenTable, onOpenActions) {
         const balance = table.balance || 0;
         const isBalanceZero = Math.abs(balance) < 0.01;
         const bgColor = isBalanceZero ? 'bg-green-100/80' : 'bg-red-100/80';
-        
+
         const card = document.createElement('div');
         card.className = `card-table ${bgColor} border-2 border-gray-400 rounded-xl p-6 hover:shadow-xl transition-all relative cursor-pointer`;
         card.onclick = () => onOpenTable(table.id);
@@ -87,9 +94,9 @@ export function renderDashboard(onOpenTable, onOpenActions) {
                 <span class="font-bold text-[12px] ${balance > 0 ? 'text-red-700' : (balance < 0 ? 'text-blue-700' : 'text-gray-800')}">${formatMZN(balance)}</span>
             </div>
         `;
-        
+
         list.appendChild(card);
-        
+
         // Listener para ações da tabela
         const btn = card.querySelector(`#btn-actions-${table.id}`);
         btn.onclick = (e) => {
@@ -105,7 +112,7 @@ export function renderDashboard(onOpenTable, onOpenActions) {
 export function renderDashboardSummary() {
     const summaryEl = document.getElementById('dashboard-summary');
     if (!summaryEl) return;
-    
+
     const stats = state.tables.reduce((acc, table) => {
         const b = table.balance || 0;
         acc.total += b;
@@ -114,11 +121,11 @@ export function renderDashboardSummary() {
         else acc.credit++;
         return acc;
     }, { total: 0, debt: 0, credit: 0, zero: 0 });
-    
+
     const isTotalZero = Math.abs(stats.total) < 0.01;
     const bgClass = isTotalZero ? 'bg-green-50 border-green-200' : (stats.total > 0 ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200');
     const totalColor = stats.total > 0 ? 'text-red-700' : (stats.total < 0 ? 'text-blue-700' : 'text-gray-800');
-    
+
     summaryEl.innerHTML = `
         <div class="${bgClass} border-2 rounded-xl p-6 shadow-sm">
             <div class="flex flex-col md:flex-row justify-between items-center gap-6">
@@ -147,17 +154,17 @@ export function renderTableDetails(onEditContainer) {
     const tbody = document.getElementById('table-body');
     const footer = document.getElementById('footer-logic');
     if (!tbody || !footer) return;
-    
+
     tbody.innerHTML = '';
     footer.innerHTML = '';
-    
+
     let totalDuty = 0, totalFreight = 0, totalLiability = 0;
 
     state.containers.forEach((c) => {
         const duty = parseFloat(c.duty) || 0;
         const freight = parseFloat(c.freight) || 0;
         const diff = duty - freight;
-        
+
         totalDuty += duty;
         totalFreight += freight;
         totalLiability += diff;
@@ -201,7 +208,7 @@ export function renderTableDetails(onEditContainer) {
 
     const currentBalance = totalLiability - totalPaid;
     state.activeBalance = currentBalance; // Atualiza o estado global para uso no modal de pagamento
-    
+
     // Linha de Balanço Final
     const isCredit = currentBalance < 0;
     footer.innerHTML += `
@@ -259,7 +266,7 @@ export function renderFinanceDashboard(onDeleteGroup, onRemoveSheet, onMoveSheet
 function createFinanceGroupSection(group, sheets, onDelete, onRemoveSheet, onRename) {
     const section = document.createElement('div');
     section.className = "mb-8 border-b border-slate-100 pb-6";
-    
+
     section.innerHTML = `
         <div class="flex justify-between items-center mb-3 px-1">
             <div class="flex items-center gap-4">
@@ -290,7 +297,7 @@ function createFinanceGroupSection(group, sheets, onDelete, onRemoveSheet, onRen
 function createFinanceTable(sheets, onRemove) {
     const tableContainer = document.createElement('div');
     tableContainer.className = "bg-white border border-slate-700 rounded-lg overflow-hidden shadow-[3px_3px_0px_0px_rgba(15,23,42,0.1)]";
-    
+
     if (sheets.length === 0) {
         tableContainer.innerHTML = '<div class="p-6 text-center text-slate-300 uppercase font-black text-[9px] tracking-widest italic">Vazio - Mova folhas para aqui</div>';
         return tableContainer;
@@ -298,7 +305,7 @@ function createFinanceTable(sheets, onRemove) {
 
     const table = document.createElement('table');
     table.className = "w-full text-left border-collapse";
-    
+
     table.innerHTML = `
         <thead>
             <tr class="bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-700">
@@ -351,7 +358,7 @@ function createFinanceTable(sheets, onRemove) {
             </tr>
         </tfoot>
     `;
-    
+
     tableContainer.appendChild(table);
     return tableContainer;
 }
@@ -411,7 +418,7 @@ export function renderTeamDashboard(onOpenTable, onOpenActions) {
             <h3 class="font-bold text-xs uppercase tracking-widest text-gray-800">${table.name}</h3>
             <p class="text-[9px] text-gray-400 mt-1 uppercase font-bold">Relatório #${idx + 1}</p>
         `;
-        
+
         list.appendChild(card);
         const btn = card.querySelector(`#btn-team-actions-${table.id}`);
         btn.onclick = (e) => {
@@ -475,7 +482,7 @@ export function renderTeamTable(onEditRecord) {
 
         // Adicionar Linha Laranja (Somatório dos não pagos do grupo)
         tbody.appendChild(renderSumRow(groupUnpaid));
-        
+
         // Espaçador entre lotes (Cinza Transparente)
         const spacer = document.createElement('tr');
         spacer.className = "h-4 bg-gray-100/50";
@@ -607,7 +614,7 @@ export function renderTermDashboard(onOpenTable, onOpenActions) {
             <h3 class="font-bold text-xs uppercase tracking-widest text-gray-800">${table.name}</h3>
             <p class="text-[9px] text-gray-400 mt-1 uppercase font-bold">Relatório TERM #${idx + 1}</p>
         `;
-        
+
         list.appendChild(card);
         const btn = card.querySelector(`#btn-term-actions-${table.id}`);
         btn.onclick = (e) => {
@@ -626,7 +633,7 @@ export function renderTermTable(onEditRecord) {
     footer.innerHTML = '';
 
     const records = state.term.records;
-    
+
     let totals = {
         pending: 0,
         next: 0,
@@ -644,7 +651,7 @@ export function renderTermTable(onEditRecord) {
         if (r.status === 'PENDING') totals.pending += balance;
         else if (r.status === 'NEXT') totals.next += balance;
         else if (r.status === 'PAID') totals.paid += balance;
-        
+
         const tr = document.createElement('tr');
         let bgColor = '';
         if (r.status === 'PAID') bgColor = 'bg-green-400';
@@ -672,7 +679,7 @@ export function renderTermTable(onEditRecord) {
     // Identificar o mês dos pendentes para o label do rodapé
     const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
     let pendingMonthLabel = "MÊS";
-    
+
     if (records.length > 0) {
         const firstPending = records.find(r => r.status === 'PENDING' && r.eta);
         if (firstPending) {
@@ -734,14 +741,372 @@ export function renderTermSummary(total, pending, next) {
     `;
 }
 
-function formatDateDisplay(dateStr) {
-    if (!dateStr) return '';
-    // Extrair apenas a parte da data (YYYY-MM-DD) caso venha com hora (PocketBase format)
-    const pureDate = dateStr.split(' ')[0];
-    if (!pureDate.includes('-')) return dateStr;
-    
-    const [y, m, d] = pureDate.split('-');
-    if (!y || !m || !d) return dateStr;
-    return `${d}/${m}/${y}`;
+export function renderConfirmList(data, filterText = "") {
+    const container = document.getElementById('confirm-list-container');
+    if (!container) return;
+
+    container.innerHTML = '';
+    const columns = data[0];
+    const idCodeIdx = columns.findIndex(c => String(c).includes('ID CODE'));
+    const nameIdx = columns.findIndex(c => String(c).includes('NAME'));
+    const statusIdx = columns.findIndex(c => String(c).includes('CONFIRMATION'));
+    const dutyIdx = columns.findIndex(c => String(c).includes('DUTY'));
+    const freightIdx = columns.findIndex(c => String(c).includes('FRETE') || String(c).includes('FREIGHT'));
+    const noIdx = columns.findIndex(c => {
+        const h = String(c).toUpperCase();
+        return h === 'NO' || h === 'Nº' || h === 'NUMERO' || h.startsWith('NO.') || h.startsWith('Nº.');
+    });
+
+    let lastIdCode = '';
+    let lastName = '';
+    let lastNo = '';
+
+    const groupedClients = {};
+
+    let totalDuty = 0;
+    let totalFreight = 0;
+
+    // Processar merge cells visualmente e agrupar
+    for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row || row.length === 0) continue;
+
+        // Calcular Totais (independente de filtro)
+        if (dutyIdx !== -1) totalDuty += parseFloat(String(row[dutyIdx]).replace(/[^0-9.-]+/g, '')) || 0;
+        if (freightIdx !== -1) totalFreight += parseFloat(String(row[freightIdx]).replace(/[^0-9.-]+/g, '')) || 0;
+
+        let idCode = idCodeIdx !== -1 ? row[idCodeIdx] : '';
+        let name = nameIdx !== -1 ? row[nameIdx] : '';
+        let noValue = noIdx !== -1 ? row[noIdx] : '';
+
+        if (idCode && String(idCode).trim() !== '') lastIdCode = idCode;
+        else idCode = lastIdCode;
+
+        if (name && String(name).trim() !== '') lastName = name;
+        else name = lastName;
+
+        if (noValue && String(noValue).trim() !== '') lastNo = noValue;
+        else noValue = lastNo;
+
+
+        if (filterText) {
+            const searchStr = `${name} ${idCode}`.toLowerCase();
+            if (!searchStr.includes(filterText.toLowerCase())) continue;
+        }
+
+        const groupId = idCode || `NO_ID_${i}`;
+        if (!groupedClients[groupId]) {
+            groupedClients[groupId] = {
+                displayIdCode: idCode,
+                displayName: name,
+                no: noValue,
+                rows: [],
+                statuses: []
+            };
+        }
+
+
+        const rowStatus = row[statusIdx] || 'PENDENTE';
+        groupedClients[groupId].rows.push({
+            originalRow: row,
+            originalIndex: i,
+            status: rowStatus
+        });
+        groupedClients[groupId].statuses.push(rowStatus);
+    }
+
+    const groups = Object.values(groupedClients);
+
+    // Atualizar Barra de Totais
+    const totalsBar = document.getElementById('confirm-totals-bar');
+    if (totalsBar) {
+        totalsBar.classList.remove('hidden');
+        document.getElementById('confirm-total-clients').innerText = groups.length;
+        document.getElementById('confirm-total-duty').innerText = formatMZN(totalDuty);
+        document.getElementById('confirm-total-freight').innerText = formatMZN(totalFreight);
+    }
+
+    if (groups.length === 0) {
+        container.innerHTML = `<div class="col-span-full p-12 text-center text-gray-400 bg-white border-2 border-dashed border-gray-200 rounded-2xl font-bold uppercase">Nenhum cliente encontrado</div>`;
+        return;
+    }
+
+    container.innerHTML = '';
+
+    groups.forEach((client, idx) => {
+        const card = document.createElement('div');
+        card.className = "bg-white border border-gray-200 p-3 pt-8 pb-1.5 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all cursor-pointer group relative overflow-hidden";
+
+        // Agrupar status: se algum estiver pendente, o cliente está pendente
+        let clientStatus = 'PENDENTE';
+        if (client.statuses.every(s => s === 'CONFIRMADO')) clientStatus = 'CONFIRMADO';
+        else if (client.statuses.some(s => s === 'RE-VERIFICANDO')) clientStatus = 'RE-VERIFICANDO';
+        else if (client.statuses.some(s => s === 'SEM COMPROVATIVO' || s === 'COMPROVATIVO ERRADO')) clientStatus = 'COM ERROS';
+
+        let statusClass = "bg-gray-100 text-gray-500 border-r border-b border-gray-200";
+        if (clientStatus === 'CONFIRMADO') statusClass = "bg-green-500 text-white";
+        else if (clientStatus === 'RE-VERIFICANDO') statusClass = "bg-blue-500 text-white";
+        else if (clientStatus === 'COM ERROS') statusClass = "bg-red-500 text-white";
+
+        const rowCount = client.rows.length;
+
+        card.innerHTML = `
+            <!-- Top Left Badge (Client Number) -->
+            <div class="absolute top-0 left-0 px-3 py-1.5 bg-gray-100 text-black rounded-br-xl border-b border-r border-gray-200">
+                <span class="text-[12px] font-black">${idx + 1}</span>
+            </div>
+            
+            <!-- Top Right Badge (Status) -->
+            <div class="absolute top-0 right-0 px-2.5 py-1 ${statusClass} rounded-bl-xl">
+                <span class="text-[8px] font-black uppercase tracking-wider">${clientStatus}</span>
+            </div>
+
+            <div class="mt-3">
+                <h4 class="font-bold text-[11px] uppercase tracking-tight leading-tight text-gray-500 group-hover:text-black transition-colors pr-2">${client.displayName || 'Cliente Sem Nome'}</h4>
+                
+                <div class="flex justify-between items-end mt-0.5">
+                    <p class="text-[9px] font-bold uppercase text-gray-400 leading-none">${rowCount} ORDEM${rowCount > 1 ? 'S' : ''}</p>
+                    <div class="text-gray-400 group-hover:text-yellow-600 transition-all shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        card.onclick = () => showConfirmDetail(client);
+        container.appendChild(card);
+    });
 }
+
+export function showConfirmDetail(client) {
+    const nameEl = document.getElementById('confirm-client-detail-name');
+    const idEl = document.getElementById('confirm-client-detail-id');
+    const body = document.getElementById('confirm-client-orders');
+
+    if (nameEl) nameEl.innerText = client.displayName || 'Cliente Sem Nome';
+    if (idEl) idEl.innerText = `ID CODE: ${client.displayIdCode || '---'}`;
+    if (body) body.innerHTML = '';
+
+    const columns = state.confirm.columns;
+    const dutyIdx = columns.findIndex(c => String(c).includes('DUTY'));
+    const freightIdx = columns.findIndex(c => String(c).includes('FRETE') || String(c).includes('FREIGHT'));
+
+    client.rows.forEach(rowObj => {
+        const rowData = rowObj.originalRow;
+        const originalIndex = rowObj.originalIndex;
+        const status = rowObj.status;
+
+        const rowCard = document.createElement('div');
+        rowCard.className = "p-6 hover:bg-gray-50 transition-all group";
+
+        // Status Badge
+        let statusColor = "bg-gray-100 text-gray-500";
+        if (status === 'CONFIRMADO') statusColor = "bg-green-100 text-green-700";
+        else if (status === 'RE-VERIFICANDO') statusColor = "bg-blue-100 text-blue-700";
+        else if (status === 'SEM COMPROVATIVO') statusColor = "bg-red-100 text-red-700";
+
+        rowCard.innerHTML = `
+            <div class="flex justify-between items-start mb-4">
+                <span class="px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${statusColor}">${status}</span>
+                <span class="text-[9px] font-bold text-gray-300 uppercase">Ordem #${originalIndex}</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                    <p class="text-[8px] font-bold text-gray-400 uppercase mb-1">Total Duty</p>
+                    <p class="text-xs font-black text-black">${dutyIdx !== -1 ? formatMZN(parseFloat(String(rowData[dutyIdx]).replace(/[^0-9.-]+/g, '')) || 0) : 'MZN 0,00'}</p>
+                </div>
+                <div>
+                    <p class="text-[8px] font-bold text-gray-400 uppercase mb-1">Total Frete</p>
+                    <p class="text-xs font-black text-black">${freightIdx !== -1 ? formatMZN(parseFloat(String(rowData[freightIdx]).replace(/[^0-9.-]+/g, '')) || 0) : 'MZN 0,00'}</p>
+                </div>
+            </div>
+            <button onclick="window.onConfirmRow(${originalIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
+                class="w-full bg-black text-white py-3 rounded-xl font-bold uppercase text-[10px] tracking-widest hover:bg-gray-800 transition-all flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                VERIFICAR / CONFIRMAR PAGAMENTO
+            </button>
+        `;
+        body.appendChild(rowCard);
+    });
+
+    showView('view-confirm-client-detail');
+
+    // Abrir pasta automaticamente se existir número e nome
+    if (window.autoOpenClientFolder) {
+        // Usar a variável NO que agora extraímos corretamente
+        window.autoOpenClientFolder(client.no || '', client.displayName);
+    }
+
+}
+
+export function renderDriveFiles(files, currentFolderId) {
+    const container = document.getElementById('confirm-drive-files');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (!files || files.length === 0) {
+        container.innerHTML = `
+            <div class="p-8 text-center">
+                <p class="text-gray-400 italic mb-4">Nenhum ficheiro encontrado nesta pasta.</p>
+                <button onclick="window.triggerFileUpload('${currentFolderId}')" 
+                    class="bg-black text-white px-4 py-2 rounded-xl font-bold uppercase text-[9px] tracking-widest hover:bg-gray-800 transition-all flex items-center justify-center gap-2 mx-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    ADICIONAR SUPORTE
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    files.forEach(file => {
+        const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+        const div = document.createElement('div');
+        div.className = "flex items-center gap-3 p-2 border border-gray-200 rounded-lg hover:border-black transition-all bg-white cursor-pointer group";
+
+        div.onclick = (e) => {
+            if (isFolder) {
+                window.navigateToFolder(file.id);
+            } else {
+                window.showFilePreview(file);
+            }
+        };
+
+        const iconColor = isFolder ? 'text-blue-500' : 'text-gray-400';
+
+        div.innerHTML = `
+            <div class="${iconColor}">
+                ${isFolder ?
+                '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>' :
+                '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>'
+            }
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="font-bold truncate text-gray-700 group-hover:text-black text-xs">${file.name}</p>
+                <p class="text-[7px] text-gray-400 uppercase">${isFolder ? 'Pasta' : 'Documento'}</p>
+            </div>
+            
+            <div class="flex items-center gap-2">
+                ${!isFolder ? `
+                    <button onclick="event.stopPropagation(); window.confirmAndDeleteFile('${file.id}', '${file.name}', '${currentFolderId}')" 
+                        class="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all rounded-lg opacity-0 group-hover:opacity-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </button>
+                ` : ''}
+                <div class="text-gray-300 group-hover:text-black transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+            </div>
+        `;
+        container.appendChild(div);
+    });
+}
+
+/**
+ * Renderiza estado de erro/pasta não encontrada com opção de criar
+ */
+export function renderDriveError(message, folderName = null, parentId = null) {
+    const container = document.getElementById('confirm-drive-files');
+    if (!container) return;
+
+    let actionHtml = '';
+    if (folderName && parentId) {
+        actionHtml = `
+            <button onclick="window.handleCreateFolder('${folderName.replace(/'/g, "\\'")}', '${parentId}')" 
+                class="mt-4 bg-black text-white px-4 py-2 rounded-xl font-bold uppercase text-[9px] tracking-widest hover:bg-gray-800 transition-all flex items-center justify-center gap-2 mx-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+                CRIAR PASTA DO CLIENTE
+            </button>
+        `;
+    }
+
+    container.innerHTML = `
+        <div class="p-8 text-center">
+            <p class="text-gray-400 italic">${message}</p>
+            ${actionHtml}
+        </div>
+    `;
+}
+
+export function renderConfirmProjects(projects, isSearch = false) {
+    const container = document.getElementById('confirm-projects-list');
+    if (!container) return;
+
+    // Guardar no estado apenas se não for uma pesquisa (para manter a lista completa)
+    if (!isSearch) {
+        if (!state.confirm) state.confirm = {};
+        state.confirm.projects = projects;
+    }
+
+    container.innerHTML = '';
+
+    if (projects.length === 0) {
+        container.innerHTML = `
+            <div class="col-span-full py-20 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">Nenhum projeto gravado.</p>
+                <button onclick="openConfirmProjectModal()" class="mt-4 text-blue-600 font-bold uppercase text-[10px] hover:underline">+ Adicionar Primeiro Projeto</button>
+            </div>
+        `;
+        return;
+    }
+
+    projects.forEach(p => {
+        const card = document.createElement('div');
+        card.className = "bg-white border-2 border-gray-600 p-6 rounded-3xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all flex flex-col justify-between group";
+
+        card.innerHTML = `
+            <div>
+                <div class="bg-yellow-400 text-black w-10 h-10 rounded-xl flex items-center justify-center mb-4 shadow-sm font-bold">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                </div>
+                <h3 class="text-lg font-black uppercase tracking-tight mb-1 group-hover:text-yellow-600 transition-colors">${p.name}</h3>
+                <p class="text-[9px] font-bold text-gray-400 uppercase truncate">Sheet: ${p.sheetId}</p>
+            </div>
+            
+            <div class="mt-6 flex gap-2">
+                <button onclick="selectConfirmProject('${p.sheetId}', '${p.folderId}', '${p.name.replace(/'/g, "\\'")}')" 
+                    class="flex-1 bg-black text-white py-3 rounded-xl font-bold uppercase text-[10px] tracking-wider hover:bg-gray-800 transition-all">ENTRAR</button>
+                <button onclick="openConfirmProjectModal('${p.id}')" 
+                    class="w-12 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold flex items-center justify-center hover:bg-black hover:text-white transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </button>
+            </div>
+
+        `;
+        container.appendChild(card);
+    });
+}
+
+export function showFilePreview(file) {
+    const modal = document.getElementById('modal-file-preview');
+    const content = document.getElementById('preview-content');
+    const filenameEl = document.getElementById('preview-filename');
+    const downloadLink = document.getElementById('preview-download-link');
+
+    if (!modal || !content || !filenameEl) return;
+
+    filenameEl.innerText = file.name;
+    if (downloadLink) downloadLink.href = `/api/google/drive/file/${file.id}`;
+    content.innerHTML = '<div class="text-xs font-bold animate-pulse">A CARREGAR PRÉ-VISUALIZAÇÃO...</div>';
+
+    openModal('modal-file-preview');
+
+    const isImage = file.mimeType.startsWith('image/');
+    const isPDF = file.mimeType === 'application/pdf';
+
+    // Usar o visualizador oficial do Google Drive como solicitado
+    const previewUrl = `https://drive.google.com/file/d/${file.id}/preview`;
+
+    if (isImage || isPDF) {
+        content.innerHTML = `<iframe src="${previewUrl}" class="w-full h-full border-0 rounded-lg" allow="autoplay"></iframe>`;
+    } else {
+        // Fallback para outros ficheiros (abre em nova aba ou mostra link)
+        content.innerHTML = `
+            <div class="text-center p-10 bg-white rounded-2xl shadow-sm border border-gray-100">
+                <p class="text-xs font-bold text-gray-500 mb-4 uppercase">Pré-visualização indisponível para este tipo de ficheiro.</p>
+                <a href="${file.webViewLink}" target="_blank" class="inline-block bg-black text-white px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest">ABRIR NO GOOGLE DRIVE</a>
+            </div>
+        `;
+    }
+};
 
