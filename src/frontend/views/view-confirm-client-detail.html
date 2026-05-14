@@ -1,0 +1,116 @@
+<div id="view-confirm-client-detail" class="max-w-7xl mx-auto hidden pb-20 px-4">
+            <!-- Breadcrumb Path -->
+            <div id="confirm-breadcrumb" class="flex items-center gap-2 text-xs font-black uppercase text-gray-400 mb-8 tracking-widest">
+                <!-- Populado via JS -->
+            </div>
+
+            
+            <div id="confirm-detail-header-text" class="hidden flex flex-col md:flex-row justify-between items-start gap-4">
+                <div>
+                    <h2 id="confirm-client-detail-name" class="text-3xl font-black uppercase tracking-tighter leading-none mb-1">CLIENTE</h2>
+                    <p id="confirm-client-detail-id" class="text-xs font-bold text-gray-400 uppercase tracking-widest">ID CODE: ---</p>
+                </div>
+            </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <!-- Ordens / Linhas do GSheet -->
+            <div class="lg:col-span-3 space-y-6">
+                <!-- Conteúdo da Tabela e Modal renderizados via JS -->
+                <div id="confirm-client-orders">
+                    <!-- Linhas do cliente aqui -->
+                </div>
+
+                <!-- Modal de Edição (Escondido por Padrão) -->
+                <div id="confirm-edit-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center p-4 z-[9999]">
+                    <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
+                        <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <h2 id="modal-title" class="text-xl font-bold text-slate-800">Ajustar Dados da Ordem</h2>
+                            <button onclick="ui.closeConfirmEditModal()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+                        
+                        <form id="confirm-edit-order-form" onsubmit="ui.saveConfirmOrderEdit(event)" class="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                            <input type="hidden" id="edit-index" value="">
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Order Number</label>
+                                    <input type="text" id="edit-orderNumber" required="" class="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 focus:outline-blue-500" readonly="">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">CBM</label>
+                                    <input type="number" id="edit-cbm" step="0.01" required="" oninput="ui.calculateConfirmDuty()" class="w-full p-2 border border-slate-300 rounded-lg text-sm focus:outline-blue-500">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Unit Duty (Cálculo)</label>
+                                    <input type="number" id="edit-unitDuty" step="0.01" oninput="ui.calculateConfirmDuty()" class="w-full p-2 border border-slate-300 rounded-lg text-sm focus:outline-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Duty Prepaid</label>
+                                    <input type="number" id="edit-dutyPrepaid" step="0.01" class="w-full p-2 border border-slate-300 rounded-lg text-sm focus:outline-blue-500">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1 text-blue-600">Amount Duty</label>
+                                    <input type="number" id="edit-amountDuty" step="0.01" readonly="" class="w-full p-2 border border-blue-100 rounded-lg text-sm bg-blue-50 font-bold">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1 text-green-600">Paid</label>
+                                    <input type="number" id="edit-paid" step="0.01" required="" oninput="ui.calculateConfirmDuty()" class="w-full p-2 border border-green-200 rounded-lg text-sm font-bold focus:outline-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1 text-red-600">Balance</label>
+                                    <input type="number" id="edit-balance" step="0.01" readonly="" class="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-bold">
+                                </div>
+                            </div>
+
+                            <div class="pt-4 flex gap-3 justify-end sticky bottom-0 bg-white border-t border-slate-100">
+                                <button type="button" onclick="ui.closeConfirmEditModal()" class="px-6 py-2 rounded-lg text-slate-600 font-medium hover:bg-slate-100">Cancelar</button>
+                                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2 rounded-lg font-medium shadow-sm">Salvar Alterações</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Toast Notificação -->
+                <div id="confirm-toast" class="fixed bottom-4 right-4 bg-slate-800 text-white px-6 py-3 rounded-xl shadow-2xl transition-all translate-y-20 opacity-0 z-[10000]">
+                    Ação realizada com sucesso!
+                </div>
+            </div>
+
+            <!-- Coluna Lateral: SUPORTES DRIVE -->
+            <div class="space-y-6">
+                <div class="bg-white border border-gray-200 p-6 rounded-3xl shadow-sm sticky top-4">
+                    <div class="flex items-center justify-between mb-6">
+                        <h4 class="font-black uppercase text-xs flex items-center gap-2 text-gray-700">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            SUPORTES DRIVE
+                        </h4>
+                        <div class="flex items-center gap-2">
+                            <button onclick="driveGoHome()" class="text-[9px] font-black uppercase bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white transition-all flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                                ROOT
+                            </button>
+                            <button onclick="driveGoBack()" class="text-[9px] font-black uppercase bg-gray-100 px-3 py-1.5 rounded-lg hover:bg-black hover:text-white transition-all flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                                VOLTAR
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" id="input-confirm-drive-id">
+                    <input type="file" id="input-confirm-drive-upload" class="hidden" onchange="window.handleFileUpload(this)">
+                    
+                    <div id="confirm-drive-files" class="space-y-2 overflow-y-auto max-h-[60vh] text-[10px] pr-2 custom-scrollbar">
+                        <div class="p-4 text-center text-xs font-bold text-gray-300 uppercase italic">A carregar suportes...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

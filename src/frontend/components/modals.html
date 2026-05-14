@@ -1,0 +1,526 @@
+<div id="loader" class="fixed inset-0 loading-overlay flex items-center justify-center hidden">
+        <div class="flex flex-col items-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
+            <p class="mt-4 text-xs font-bold uppercase tracking-widest text-black">A processar pedido...</p>
+        </div>
+    </div>
+<div id="table-actions" class="fixed bottom-8 right-8 flex flex-col gap-3 hidden">
+        <button onclick="openPaymentModal()" title="Quitar Balanço" class="fab bg-green-600 text-white w-14 h-14 rounded-full flex items-center justify-center active:scale-90">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="2" y1="10" x2="22" y2="10"></line>
+            </svg>
+        </button>
+        <button onclick="openContainerModal()" title="Novo Contentor" class="fab bg-black text-white w-14 h-14 rounded-full flex items-center justify-center active:scale-90">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+        </button>
+    </div>
+<div id="modal-file-preview" class="modal-bg fixed inset-0 z-[150] hidden flex items-center justify-center p-4 backdrop-blur-md">
+        <div class="bg-white w-full max-w-4xl h-[90vh] rounded-3xl shadow-2xl border border-gray-200 text-black flex flex-col overflow-hidden scale-in">
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 id="preview-filename" class="font-black uppercase text-xs truncate pr-4 text-gray-700">PRÉ-VISUALIZAÇÃO</h3>
+                <div class="flex gap-2">
+                    <button id="btn-ocr-extract" class="hidden bg-purple-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-purple-700 transition-all text-xs flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M7 21h10"></path><path d="M12 21V3"></path><path d="M7 3h10"></path></svg>
+                        COPIAR TEXTO (OCR)
+                    </button>
+                    <a id="preview-download-link" href="#" target="_blank" class="bg-black text-white px-4 py-2 rounded-xl font-bold hover:bg-gray-800 transition-all text-xs flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        ABRIR ORIGINAL
+                    </a>
+                    <button onclick="closeModal('modal-file-preview')" class="bg-white border border-gray-200 px-4 py-2 rounded-xl font-bold hover:bg-red-50 hover:text-red-600 transition-all text-xs">FECHAR</button>
+                </div>
+            </div>
+            <div id="preview-content" class="flex-1 bg-gray-100 flex items-center justify-center overflow-auto p-4">
+                <!-- Conteúdo do ficheiro será inserido aqui -->
+            </div>
+        </div>
+    </div>
+<div id="modal-new-table" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl text-black">
+                <h3 class="font-bold uppercase text-xs" id="modal-table-title">Nova Tabela de Registo</h3>
+                <button onclick="closeModal('modal-new-table')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome da Referência</label>
+                    <input type="text" id="input-table-name" placeholder="Ex: Carga Abril 2024" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
+                <button id="modal-table-submit" onclick="createNewTable()" class="w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-xs hover:bg-gray-800 transition-all">Criar
+                    Tabela</button>
+            </div>
+        </div>
+    </div>
+
+<div id="modal-container" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600 text-black">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl">
+                <h3 class="font-bold uppercase text-xs" id="modal-container-title">Registo de Contentor</h3>
+                <button onclick="closeModal('modal-container')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="edit-id">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">ID / Número</label>
+                    <input type="text" id="input-id" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg text-center text-lg uppercase">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[9px] font-bold uppercase mb-1 text-gray-400">Duty China</label>
+                        <input type="number" id="input-duty" class="w-full p-2 border-2 border-gray-100 focus:border-black outline-none rounded-lg text-center">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-bold uppercase mb-1 text-gray-400">Freight MOZ</label>
+                        <input type="number" id="input-freight" class="w-full p-2 border-2 border-gray-100 focus:border-black outline-none rounded-lg text-center">
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
+                <button onclick="saveContainer()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs">Guardar</button>
+                <button id="btn-delete" onclick="deleteContainer()" class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs">Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+<div id="modal-payment" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600 text-black">
+            <div class="p-4 border-b border-gray-400 bg-green-50 flex justify-between items-center rounded-t-xl">
+                <h3 class="font-bold uppercase text-xs text-green-800">Registo de Pagamento</h3>
+                <button onclick="closeModal('modal-payment')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-4 text-center">
+                <div>
+                    <p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest mb-1" id="balance-label">
+                        Saldo Disponível</p>
+                    <p class="text-xl font-bold" id="current-balance-display">MZN 0,00</p>
+                </div>
+                <div class="pt-2 border-t border-gray-100 text-left space-y-3">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500" id="payment-amount-label">Valor a Pagar</label>
+                        <input type="number" id="input-pay-amount" step="0.01" min="0.01" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-center text-lg" placeholder="0,00">
+                        <p class="text-[8px] text-gray-400 mt-1 italic" id="payment-hint">Insira valor parcial ou deixe
+                            para pagar total</p>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Data da
+                            Transação</label>
+                        <input type="date" id="input-pay-date" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold">
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-black rounded-b-xl flex gap-2">
+                <button onclick="confirmPayment()" class="flex-1 bg-green-700 text-white py-4 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95">Registrar
+                    Pagamento</button>
+                <button onclick="confirmPaymentFull()" class="flex-1 bg-blue-700 text-white py-4 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95" id="pay-full-button">Pagar Total</button>
+            </div>
+        </div>
+    </div>
+<div id="modal-finance-group" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl text-black">
+                <h3 class="font-bold uppercase text-[10px]" id="modal-finance-group-title">Novo Grupo Financeiro</h3>
+                <button onclick="closeModal('modal-finance-group')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6">
+                <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome do Grupo</label>
+                <input type="text" id="input-finance-group-name" placeholder="Ex: Semana 1 - Importações" class="w-full p-4 border-2 border-gray-100 focus:border-black outline-none rounded-xl font-bold text-black uppercase text-sm">
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
+                <button onclick="saveFinanceGroup()" class="w-full bg-black text-white py-4 rounded-xl font-bold uppercase text-[10px] shadow-lg active:scale-95">Criar
+                    Grupo</button>
+            </div>
+        </div>
+    </div>
+
+<div id="modal-finance-sheet" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border-2 border-gray-600">
+            <div class="p-5 border-b border-gray-200 bg-gray-50 flex justify-between items-center rounded-t-2xl text-black">
+                <h3 class="font-black uppercase text-xs tracking-widest">Adicionar Nova Folha</h3>
+                <button onclick="closeModal('modal-finance-sheet')" class="font-bold p-1 hover:rotate-90 transition-transform">✕</button>
+            </div>
+            <div class="p-8 space-y-6">
+                <div>
+                    <label class="block text-[10px] font-bold uppercase mb-2 text-gray-400 tracking-widest">Link do
+                        Google Sheets ou Excel Online</label>
+                    <input type="url" id="input-finance-sheet-url" placeholder="https://docs.google.com/spreadsheets/d/..." class="w-full p-4 border-2 border-gray-100 focus:border-black outline-none rounded-xl text-xs font-medium text-black transition-all">
+                    <p class="text-[9px] text-gray-400 mt-2 italic">* Certifique-se de que o link é público ou 'Qualquer
+                        pessoa com o link'.</p>
+                </div>
+            </div>
+            <div class="p-5 bg-gray-50 border-t border-gray-200 rounded-b-2xl">
+                <button onclick="addFinanceSheet()" class="w-full bg-black text-white py-4 rounded-xl font-black uppercase text-[10px] shadow-xl hover:bg-gray-800 transition-all active:scale-95">Vincular
+                    e Extrair Dados</button>
+            </div>
+        </div>
+    </div>
+<div id="modal-team-table" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl text-black">
+                <h3 class="font-bold uppercase text-xs">Novo Relatório de Equipes</h3>
+                <button onclick="closeModal('modal-team-table')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6">
+                <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome do Relatório</label>
+                <input type="text" id="input-team-table-name" placeholder="Ex: Relatório Março 2025" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
+                <button onclick="createTeamTable()" class="w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-xs">Criar
+                    Relatório</button>
+            </div>
+        </div>
+    </div>
+<div id="modal-team-record" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-2xl rounded-xl shadow-xl border-2 border-gray-600 text-black">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl">
+                <h3 class="font-bold uppercase text-xs" id="team-record-modal-title">Registo de Contentor (Equipes)</h3>
+                <button onclick="closeModal('modal-team-record')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-6">
+                <input type="hidden" id="team-record-id">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">Contentor ID</label>
+                        <input type="text" id="input-team-container-id" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">Lote / Grupo</label>
+                        <select id="select-team-group" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold bg-white"></select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Equipe INTERNA -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-black text-xs uppercase text-slate-400 tracking-widest">Interna</h4>
+                            <div class="flex gap-1">
+                                <button onclick="document.getElementById('team-val-interna').value='115000'" class="px-2 py-0.5 bg-gray-200 hover:bg-black hover:text-white rounded text-[8px] font-bold transition-all">115K</button>
+                                <button onclick="document.getElementById('team-val-interna').value='105000'" class="px-2 py-0.5 bg-gray-200 hover:bg-black hover:text-white rounded text-[8px] font-bold transition-all">105K</button>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-interna" placeholder="Valor" class="p-2 border border-gray-200 rounded text-xs font-bold">
+                            <input type="date" id="team-month-interna" class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-interna" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                    <!-- Equipe MAPUTO -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Maputo</h4>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-maputo" placeholder="Valor" class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="date" id="team-month-maputo" class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-maputo" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                    <!-- Equipe MATOLA -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Matola</h4>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-matola" placeholder="Valor" class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="date" id="team-month-matola" class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-matola" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                    <!-- Equipe TERMOS -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Termos</h4>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-termos" placeholder="Valor" class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="date" id="team-month-termos" class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-termos" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
+                <button onclick="saveTeamRecord()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Guardar
+                    Registo</button>
+                <button id="btn-team-record-delete" onclick="deleteTeamRecord()" class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Eliminar</button>
+            </div>
+        </div>
+    </div>
+<div id="modal-term-table" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-xl shadow-xl border-2 border-gray-600">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl text-black">
+                <h3 class="font-bold uppercase text-xs">Novo Relatório TERM</h3>
+                <button onclick="closeModal('modal-term-table')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6">
+                <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome do Relatório</label>
+                <input type="text" id="input-term-table-name" placeholder="Ex: Termos de Carga Março" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
+                <button onclick="createTermTable()" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold uppercase text-xs">Criar
+                    Relatório</button>
+            </div>
+        </div>
+    </div>
+<div id="modal-term-record" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-lg rounded-xl shadow-xl border-2 border-gray-600 text-black">
+            <div class="p-4 border-b border-gray-400 bg-gray-100 flex justify-between items-center rounded-t-xl">
+                <h3 class="font-bold uppercase text-xs" id="term-record-modal-title">Registo de Contentor (TERM)</h3>
+                <button onclick="closeModal('modal-term-record')" class="font-bold p-1">✕</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="term-record-id">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">Contentor ID</label>
+                        <input type="text" id="input-term-container-id" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg uppercase">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">ETA</label>
+                        <input type="date" id="input-term-eta" onchange="handleTermDateChange()" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">TCS</label>
+                        <input type="number" id="input-term-tcs" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold uppercase mb-1 text-gray-500">UNIT</label>
+                        <input type="number" id="input-term-unit" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase mb-1 text-gray-500">Status</label>
+                    <select id="select-term-status" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-bold bg-white">
+                        <option value="PENDING">PENDING</option>
+                        <option value="NEXT">NEXT</option>
+                        <option value="PAID">PAID</option>
+                    </select>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
+                <button onclick="saveTermRecord()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Guardar
+                    Registo</button>
+                <button id="btn-term-record-delete" onclick="deleteTermRecord()" class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Eliminar</button>
+            </div>
+        </div>
+    </div>
+    <!-- Modal de Filtro de Pagamentos (Reconciliação Bancária) -->
+    <div id="payment-mini-filter" class="modal-bg fixed inset-0 z-[130] hidden flex items-center justify-center p-4 backdrop-blur-md">
+        <div id="mini-filter-container" class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex transition-all duration-300 scale-in border border-gray-200">
+            
+            <!-- Coluna Principal (Filtro) -->
+            <div class="flex-1 flex flex-col min-w-0">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                    <div class="flex items-center gap-4">
+                        <h2 class="text-xl font-black text-slate-800 uppercase tracking-tighter">Vincular Pagamento</h2>
+                        <button onclick="ui.toggleMiniFilterDrive()" class="text-[9px] font-black uppercase bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-600 hover:text-white transition-all flex items-center gap-1 shadow-sm border border-blue-100">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            VER COMPROVATIVOS
+                        </button>
+                    </div>
+                    <button onclick="ui.closePaymentMiniFilter()" class="text-slate-400 hover:text-red-600 transition-colors p-2 rounded-full hover:bg-red-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
+                
+                <div class="p-6 overflow-y-auto custom-scrollbar flex-1 flex flex-col bg-white">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Reconciliação Bancária</p>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 shrink-0">
+                        <div>
+                            <label class="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Banco</label>
+                            <select id="mini-filter-bank" class="w-full p-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" onchange="ui.searchPaymentMiniFilter()">
+                                <option value="">Qualquer Banco</option>
+                                <option value="BIM">BIM</option>
+                                <option value="BCI">BCI</option>
+                                <option value="STB">STB</option>
+                                <option value="NED">NED</option>
+                                <option value="M-PESA">M-PESA</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Valor Exato (MZN)</label>
+                            <input id="mini-filter-amount" type="number" step="0.01" placeholder="Ex: 5000" class="w-full p-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" oninput="ui.searchPaymentMiniFilter()" />
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Termo (Ref / Desc)</label>
+                            <div class="relative">
+                                <input id="mini-filter-search" type="text" placeholder="Pesquisar..." class="w-full pl-10 pr-3 py-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" oninput="ui.searchPaymentMiniFilter()" />
+                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="overflow-x-auto border-2 border-slate-50 rounded-2xl flex-1 max-h-[40vh] custom-scrollbar shadow-inner">
+                        <table class="w-full text-left text-xs text-slate-600 relative">
+                            <thead class="bg-slate-50 text-[9px] uppercase font-black text-slate-400 sticky top-0 z-10">
+                                <tr>
+                                    <th class="px-4 py-4 border-b border-slate-100">Data</th>
+                                    <th class="px-4 py-4 border-b border-slate-100">Banco</th>
+                                    <th class="px-4 py-4 border-b border-slate-100">Descrição / Ref</th>
+                                    <th class="px-4 py-4 border-b border-slate-100 text-right">Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mini-filter-results" class="divide-y divide-slate-50">
+                                <!-- Resultados injetados via JS -->
+                            </tbody>
+                        </table>
+                        <div id="mini-filter-empty" class="hidden p-12 text-center text-slate-300 text-xs font-bold uppercase tracking-widest italic">Nenhum pagamento encontrado.</div>
+                    </div>
+    
+                    <!-- Alocação e Status -->
+                    <div class="mt-6 p-6 bg-blue-50 rounded-2xl border border-blue-100 shrink-0">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="block text-[9px] font-black text-blue-800 uppercase tracking-wider mb-2">Valor a Alocar</label>
+                                <div class="relative">
+                                    <span class="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 font-black text-xs">MZN</span>
+                                    <input id="mini-filter-allocate-amount" type="number" step="0.01" class="w-full pl-14 pr-4 py-4 border-2 border-blue-200 rounded-xl text-xl font-black text-blue-900 focus:bg-white outline-none transition-all shadow-sm" placeholder="0.00">
+                                </div>
+                                <div class="text-[9px] font-black text-blue-400 uppercase tracking-tighter mt-2 flex justify-between">
+                                    <span>Disponível no Pagamento:</span>
+                                    <span id="mini-filter-max-available" class="text-blue-700 font-black">0.00</span>
+                                </div>
+                            </div>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-[9px] font-black text-blue-800 uppercase tracking-wider mb-2">Novo Estado (GSheet)</label>
+                                    <select id="mini-filter-status" onchange="document.getElementById('mini-filter-comment-container').classList.toggle('hidden', this.value === 'CONFIRMADO')" class="w-full p-4 border-2 border-blue-200 rounded-xl text-xs font-black text-blue-900 focus:bg-white outline-none transition-all bg-white shadow-sm uppercase">
+                                        <option value="CONFIRMADO">✅ CONFIRMADO</option>
+                                        <option value="RE-VERIFICANDO">🔍 RE-VERIFICANDO</option>
+                                        <option value="SEM COMPROVATIVO">❌ SEM COMPROVATIVO</option>
+                                        <option value="COMPROVATIVO ERRADO">⚠️ COMPROVATIVO ERRADO</option>
+                                        <option value="PENDENTE">⏳ PENDENTE</option>
+                                    </select>
+                                </div>
+                                <div id="mini-filter-comment-container" class="hidden">
+                                    <label class="block text-[9px] font-black text-blue-800 uppercase tracking-wider mb-2">Comentário / Observação</label>
+                                    <textarea id="mini-filter-comment" placeholder="Adicione uma nota se necessário..." 
+                                        class="w-full p-4 border-2 border-blue-200 rounded-xl text-xs font-bold text-blue-900 focus:bg-white outline-none transition-all bg-white shadow-sm min-h-[80px]"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+    
+                <div class="p-6 flex gap-3 justify-end bg-gray-50 border-t border-gray-100 shrink-0">
+                    <button onclick="ui.closePaymentMiniFilter()" class="px-6 py-3 rounded-xl text-[10px] font-black uppercase text-slate-400 hover:text-slate-600 transition-colors">Cancelar</button>
+                    <button onclick="ui.confirmPaymentSelection()" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl text-[10px] font-black uppercase shadow-lg shadow-blue-200 transition-all active:scale-95">Confirmar Vínculo</button>
+                </div>
+            </div>
+
+            <!-- Coluna Drive (Suportes) -->
+            <div id="mini-filter-drive-side" class="w-0 bg-slate-50 border-l border-gray-100 transition-all duration-300 overflow-hidden flex flex-col">
+                <div class="p-4 border-b border-gray-200 bg-white flex justify-between items-center shrink-0">
+                    <h4 class="text-[9px] font-black uppercase text-slate-400 tracking-widest">Suportes Drive</h4>
+                    <button onclick="ui.toggleMiniFilterDrive()" class="text-slate-400 hover:text-black transition-all p-1">✕</button>
+                </div>
+                <div id="mini-filter-drive-content" class="p-4 overflow-y-auto flex-1 custom-scrollbar">
+                    <div class="text-center py-20 text-slate-300 text-[9px] font-black uppercase tracking-widest italic">A carregar...</div>
+                </div>
+            </div>
+
+            <!-- Contexto Oculto -->
+            <input type="hidden" id="mini-filter-combined-info" value="">
+        </div>
+    </div>
+
+    <div id="modal-confirm-detail" class="modal-bg fixed inset-0 z-[110] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-2xl rounded-2xl shadow-2xl border border-gray-200 text-black overflow-hidden scale-in">
+            <div id="confirm-detail-header" class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <div>
+                    <h3 id="detail-client-name" class="text-xl font-black uppercase tracking-tight">NOME DO CLIENTE</h3>
+                    <p id="detail-client-id" class="text-xs font-bold text-gray-500 mt-1">ID CODE: XXX</p>
+                </div>
+                <button onclick="closeModal('modal-confirm-detail')" class="bg-white border border-gray-200 p-2 rounded-lg font-bold hover:bg-gray-100 text-gray-500 hover:text-black transition-all">✕</button>
+            </div>
+            
+            <div class="p-6 max-h-[70vh] overflow-y-auto">
+                <div id="confirm-detail-body" class="flex flex-col gap-6 mb-4">
+                    <!-- Registos agrupados do cliente -->
+                </div>
+            </div>
+        </div>
+    </div>
+<div id="modal-confirm-project" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border-4 border-black text-black scale-in">
+            <div class="p-6">
+                <button onclick="closeModal('modal-confirm-project')" class="float-right font-bold bg-gray-50 px-2 py-1 rounded">✕</button>
+                <h3 id="confirm-project-modal-title" class="text-xl font-black uppercase mb-6">NOVO PROJETO</h3>
+                
+                <input type="hidden" id="input-project-id">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400">Nome do Projeto</label>
+                        <input type="text" id="input-project-name" placeholder="Ex: Conferência Abril" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-bold text-xs bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400">ID da Folha (Google Sheet)</label>
+                        <input type="text" id="input-project-sheet-id" placeholder="1_xxx..." class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-bold text-xs bg-gray-50">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-400">ID da Pasta (Google Drive)</label>
+                        <input type="text" id="input-project-drive-id" placeholder="1x_xxx..." class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-bold text-xs bg-gray-50">
+                    </div>
+
+                    <div class="pt-4 flex gap-2">
+                        <button onclick="saveConfirmProject()" class="flex-1 bg-black text-white py-4 rounded-xl font-bold uppercase text-[10px] shadow-lg active:scale-95 transition-all">GRAVAR PROJETO</button>
+                    </div>
+                    <div id="confirm-project-delete-container" class="hidden">
+                        <button onclick="deleteConfirmProject()" class="w-full text-red-500 font-bold uppercase text-[8px] hover:underline mt-2">Eliminar Projeto</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+<div id="modal-confirm-action" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-xl border border-gray-200 text-black scale-in">
+            <div class="p-6">
+                <button onclick="closeModal('modal-confirm-action')" class="float-right font-bold text-gray-400 hover:text-black bg-gray-50 px-2 py-1 rounded">✕</button>
+                <h3 class="text-lg font-black uppercase mb-6 text-gray-800">REGISTAR CONFIRMAÇÃO</h3>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Estado da Confirmação</label>
+                        <select id="select-confirm-status" onchange="document.getElementById('input-confirm-comment-container').classList.toggle('hidden', this.value === 'CONFIRMADO')" class="w-full p-3 border border-gray-200 rounded-lg font-bold bg-gray-50 outline-none focus:ring-2 focus:ring-yellow-400">
+                            <option value="PENDENTE">⏳ PENDENTE</option>
+                            <option value="CONFIRMADO">✅ CONFIRMADO</option>
+                            <option value="RE-VERIFICANDO">🔍 RE-VERIFICANDO</option>
+                            <option value="SEM COMPROVATIVO">❌ SEM COMPROVATIVO</option>
+                            <option value="COMPROVATIVO ERRADO">⚠️ COMPROVATIVO ERRADO</option>
+                        </select>
+                    </div>
+
+                    <div id="input-confirm-comment-container" class="hidden">
+                        <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Comentário / Observação (GSheet)</label>
+                        <textarea id="input-confirm-comment" placeholder="Ex: Comprovativo ilegível..." 
+                            class="w-full p-3 border border-gray-200 rounded-lg font-bold bg-gray-50 outline-none focus:ring-2 focus:ring-yellow-400 text-xs min-h-[60px]"></textarea>
+                    </div>
+                    
+                    <div id="payment-dates-inputs" class="space-y-3 pt-2">
+                        <!-- Inputs de data gerados -->
+                    </div>
+
+                    <div class="pt-6 flex gap-2">
+                        <button onclick="saveConfirmToSheet()" class="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 py-3.5 rounded-xl font-bold uppercase text-[10px] shadow-sm transition-all">GRAVAR NO GSHEET</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

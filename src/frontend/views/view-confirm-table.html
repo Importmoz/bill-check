@@ -1,0 +1,61 @@
+<div id="view-confirm-table" class="max-w-[95%] mx-auto hidden pb-20">
+        <div class="flex flex-col md:flex-row gap-6">
+            <!-- Lista de Clientes (GSheet) -->
+            <div class="flex-1">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-8 px-4 gap-4">
+                    <div class="flex flex-col gap-1">
+                        <button onclick="showConfirm()" class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="19" y1="12" x2="5" y2="12"></line>
+                                <polyline points="12 19 5 12 12 5"></polyline>
+                            </svg>
+                            Configuração
+                        </button>
+                        <h2 id="confirm-project-active-name" class="text-2xl font-black uppercase tracking-tighter">CONFIRM</h2>
+                    </div>
+
+                    <!-- Totais Rápidos -->
+                    <div id="confirm-totals-bar" class="hidden flex gap-4 bg-gray-50 p-2 rounded-2xl border border-gray-100">
+                        <div class="px-4 py-2">
+                            <p class="text-[8px] font-bold text-gray-400 uppercase text-center">Total Clientes</p>
+                            <p id="confirm-total-clients" class="text-xs font-black text-black text-center">0</p>
+                        </div>
+                        <div class="w-[1px] bg-gray-200"></div>
+                        <div class="px-4 py-2">
+                            <p class="text-[8px] font-bold text-gray-400 uppercase">Total Duty</p>
+                            <p id="confirm-total-duty" class="text-xs font-black text-black">MZN 0,00</p>
+                        </div>
+
+                    </div>
+
+                    
+                    <!-- Barra de Pesquisa e Filtro de Status -->
+                    <div class="flex flex-col md:flex-row gap-4 w-full max-w-2xl">
+                        <div class="relative flex-1">
+                            <input type="text" id="input-confirm-search" oninput="handleConfirmSearch()" placeholder="PESQUISAR CLIENTE OU ID..." class="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl font-bold text-xs outline-none focus:bg-yellow-50 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm transition-all">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            </span>
+                        </div>
+                        
+                        <div class="w-full md:w-64">
+                            <select id="confirm-status-filter" onchange="handleConfirmSearch()" class="w-full px-4 py-3 border border-gray-200 rounded-xl font-bold text-xs outline-none focus:bg-yellow-50 focus:border-yellow-400 focus:ring-2 focus:ring-yellow-100 shadow-sm transition-all bg-white">
+                                <option value="TODOS">TODOS OS STATUS</option>
+                                <option value="PENDENTE" selected="">⏳ PENDENTE</option>
+                                <option value="AGUARDA PAGAMENTO">💸 AGUARDA PAGAMENTO</option>
+                                <option value="CONFIRMADO">✅ CONFIRMADO</option>
+                                <option value="RE-VERIFICANDO">🔍 RE-VERIFICANDO</option>
+                                <option value="SEM COMPROVATIVO">❌ SEM COMPROVATIVO</option>
+                                <option value="COMPROVATIVO ERRADO">⚠️ COMPROVATIVO ERRADO</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contentor da Lista de Cards -->
+                <div id="confirm-list-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 px-4">
+                    <!-- Cards de Clientes Dinâmicos -->
+                </div>
+            </div>
+        </div>
+    </div>

@@ -1,0 +1,66 @@
+<div id="view-bank-dashboard" class="max-w-7xl mx-auto hidden pb-20 px-4">
+        <div class="flex justify-between items-center mb-12">
+            <div>
+                <button onclick="showHub()" class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase leading-none">Extractos Bancários</h1>
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1">Controlo de Entradas e Reconciliação</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="document.getElementById('input-bank-upload').click()" class="bg-purple-600 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase flex items-center gap-2 hover:bg-purple-700 shadow-lg shadow-purple-200 transition-all active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    Importar Extrato
+                </button>
+                <input type="file" id="input-bank-upload" class="hidden" accept=".xlsx,.xls" onchange="ui.handleBankUpload(this)">
+            </div>
+        </div>
+
+        <!-- Filtros e Controlo -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+             <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm col-span-3">
+                <div class="flex items-center gap-4 mb-6">
+                    <div class="relative flex-1">
+                        <input type="text" id="input-bank-search" oninput="ui.refreshBankData()" placeholder="Pesquisar por descrição ou ordem (HF...)" class="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl font-bold text-xs outline-none focus:ring-2 focus:ring-purple-200 transition-all">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        </span>
+                    </div>
+                    <select id="select-bank-filter" onchange="ui.refreshBankData()" class="bg-gray-50 border-none rounded-xl font-bold text-xs p-3 outline-none focus:ring-2 focus:ring-purple-200">
+                        <option value="">TODOS OS BANCOS</option>
+                        <option value="BIM">BIM</option>
+                        <option value="BCI">BCI</option>
+                        <option value="STB">STB</option>
+                        <option value="NEDBANK">NEDBANK</option>
+                    </select>
+                </div>
+                
+                <div id="bank-incomes-container" class="overflow-x-auto min-h-[400px]">
+                    <!-- Tabela de Movimentos -->
+                    <div class="flex flex-col items-center justify-center py-20 text-gray-300">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mb-4 opacity-20"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                        <p class="text-xs font-bold uppercase tracking-widest italic">Nenhum dado importado</p>
+                    </div>
+                </div>
+             </div>
+
+             <div class="space-y-6">
+                <!-- Resumo por Titular -->
+                <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                    <h4 class="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">Titulares</h4>
+                    <div id="bank-owner-summary" class="space-y-4">
+                        <!-- JS populado -->
+                    </div>
+                </div>
+
+                <div class="bg-purple-50 p-6 rounded-2xl border border-purple-100">
+                    <h4 class="text-purple-900 font-black text-xs uppercase mb-2">Dica de Reconciliação</h4>
+                    <p class="text-[10px] text-purple-700 leading-relaxed">O sistema identifica automaticamente números de ordem começando por <strong class="font-bold">HF</strong> nas descrições bancárias.</p>
+                </div>
+             </div>
+        </div>
+    </div>

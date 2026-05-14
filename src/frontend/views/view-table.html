@@ -1,0 +1,40 @@
+<div id="view-table" class="max-w-6xl mx-auto hidden">
+        <div class="mb-4 flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <button onclick="showDashboard()" class="text-gray-600 hover:text-black flex items-center gap-1 font-bold text-xs uppercase transition-all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Painel
+                </button>
+                <span class="text-gray-300">|</span>
+                <span id="current-table-title" class="font-bold text-gray-800 uppercase text-xs tracking-widest"></span>
+            </div>
+            <button onclick="downloadTableAsImage()" class="bg-white border-2 border-gray-600 text-black px-4 py-2 rounded-lg font-bold text-[10px] uppercase flex items-center gap-2 hover:bg-gray-50 transition-all active:scale-95">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Baixar PNG
+            </button>
+        </div>
+        <div id="capture-area" class="p-2 bg-white rounded-lg border border-gray-200">
+            <table class="excel-table shadow-sm">
+                <thead>
+                    <tr>
+                        <th colspan="4" class="header-main py-6 bg-slate-50 border-b-2 border-gray-600" id="table-display-name">Duty &amp; Freight Payments</th>
+                    </tr>
+                    <tr class="bg-white">
+                        <th class="column-header w-32">Container</th>
+                        <th class="column-header">Duty Paid in China</th>
+                        <th class="column-header">Freight Paid in MOZ</th>
+                        <th class="column-header">Difference</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+                <tbody id="footer-logic"></tbody>
+            </table>
+        </div>
+    </div>

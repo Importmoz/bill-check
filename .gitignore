@@ -1,0 +1,24 @@
+# Dependências
+node_modules/
+
+# Ambientes
+.env
+*.env
+.env.local
+
+# Ficheiros Sensíveis e Chaves
+tokens.json
+google-oauth.json
+*credentials*.json
+*client_secret*.json
+
+# Logs e Temporários
+logs/
+tmp/
+*.log
+npm-debug.log
+debug_*.json
+
+# Sistema Operativo
+.DS_Store
+Thumbs.db

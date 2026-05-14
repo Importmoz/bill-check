@@ -1,0 +1,24 @@
+<div id="view-term-dashboard" class="max-w-6xl mx-auto hidden">
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <button onclick="showHub()" class="text-gray-400 hover:text-black flex items-center gap-1 font-bold text-[10px] uppercase transition-all mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                    Menu Principal
+                </button>
+                <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">TERM</h1>
+            </div>
+            <div class="flex gap-3 text-black">
+                <button onclick="openNewTermTableModal()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-lg active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    Novo Relatório
+                </button>
+            </div>
+        </div>
+        <div id="term-tables-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-black"></div>
+    </div>

@@ -1,0 +1,18 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e293b; }
+.excel-table { border: 2px solid #6b7280; border-collapse: collapse; width: 100%; background-color: white; }
+.excel-table th, .excel-table td { border: 1px solid #6b7280; padding: 4px 8px; color: black; vertical-align: middle; line-height: 1.2; }
+.header-main { font-size: 1rem; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: 1px; }
+.column-header { font-weight: 700; text-align: center; text-transform: uppercase; font-size: 11px; background-color: #f8fafc; padding: 4px 8px !important; }
+.row-container { font-weight: 700; text-align: center; font-size: 11px; }
+.cell-data { font-size: 11px; text-align: center; }
+.paid-row-style { background-color: #d9ead3; font-style: italic; font-size: 11px; }
+.balance-row { background-color: #f4cccc; font-weight: 700; font-size: 11px; }
+.balance-credit { background-color: #d9ead3; }
+.fab { box-shadow: 0 4px 14px 0 rgba(0,0,0,0.3); transition: all 0.2s ease; }
+.fab:hover { transform: scale(1.1); }
+.modal-bg { background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px); }
+.card-table { transition: transform 0.2s; cursor: pointer; }
+.card-table:hover { transform: translateY(-4px); }
+.loading-overlay { background: rgba(255,255,255,0.9); z-index: 200; display: none; }
+.export-only { display: none !important; }
