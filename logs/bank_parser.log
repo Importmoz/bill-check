@@ -1,0 +1,1500 @@
+2026-05-11T13:08:20.530Z - INFO: Arquivo extraído bank_5647238f-7aad-4a97-a79f-b64048403d26.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['Data da Transac\u00e7\u00e3o', 'Data Valor', 'Refer\u00eancia da Transac\u00e7\u00e3o', 'Descri\u00e7\u00e3o', 'Montante', 'Saldo']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_5647238f-7aad-4a97-a79f-b64048403d26.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Saldo De Abertura', nan, nan, nan, nan]
+DEBUG: Linha 1: ['04/05/2026', '04/05/2026', 'FT2612484S4Q', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 2: ['04/05/2026', '04/05/2026', 'FT26124BLLTZ', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 3: ['04/05/2026', '04/05/2026', 'FT26124G149L', 'Transferencia recebida|Transferencia recebida 867538661', 980.0]
+DEBUG: Linha 4: ['07/05/2026', '07/05/2026', 'FT261279202F', 'Transf intrab clientes dif IB|Custos locais ic', 5782.0]
+DEBUG: Banco Detetado: UNKNOWN
+DEBUG: Colunas Mapeadas -> Data: None, Desc: Montante, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['Data da Transac��o', 'Data Valor', 'Refer�ncia da Transac��o', 'Descri��o', 'Montante', 'Saldo']
+
+2026-05-11T13:08:28.874Z - INFO: Arquivo extraído bank_36e3cc8f-eb09-4cca-9ae8-4d0be1880e62.xls
+STDOUT: [
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: 573",
+    "reference": "913871869",
+    "amount": 22540.0,
+    "balance": 367539.31,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "Transf.Rec.NIB 000301960000...
+STDERR: DEBUG: Diagn�stico de bank_36e3cc8f-eb09-4cca-9ae8-4d0be1880e62.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+370.149,31 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+180.261,73 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-11T13:08:42.198Z - INFO: Arquivo extraído bank_2657f26b-160b-4793-87e2-1dcf3289c608.xls
+STDOUT: [
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "P24-Transf.Rec. 0878048832",
+    "reference": "896828264",
+    "amount": 980.0,
+    "balance": 10656.04,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description":...
+STDERR: DEBUG: Diagn�stico de bank_2657f26b-160b-4793-87e2-1dcf3289c608.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+9.676,04 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+515,12 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-11T13:09:50.696Z - INFO: Arquivo extraído bank_49f2a446-c50d-4a2e-b836-bdd09f15b699.xls
+STDOUT: [
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "P24-Transf.Rec. 0878048832",
+    "reference": "896828264",
+    "amount": 980.0,
+    "balance": 10656.04,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description":...
+STDERR: DEBUG: Diagn�stico de bank_49f2a446-c50d-4a2e-b836-bdd09f15b699.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+9.676,04 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+515,12 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-11T13:10:46.881Z - INFO: Arquivo extraído bank_b60250b2-00ba-4685-b72c-210aa2a245db.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 378426198Ref. 260511124254199C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1274.0,
+    "balance": 7056.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "account_owne...
+STDERR: DEBUG: Diagn�stico de bank_b60250b2-00ba-4685-b72c-210aa2a245db.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 01-05-2026 at� 11-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-11T13:11:05.113Z - INFO: Arquivo extraído bank_f75b0ad7-fa0b-4692-b371-03da0e39c6e2.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 5662473Ref. 260511130310782C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 32858.0,
+    "balance": 39291.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "acco...
+STDERR: DEBUG: Diagn�stico de bank_f75b0ad7-fa0b-4692-b371-03da0e39c6e2.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 01-05-2026 at� 11-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-11T13:15:15.855Z - INFO: Arquivo extraído bank_f51274ae-a9ff-4e02-8062-f599da85642d.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 5662473Ref. 260511130310782C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 32858.0,
+    "balance": 39291.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "acco...
+STDERR: DEBUG: Diagn�stico de bank_f51274ae-a9ff-4e02-8062-f599da85642d.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 01-05-2026 at� 11-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-11T14:17:31.570Z - INFO: Arquivo extraído bank_49073cd7-c073-47b5-824b-cd2de4037227.xls
+STDOUT: [
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: Eunice Mutemba",
+    "reference": "997339118",
+    "amount": 1176.0,
+    "balance": 181437.73,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: shipping pap...
+STDERR: DEBUG: Diagn�stico de bank_49073cd7-c073-47b5-824b-cd2de4037227.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+185.254,06 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+114.083,73 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-11T14:17:41.115Z - INFO: Arquivo extraído bank_8470f23e-4859-4dd6-a38d-0c1d1d95bb5e.xls
+STDOUT: [
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cred.980129949",
+    "reference": "980129949",
+    "amount": 5978.0,
+    "balance": 76694.0,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cr...
+STDERR: DEBUG: Diagn�stico de bank_8470f23e-4859-4dd6-a38d-0c1d1d95bb5e.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+70.716,00 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+2.352,56 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-11T14:18:01.835Z - INFO: Arquivo extraído bank_00b4c76d-55c9-4628-80dd-7cf6845ae6a6.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 242569162Ref. 260511142808930C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 3528.0,
+    "balance": 10584.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "account_own...
+STDERR: DEBUG: Diagn�stico de bank_00b4c76d-55c9-4628-80dd-7cf6845ae6a6.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 11-05-2026 at� 11-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-11T14:18:15.231Z - INFO: Arquivo extraído bank_e266ea3c-0780-4ca0-9bc2-0434e8f68b8b.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "TRF eMola 878390893 3960743794Ref. 260511154407688C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 48493.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "acc...
+STDERR: DEBUG: Diagn�stico de bank_e266ea3c-0780-4ca0-9bc2-0434e8f68b8b.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 11-05-2026 at� 11-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-11T14:18:39.651Z - INFO: Arquivo extraído bank_8d4b45a5-abc6-4cd9-870b-0384462c31ed.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_8d4b45a5-abc6-4cd9-870b-0384462c31ed.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Movimentos de Conta - 1086059371008', nan, nan, nan, nan]
+DEBUG: Linha 1: ['Data', 'Data valor', 'Descri��o', 'Refer�ncia', 'D�bito']
+DEBUG: Linha 2: ['11-05-2026', '11-05-2026', 'Trf. Emitida Internet Banking   Internet Banking', 'FT26131K6594', '-12847,09']
+DEBUG: Linha 3: ['11-05-2026', '11-05-2026', 'Pagto. Servico 26860313451   26860313451', 'FT261318L4W0', '-2603,97']
+DEBUG: Linha 4: ['11-05-2026', '11-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT26131C8M05\\N01', nan]
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: None, Desc: COL_4, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']
+
+2026-05-11T14:18:47.009Z - INFO: Arquivo extraído bank_d063e22c-518f-45e1-a78a-9008bf7f3384.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_d063e22c-518f-45e1-a78a-9008bf7f3384.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Movimentos de Conta - 1086059371008', nan, nan, nan, nan]
+DEBUG: Linha 1: ['Data', 'Data valor', 'Descri��o', 'Refer�ncia', 'D�bito']
+DEBUG: Linha 2: ['11-05-2026', '11-05-2026', 'Trf. Emitida Internet Banking   Internet Banking', 'FT26131K6594', '-12847,09']
+DEBUG: Linha 3: ['11-05-2026', '11-05-2026', 'Pagto. Servico 26860313451   26860313451', 'FT261318L4W0', '-2603,97']
+DEBUG: Linha 4: ['11-05-2026', '11-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT26131C8M05\\N01', nan]
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: None, Desc: COL_4, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']
+
+2026-05-11T14:18:52.456Z - INFO: Arquivo extraído bank_e47b324d-6b9c-42a1-bdbf-cccf0af5d003.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['Data da Transac\u00e7\u00e3o', 'Data Valor', 'Refer\u00eancia da Transac\u00e7\u00e3o', 'Descri\u00e7\u00e3o', 'Montante', 'Saldo']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_e47b324d-6b9c-42a1-bdbf-cccf0af5d003.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Saldo De Abertura', nan, nan, nan, nan]
+DEBUG: Linha 1: ['04/05/2026', '04/05/2026', 'FT2612484S4Q', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 2: ['04/05/2026', '04/05/2026', 'FT26124BLLTZ', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 3: ['04/05/2026', '04/05/2026', 'FT26124G149L', 'Transferencia recebida|Transferencia recebida 867538661', 980.0]
+DEBUG: Linha 4: ['07/05/2026', '07/05/2026', 'FT261279202F', 'Transf intrab clientes dif IB|Custos locais ic', 5782.0]
+DEBUG: Banco Detetado: UNKNOWN
+DEBUG: Colunas Mapeadas -> Data: None, Desc: Montante, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['Data da Transac��o', 'Data Valor', 'Refer�ncia da Transac��o', 'Descri��o', 'Montante', 'Saldo']
+
+2026-05-11T14:19:07.119Z - INFO: Arquivo extraído bank_c2cead08-ba42-4f5b-b5fe-fff40b5fc9d8.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_c2cead08-ba42-4f5b-b5fe-fff40b5fc9d8.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Movimentos de Conta - 1086059371008', nan, nan, nan, nan]
+DEBUG: Linha 1: ['Data', 'Data valor', 'Descri��o', 'Refer�ncia', 'D�bito']
+DEBUG: Linha 2: ['11-05-2026', '11-05-2026', 'Trf. Emitida Internet Banking   Internet Banking', 'FT26131K6594', '-12847,09']
+DEBUG: Linha 3: ['11-05-2026', '11-05-2026', 'Pagto. Servico 26860313451   26860313451', 'FT261318L4W0', '-2603,97']
+DEBUG: Linha 4: ['11-05-2026', '11-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT26131C8M05\\N01', nan]
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: None, Desc: COL_4, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']
+
+2026-05-12T08:32:07.716Z - INFO: Arquivo extraído bank_672e3184-bb47-4699-938f-0bb62ad917f9.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['Data da Transac\u00e7\u00e3o', 'Data Valor', 'Refer\u00eancia da Transac\u00e7\u00e3o', 'Descri\u00e7\u00e3o', 'Montante', 'Saldo']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_672e3184-bb47-4699-938f-0bb62ad917f9.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Saldo De Abertura', nan, nan, nan, nan]
+DEBUG: Linha 1: ['04/05/2026', '04/05/2026', 'FT2612484S4Q', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 2: ['04/05/2026', '04/05/2026', 'FT26124BLLTZ', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 3: ['04/05/2026', '04/05/2026', 'FT26124G149L', 'Transferencia recebida|Transferencia recebida 867538661', 980.0]
+DEBUG: Linha 4: ['07/05/2026', '07/05/2026', 'FT261279202F', 'Transf intrab clientes dif IB|Custos locais ic', 5782.0]
+DEBUG: Banco Detetado: UNKNOWN
+DEBUG: Colunas Mapeadas -> Data: None, Desc: Montante, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['Data da Transac��o', 'Data Valor', 'Refer�ncia da Transac��o', 'Descri��o', 'Montante', 'Saldo']
+
+2026-05-12T09:08:04.994Z - INFO: Arquivo extraído bank_b076a625-4f6b-4d5d-8e10-7f4d6ca40cb2.xls
+STDOUT: [
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: 573",
+    "reference": "913871869",
+    "amount": 22540.0,
+    "balance": 367539.31,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "Transf.Rec.NIB 000301960000...
+STDERR: DEBUG: Diagn�stico de bank_b076a625-4f6b-4d5d-8e10-7f4d6ca40cb2.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+370.149,31 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+116.631,73 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-12T09:08:29.045Z - INFO: Arquivo extraído bank_852e4fdf-4d21-4158-b809-e5bb9e7726d8.xls
+STDOUT: [
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "P24-Transf.Rec. 0878048832",
+    "reference": "896828264",
+    "amount": 980.0,
+    "balance": 10656.04,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description":...
+STDERR: DEBUG: Diagn�stico de bank_852e4fdf-4d21-4158-b809-e5bb9e7726d8.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+9.676,04 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+54.400,56 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-12T09:09:46.595Z - INFO: Arquivo extraído bank_ad4c0010-7844-4553-b342-cb1c02b04c37.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 1234300072Ref. 260512094531054C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 13001.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-11 00:00:00",
+    "bank": "BIM",
+    "acc...
+STDERR: DEBUG: Diagn�stico de bank_ad4c0010-7844-4553-b342-cb1c02b04c37.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 01-05-2026 at� 12-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-12T09:11:26.547Z - INFO: Arquivo extraído bank_bc3e1dc9-3511-4cbd-a9d8-252640bac258.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['Data da Transac\u00e7\u00e3o', 'Data Valor', 'Refer\u00eancia da Transac\u00e7\u00e3o', 'Descri\u00e7\u00e3o', 'Montante', 'Saldo']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_bc3e1dc9-3511-4cbd-a9d8-252640bac258.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Saldo De Abertura', nan, nan, nan, nan]
+DEBUG: Linha 1: ['04/05/2026', '04/05/2026', 'FT2612484S4Q', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 2: ['04/05/2026', '04/05/2026', 'FT26124BLLTZ', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 3: ['04/05/2026', '04/05/2026', 'FT26124G149L', 'Transferencia recebida|Transferencia recebida 867538661', 980.0]
+DEBUG: Linha 4: ['07/05/2026', '07/05/2026', 'FT261279202F', 'Transf intrab clientes dif IB|Custos locais ic', 5782.0]
+DEBUG: Banco Detetado: UNKNOWN
+DEBUG: Colunas Mapeadas -> Data: None, Desc: Montante, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['Data da Transac��o', 'Data Valor', 'Refer�ncia da Transac��o', 'Descri��o', 'Montante', 'Saldo']
+
+2026-05-12T09:11:43.569Z - INFO: Arquivo extraído bank_9c2d66e5-6c59-4f17-b016-7d37c5876c60.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "Pgt carga China Cintia LangaRef. 260512090632726C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1078.0,
+    "balance": 6577.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "account_o...
+STDERR: DEBUG: Diagn�stico de bank_9c2d66e5-6c59-4f17-b016-7d37c5876c60.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 01-05-2026 at� 12-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-12T10:01:05.725Z - INFO: Arquivo extraído bank_e3e49322-d731-4a96-9048-852b1313a0a7.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 189413938Ref. 260512114825252C\u00f3digo do Canal SCI MBNome do Canal SCI MOBILEC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1568.0,
+    "balance": 101299.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "acco...
+STDERR: DEBUG: Diagn�stico de bank_e3e49322-d731-4a96-9048-852b1313a0a7.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 12-05-2026 at� 12-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-12T11:28:18.396Z - INFO: Arquivo extraído bank_e170b442-476c-47ac-aef0-56e0fa464746.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 340828513Ref. 260512130935735C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 200.0,
+    "balance": 139426.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "acc...
+STDERR: DEBUG: Diagn�stico de bank_e170b442-476c-47ac-aef0-56e0fa464746.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 12-05-2026 at� 12-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-12T13:34:35.143Z - INFO: Arquivo extraído bank_4ef72ee8-21b0-4ef2-b6b5-84996e183e5f.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_4ef72ee8-21b0-4ef2-b6b5-84996e183e5f.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Movimentos de Conta - 1086059371008', nan, nan, nan, nan]
+DEBUG: Linha 1: ['Data', 'Data valor', 'Descri��o', 'Refer�ncia', 'D�bito']
+DEBUG: Linha 2: ['07-05-2026', '07-05-2026', 'Trf Env RT', 'FT26127209MD', '-39000,00']
+DEBUG: Linha 3: ['07-05-2026', '07-05-2026', 'Trf Env RT', 'FT261273PF43', nan]
+DEBUG: Linha 4: ['07-05-2026', '07-05-2026', 'Trf Env RT', 'FT261273PF43', '-39000,00']
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: None, Desc: COL_4, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']
+
+2026-05-12T13:43:45.397Z - INFO: Arquivo extraído bank_62975ade-af85-495a-8158-9af356dd9172.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "TRF MPesa 845481018 c3SsMzFinJRef. 260512144529551C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 19905.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "account_own...
+STDERR: DEBUG: Diagn�stico de bank_62975ade-af85-495a-8158-9af356dd9172.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 12-05-2026 at� 12-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-12T13:43:56.717Z - INFO: Arquivo extraído bank_5772b8e6-2926-4090-98d9-8d960a51d4eb.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 351763226Ref. 260512152509776C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 274366.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BIM",
+    "acc...
+STDERR: DEBUG: Diagn�stico de bank_5772b8e6-2926-4090-98d9-8d960a51d4eb.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 12-05-2026 at� 12-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-12T13:44:13.649Z - INFO: Arquivo extraído bank_434b303b-df94-4be8-a629-644e404f6b71.xls
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: China Moz by sea",
+    "reference": "6557401",
+    "amount": 980.0,
+    "balance": 117611.73,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "Dep.Num. 6586415",...
+STDERR: DEBUG: Diagn�stico de bank_434b303b-df94-4be8-a629-644e404f6b71.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+116.631,73 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+88.441,74 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-12T13:44:22.543Z - INFO: Arquivo extraído bank_67331afb-cd03-4de4-aa4d-a4c7dcb2a325.xls
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: Ivania Bela",
+    "reference": "3679017",
+    "amount": 1764.0,
+    "balance": 9026.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: jupit...
+STDERR: DEBUG: Diagn�stico de bank_67331afb-cd03-4de4-aa4d-a4c7dcb2a325.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+7.262,56 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+66.245,17 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T10:24:20.901Z - INFO: Arquivo extraído bank_cf2d5ad0-f643-4055-b3a7-5fbae6a77589.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['Data da Transac\u00e7\u00e3o', 'Data Valor', 'Refer\u00eancia da Transac\u00e7\u00e3o', 'Descri\u00e7\u00e3o', 'Montante', 'Saldo']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_cf2d5ad0-f643-4055-b3a7-5fbae6a77589.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Saldo De Abertura', nan, nan, nan, nan]
+DEBUG: Linha 1: ['04/05/2026', '04/05/2026', 'FT2612484S4Q', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 2: ['04/05/2026', '04/05/2026', 'FT26124BLLTZ', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 3: ['04/05/2026', '04/05/2026', 'FT26124G149L', 'Transferencia recebida|Transferencia recebida 867538661', 980.0]
+DEBUG: Linha 4: ['07/05/2026', '07/05/2026', 'FT261279202F', 'Transf intrab clientes dif IB|Custos locais ic', 5782.0]
+DEBUG: Banco Detetado: UNKNOWN
+DEBUG: Colunas Mapeadas -> Data: None, Desc: Montante, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['Data da Transac��o', 'Data Valor', 'Refer�ncia da Transac��o', 'Descri��o', 'Montante', 'Saldo']
+
+2026-05-13T10:24:30.536Z - INFO: Arquivo extraído bank_169665f5-1711-4802-9b9b-32a23fb4c604.xls
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: China Moz by sea",
+    "reference": "6557401",
+    "amount": 980.0,
+    "balance": 117611.73,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "Dep.Num. 6586415",...
+STDERR: DEBUG: Diagn�stico de bank_169665f5-1711-4802-9b9b-32a23fb4c604.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+116.631,73 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+4.717,74 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T10:24:43.985Z - INFO: Arquivo extraído bank_bf84e8ef-6e4e-4b27-b839-482950a6e239.xls
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: Ivania Bela",
+    "reference": "3679017",
+    "amount": 1764.0,
+    "balance": 9026.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: jupit...
+STDERR: DEBUG: Diagn�stico de bank_bf84e8ef-6e4e-4b27-b839-482950a6e239.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+7.262,56 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+29.861,86 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T10:25:02.532Z - INFO: Arquivo extraído bank_4c988c70-b844-4701-a6ed-d801c3cf37e2.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "TRF MPesa 842415928 u1aSdlhJVrRef. 260513121918032C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 4704.0,
+    "balance": 6815.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_own...
+STDERR: DEBUG: Diagn�stico de bank_4c988c70-b844-4701-a6ed-d801c3cf37e2.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 12-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-13T10:25:22.902Z - INFO: Arquivo extraído bank_2bdd699e-bdac-45ce-b823-b757f43b9fa9.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 154043761Ref. 260513110413670C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1372.0,
+    "balance": 2498.14,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "acco...
+STDERR: DEBUG: Diagn�stico de bank_2bdd699e-bdac-45ce-b823-b757f43b9fa9.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 12-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: DATA VALOR, Saldo: SALDO, Ref: None
+
+2026-05-13T10:25:46.073Z - INFO: Arquivo extraído bank_073f06a6-bf20-4b0d-8106-425c66fb63a4.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['Data da Transac\u00e7\u00e3o', 'Data Valor', 'Refer\u00eancia da Transac\u00e7\u00e3o', 'Descri\u00e7\u00e3o', 'Montante', 'Saldo']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_073f06a6-bf20-4b0d-8106-425c66fb63a4.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Saldo De Abertura', nan, nan, nan, nan]
+DEBUG: Linha 1: ['04/05/2026', '04/05/2026', 'FT2612484S4Q', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 2: ['04/05/2026', '04/05/2026', 'FT26124BLLTZ', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 3: ['04/05/2026', '04/05/2026', 'FT26124G149L', 'Transferencia recebida|Transferencia recebida 867538661', 980.0]
+DEBUG: Linha 4: ['07/05/2026', '07/05/2026', 'FT261279202F', 'Transf intrab clientes dif IB|Custos locais ic', 5782.0]
+DEBUG: Banco Detetado: UNKNOWN
+DEBUG: Colunas Mapeadas -> Data: None, Desc: Montante, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['Data da Transac��o', 'Data Valor', 'Refer�ncia da Transac��o', 'Descri��o', 'Montante', 'Saldo']
+
+2026-05-13T10:30:55.794Z - INFO: Arquivo extraído bank_fb37d32c-8ea7-44a7-aff2-b6987698cde1.xls
+STDOUT: [
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "P24-Transf.Rec. 0878048832",
+    "reference": "896828264",
+    "amount": 980.0,
+    "balance": 10656.04,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description":...
+STDERR: DEBUG: Diagn�stico de bank_fb37d32c-8ea7-44a7-aff2-b6987698cde1.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+9.676,04 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+29.861,86 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T10:37:40.121Z - INFO: Arquivo extraído bank_4ba34faa-9e75-4e53-919b-ecf01efb396a.xlsx
+STDOUT: {"error": "N\u00e3o foi poss\u00edvel detetar o cabe\u00e7alho correto no ficheiro. Colunas encontradas: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']"}
+...
+STDERR: DEBUG: Diagn�stico de bank_4ba34faa-9e75-4e53-919b-ecf01efb396a.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Movimentos de Conta - 1086059371008', nan, nan, nan, nan]
+DEBUG: Linha 1: ['Data', 'Data valor', 'Descri��o', 'Refer�ncia', 'D�bito']
+DEBUG: Linha 2: ['05-05-2026', '05-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT26125N641N\\N03', nan]
+DEBUG: Linha 3: ['05-05-2026', '05-05-2026', 'Chq.Compensacao 0021836945    0021836945', 'FT26125X3DG2', '-52099,36']
+DEBUG: Linha 4: ['04-05-2026', '04-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT261249VTH6\\C08', nan]
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: None, Desc: COL_4, Valor: None, Saldo: None, Ref: None
+DEBUG: Erro Cr�tico - Colunas essenciais n�o encontradas!
+DEBUG: Colunas dispon�veis: ['MOVIMENTOS DE CONTA - 1086059371008', 'COL_1', 'COL_2', 'COL_3', 'COL_4', 'COL_5', 'COL_6', 'COL_7']
+
+2026-05-13T11:11:03.914Z - INFO: Arquivo extraído bank_279d83ee-c792-4252-a426-710a05a77126.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-05 00:00:00",
+    "bank": "STB",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "1086059371008",
+    "description": "Trf. Recebida Internet Banking   Internet Banking",
+    "reference": "FT26125N641N\\N03",
+    "amount": 29204.0,
+    "balance": 37685.17,
+    "order_id": "A",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-04 00:00:00",
+    "bank": "STB",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "108...
+STDERR: DEBUG: Diagn�stico de bank_279d83ee-c792-4252-a426-710a05a77126.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Movimentos de Conta - 1086059371008', nan, nan, nan, nan]
+DEBUG: Linha 1: ['Data', 'Data valor', 'Descri��o', 'Refer�ncia', 'D�bito']
+DEBUG: Linha 2: ['05-05-2026', '05-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT26125N641N\\N03', nan]
+DEBUG: Linha 3: ['05-05-2026', '05-05-2026', 'Chq.Compensacao 0021836945    0021836945', 'FT26125X3DG2', '-52099,36']
+DEBUG: Linha 4: ['04-05-2026', '04-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT261249VTH6\\C08', nan]
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: DATA, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: REFERENCIA
+
+2026-05-13T11:11:19.741Z - INFO: Arquivo extraído bank_98c6b05c-a0e9-43bb-8b0a-902c9b389971.xls
+STDOUT: [
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "P24-Transf.Rec. 0878048832",
+    "reference": "896828264",
+    "amount": 980.0,
+    "balance": 10656.04,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description":...
+STDERR: DEBUG: Diagn�stico de bank_98c6b05c-a0e9-43bb-8b0a-902c9b389971.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+9.676,04 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+29.861,86 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T11:12:33.609Z - INFO: Arquivo extraído bank_e09dab91-27b0-4da3-a3cd-15a1eb38f691.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-04 00:00:00",
+    "bank": "UNKNOWN",
+    "account_owner": "UNKNOWN",
+    "account_number": "",
+    "description": "Transf intrab clientes dif IB",
+    "reference": "FT2612484S4Q",
+    "amount": 980.0,
+    "balance": 16087.91,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-04 00:00:00",
+    "bank": "UNKNOWN",
+    "account_owner": "UNKNOWN",
+    "account_number": "",
+    "description": "Transf intrab clientes dif IB",
+    "re...
+STDERR: DEBUG: Diagn�stico de bank_e09dab91-27b0-4da3-a3cd-15a1eb38f691.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Saldo De Abertura', nan, nan, nan, nan]
+DEBUG: Linha 1: ['04/05/2026', '04/05/2026', 'FT2612484S4Q', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 2: ['04/05/2026', '04/05/2026', 'FT26124BLLTZ', 'Transf intrab clientes dif IB', 980.0]
+DEBUG: Linha 3: ['04/05/2026', '04/05/2026', 'FT26124G149L', 'Transferencia recebida|Transferencia recebida 867538661', 980.0]
+DEBUG: Linha 4: ['07/05/2026', '07/05/2026', 'FT261279202F', 'Transf intrab clientes dif IB|Custos locais ic', 5782.0]
+DEBUG: Banco Detetado: UNKNOWN
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACCAO, Desc: DESCRICAO, Valor: MONTANTE, Saldo: SALDO, Ref: REFERENCIA DA TRANSACCAO
+
+2026-05-13T11:12:46.909Z - INFO: Arquivo extraído bank_50583fc5-623d-45a9-8a90-e2542a7d7349.xls
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: China Moz by sea",
+    "reference": "6557401",
+    "amount": 980.0,
+    "balance": 117611.73,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "Dep.Num. 6586415",...
+STDERR: DEBUG: Diagn�stico de bank_50583fc5-623d-45a9-8a90-e2542a7d7349.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+116.631,73 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+4.717,74 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T11:12:55.622Z - INFO: Arquivo extraído bank_504ef1aa-981d-46ee-b489-b348bd022cd5.xls
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: Ivania Bela",
+    "reference": "3679017",
+    "amount": 1764.0,
+    "balance": 9026.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: jupit...
+STDERR: DEBUG: Diagn�stico de bank_504ef1aa-981d-46ee-b489-b348bd022cd5.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+7.262,56 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+29.861,86 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T11:13:09.078Z - INFO: Arquivo extraído bank_a70d28fb-c62d-4a50-9e67-e75760c19baf.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "TRF MPesa 842415928 u1aSdlhJVrRef. 260513121918032C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 4704.0,
+    "balance": 6815.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_own...
+STDERR: DEBUG: Diagn�stico de bank_a70d28fb-c62d-4a50-9e67-e75760c19baf.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 12-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-13T11:13:59.860Z - INFO: Arquivo extraído bank_d6deaead-2362-44b8-82bd-7d6a0e705016.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 154043761Ref. 260513110413670C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1372.0,
+    "balance": 2498.14,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "acco...
+STDERR: DEBUG: Diagn�stico de bank_d6deaead-2362-44b8-82bd-7d6a0e705016.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 12-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-13T11:24:04.512Z - INFO: Arquivo extraído bank_0b0be1c0-33fa-4de3-afc3-85301ab6976c.xls
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Transf.Rec.NIB 000800004252829310277",
+    "reference": "6238594",
+    "amount": 5092.0,
+    "balance": 70747.17,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "desc...
+STDERR: DEBUG: Diagn�stico de bank_0b0be1c0-33fa-4de3-afc3-85301ab6976c.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+65.655,17 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+31.331,86 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T12:34:47.745Z - INFO: Arquivo extraído bank_dcec61ec-14d9-4141-95c0-a1d293c75b67.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 333099941Ref. 260513141204439C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 2548.0,
+    "balance": 9162.14,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "acco...
+STDERR: DEBUG: Diagn�stico de bank_dcec61ec-14d9-4141-95c0-a1d293c75b67.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 13-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-13T12:34:58.713Z - INFO: Arquivo extraído bank_e5abc75d-14b2-4d73-8310-ab5823a98f8c.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 51360628Ref. 260513133256227C\u00f3digo do Canal SCI MBNome do Canal SCI MOBILEC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1862.0,
+    "balance": 13773.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner"...
+STDERR: DEBUG: Diagn�stico de bank_e5abc75d-14b2-4d73-8310-ab5823a98f8c.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 13-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-13T12:35:08.591Z - INFO: Arquivo extraído bank_6d330a8d-86fc-43bf-94c2-0e1b2c46e789.xls
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: pagamento direito",
+    "reference": "13163589",
+    "amount": 20090.0,
+    "balance": 112451.74,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF RCB COMP M...
+STDERR: DEBUG: Diagn�stico de bank_6d330a8d-86fc-43bf-94c2-0e1b2c46e789.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+92.361,74 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+541,74 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T12:35:17.361Z - INFO: Arquivo extraído bank_2c306af8-4661-446a-8815-21409e60ce10.xls
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Transf.Rec.NIB 000800004252829310277",
+    "reference": "6238594",
+    "amount": 5092.0,
+    "balance": 70747.17,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "desc...
+STDERR: DEBUG: Diagn�stico de bank_2c306af8-4661-446a-8815-21409e60ce10.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+65.655,17 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+3.999,39 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T14:10:30.763Z - INFO: Arquivo extraído bank_b9cac9b1-3c00-4483-94a2-f6897f92af2b.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 333099941Ref. 260513141204439C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 2548.0,
+    "balance": 9162.14,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "acco...
+STDERR: DEBUG: Diagn�stico de bank_b9cac9b1-3c00-4483-94a2-f6897f92af2b.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 13-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-13T14:10:41.416Z - INFO: Arquivo extraído bank_e446028b-b568-42ee-bd58-e012848e9f41.xls
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Transf.Rec.NIB 000800004252829310277",
+    "reference": "6238594",
+    "amount": 5092.0,
+    "balance": 70747.17,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "desc...
+STDERR: DEBUG: Diagn�stico de bank_e446028b-b568-42ee-bd58-e012848e9f41.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+65.655,17 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+3.999,39 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T14:11:00.464Z - INFO: Arquivo extraído bank_2122b5e2-cda7-4d0d-92a8-0879794394d9.xls
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: pagamento direito",
+    "reference": "13163589",
+    "amount": 20090.0,
+    "balance": 112451.74,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF RCB COMP M...
+STDERR: DEBUG: Diagn�stico de bank_2122b5e2-cda7-4d0d-92a8-0879794394d9.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+92.361,74 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+541,74 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-13T14:11:14.616Z - INFO: Arquivo extraído bank_1d9afd0f-6e66-4eb0-ab11-ff565fa34e04.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 51360628Ref. 260513133256227C\u00f3digo do Canal SCI MBNome do Canal SCI MOBILEC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1862.0,
+    "balance": 13773.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner"...
+STDERR: DEBUG: Diagn�stico de bank_1d9afd0f-6e66-4eb0-ab11-ff565fa34e04.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 13-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-13T14:12:21.489Z - INFO: Arquivo extraído bank_adebe74d-c657-42cb-b37d-a092b65fdb6b.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 51360628Ref. 260513133256227C\u00f3digo do Canal SCI MBNome do Canal SCI MOBILEC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1862.0,
+    "balance": 13773.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner"...
+STDERR: DEBUG: Diagn�stico de bank_adebe74d-c657-42cb-b37d-a092b65fdb6b.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 13-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-13T14:23:17.701Z - INFO: Arquivo extraído bank_8e717e52-6b21-42de-9a2a-9de925daa54c.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 132074716Ref. 260513161542783C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 17394.14,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "acco...
+STDERR: DEBUG: Diagn�stico de bank_8e717e52-6b21-42de-9a2a-9de925daa54c.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 13-05-2026 at� 13-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-13T14:25:20.428Z - INFO: Arquivo extraído bank_87f6c0bd-86ad-4adf-8a03-5d1a424730c4.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-07 00:00:00",
+    "bank": "STB",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "1086059371008",
+    "description": "Trf Env RT",
+    "reference": "FT261273PF43",
+    "amount": 39000.0,
+    "balance": 40162.72,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-06 00:00:00",
+    "bank": "STB",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "1086059371008",
+    "description": "Trf. Recebi...
+STDERR: DEBUG: Diagn�stico de bank_87f6c0bd-86ad-4adf-8a03-5d1a424730c4.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Movimentos de Conta - 1086059371008', nan, nan, nan, nan]
+DEBUG: Linha 1: ['Data', 'Data valor', 'Descri��o', 'Refer�ncia', 'D�bito']
+DEBUG: Linha 2: ['07-05-2026', '07-05-2026', 'Trf Env RT', 'FT26127209MD', '-39000,00']
+DEBUG: Linha 3: ['07-05-2026', '07-05-2026', 'Trf Env RT', 'FT261273PF43', nan]
+DEBUG: Linha 4: ['07-05-2026', '07-05-2026', 'Trf Env RT', 'FT261273PF43', '-39000,00']
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: DATA, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: REFERENCIA
+
+2026-05-14T09:38:16.450Z - INFO: Arquivo extraído bank_c7dd881a-1e01-44b1-b607-4a6225e83cf2.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "TRF eMola 876951755 3975692748Ref. 260513224137480C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 1274.0,
+    "balance": 1551.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_own...
+STDERR: DEBUG: Diagn�stico de bank_c7dd881a-1e01-44b1-b607-4a6225e83cf2.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 14-05-2026 at� 14-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-14T09:40:25.018Z - INFO: Arquivo extraído bank_e74f5bba-bc70-4887-9d76-63fd819a5b2d.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 283507527Ref. 260514110248820C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 2156.0,
+    "balance": 56328.14,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BIM",
+    "acc...
+STDERR: DEBUG: Diagn�stico de bank_e74f5bba-bc70-4887-9d76-63fd819a5b2d.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 12-05-2026 at� 14-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-14T09:41:19.550Z - INFO: Arquivo extraído bank_36b35988-49ae-4afb-b37e-a1a137316339.xls
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF: China Moz by sea",
+    "reference": "6557401",
+    "amount": 980.0,
+    "balance": 117611.73,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "Dep.Num. 6586415",...
+STDERR: DEBUG: Diagn�stico de bank_36b35988-49ae-4afb-b37e-a1a137316339.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+116.631,73 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+5.743,74 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-14T09:41:33.902Z - INFO: Arquivo extraído bank_9d12fd51-842c-44e4-823f-1be3376df91b.xls
+STDOUT: [
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: Ivania Bela",
+    "reference": "3679017",
+    "amount": 1764.0,
+    "balance": 9026.56,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: jupit...
+STDERR: DEBUG: Diagn�stico de bank_9d12fd51-842c-44e4-823f-1be3376df91b.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+7.262,56 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+55.771,39 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+

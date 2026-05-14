@@ -5,9 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js",
-    "build:css": "tailwindcss -i src/frontend/input.css -o src/frontend/tailwind.css",
-    "watch:css": "tailwindcss -i src/frontend/input.css -o src/frontend/tailwind.css --watch"
+    "dev": "node server.js"
   },
   "keywords": [],
   "author": "",
