@@ -1579,3 +1579,118 @@ DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em M
 DEBUG: Banco Detetado: BIM
 DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
 
+2026-05-14T10:21:37.747Z - INFO: Arquivo extraído bank_bf3905fb-938d-4646-95d9-5547f0a2f560.xls
+STDOUT: [
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "P24-Transf.Rec. 0878048832",
+    "reference": "896828264",
+    "amount": 980.0,
+    "balance": 10656.04,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-02 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description":...
+STDERR: DEBUG: Diagn�stico de bank_bf3905fb-938d-4646-95d9-5547f0a2f560.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+9.676,04 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+56.751,39 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-14T10:56:06.540Z - INFO: Arquivo extraído bank_49c73a7f-c52e-452d-b7ab-2c21a45e45d5.xls
+STDOUT: [
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "TRF RCB COMP FNB ORDSIMOES JOAQUIM TSAM",
+    "reference": "23308120",
+    "amount": 4312.0,
+    "balance": 5743.74,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "...
+STDERR: DEBUG: Diagn�stico de bank_49c73a7f-c52e-452d-b7ab-2c21a45e45d5.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '18909451710002', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800008909451710292', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+4.471,74 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+15.641,74 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-14T11:10:28.791Z - INFO: Arquivo extraído bank_d4c018f7-ce97-4d95-bfb5-710dd4092f4e.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "STB",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "1086059371008",
+    "description": "Transferencia Fornecedor   Fornecedor",
+    "reference": "FT26134W9FXM",
+    "amount": 2789241.37,
+    "balance": 2837287.94,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "STB",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "1086059371008",...
+STDERR: DEBUG: Diagn�stico de bank_d4c018f7-ce97-4d95-bfb5-710dd4092f4e.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Movimentos de Conta - 1086059371008', nan, nan, nan, nan]
+DEBUG: Linha 1: ['Data', 'Data valor', 'Descri��o', 'Refer�ncia', 'D�bito']
+DEBUG: Linha 2: ['14-05-2026', '14-05-2026', 'Transferencia Fornecedor   Fornecedor', 'FT26134W9FXM', nan]
+DEBUG: Linha 3: ['13-05-2026', '13-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT26133JML8D\\S18', nan]
+DEBUG: Linha 4: ['13-05-2026', '13-05-2026', 'Trf. Recebida Internet Banking   Internet Banking', 'FT26133YCPTY\\S07', nan]
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: DATA, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: REFERENCIA
+
+2026-05-14T11:14:54.736Z - INFO: Arquivo extraído bank_04c29048-24c2-49ac-be7a-cec9e2402dbf.xls
+STDOUT: [
+  {
+    "date": "2026-05-05 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF: J\u00fapiter Losgistics Lda",
+    "reference": "938821595",
+    "amount": 1372.0,
+    "balance": 73556.05,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-05 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "descri...
+STDERR: DEBUG: Diagn�stico de bank_04c29048-24c2-49ac-be7a-cec9e2402dbf.xls (Primeiras 5 linhas):
+DEBUG: Linha 0: ['Conta', '15466194210001', nan, nan, nan]
+DEBUG: Linha 1: ['Nib', '000800005466194210195', nan, nan, nan]
+DEBUG: Linha 2: ['Saldo Anterior', '+72.184,05 MZN', nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: ['Saldo Dispon�vel', '+166.965,39 MZN', nan, nan, nan]
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+

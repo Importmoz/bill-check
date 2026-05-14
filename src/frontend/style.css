@@ -63,3 +63,37 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e29
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }
+
+/* Button Loading State */
+.btn-loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+    min-width: 100px;
+}
+
+.btn-loading::after {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: auto;
+    border: 3px solid rgba(0,0,0,0.1);
+    border-radius: 50%;
+    border-top-color: currentColor;
+    animation: button-loading-spinner 0.6s linear infinite;
+}
+
+.btn-loading-white::after {
+    border: 3px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+}
+
+@keyframes button-loading-spinner {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

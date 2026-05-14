@@ -82,7 +82,7 @@
                 </div>
             </div>
             <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
-                <button onclick="saveContainer()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs">Guardar</button>
+                <button id="btn-container-save" onclick="saveContainer()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs">Guardar</button>
                 <button id="btn-delete" onclick="deleteContainer()" class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs">Eliminar</button>
             </div>
         </div>
@@ -115,9 +115,9 @@
                 </div>
             </div>
             <div class="p-4 bg-gray-100 border-t border-black rounded-b-xl flex gap-2">
-                <button onclick="confirmPayment()" class="flex-1 bg-green-700 text-white py-4 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95">Registrar
+                <button id="btn-payment-confirm" onclick="confirmPayment()" class="flex-1 bg-green-700 text-white py-4 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95">Registrar
                     Pagamento</button>
-                <button onclick="confirmPaymentFull()" class="flex-1 bg-blue-700 text-white py-4 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95" id="pay-full-button">Pagar Total</button>
+                <button onclick="confirmPaymentFull()" class="flex-1 bg-blue-700 text-white py-4 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95" id="btn-payment-confirm-full">Pagar Total</button>
             </div>
         </div>
     </div>
@@ -132,7 +132,7 @@
                 <input type="text" id="input-finance-group-name" placeholder="Ex: Semana 1 - Importações" class="w-full p-4 border-2 border-gray-100 focus:border-black outline-none rounded-xl font-bold text-black uppercase text-sm">
             </div>
             <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
-                <button onclick="saveFinanceGroup()" class="w-full bg-black text-white py-4 rounded-xl font-bold uppercase text-[10px] shadow-lg active:scale-95">Criar
+                <button id="btn-finance-group-save" onclick="saveFinanceGroup()" class="w-full bg-black text-white py-4 rounded-xl font-bold uppercase text-[10px] shadow-lg active:scale-95">Criar
                     Grupo</button>
             </div>
         </div>
@@ -154,7 +154,7 @@
                 </div>
             </div>
             <div class="p-5 bg-gray-50 border-t border-gray-200 rounded-b-2xl">
-                <button onclick="addFinanceSheet()" class="w-full bg-black text-white py-4 rounded-xl font-black uppercase text-[10px] shadow-xl hover:bg-gray-800 transition-all active:scale-95">Vincular
+                <button id="btn-finance-sheet-add" onclick="addFinanceSheet()" class="w-full bg-black text-white py-4 rounded-xl font-black uppercase text-[10px] shadow-xl hover:bg-gray-800 transition-all active:scale-95">Vincular
                     e Extrair Dados</button>
             </div>
         </div>
@@ -170,7 +170,7 @@
                 <input type="text" id="input-team-table-name" placeholder="Ex: Relatório Março 2025" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
             </div>
             <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
-                <button onclick="createTeamTable()" class="w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-xs">Criar
+                <button id="btn-team-table-create" onclick="createTeamTable()" class="w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-xs">Criar
                     Relatório</button>
             </div>
         </div>
@@ -252,7 +252,7 @@
                 </div>
             </div>
             <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
-                <button onclick="saveTeamRecord()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Guardar
+                <button id="btn-team-record-save" onclick="saveTeamRecord()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Guardar
                     Registo</button>
                 <button id="btn-team-record-delete" onclick="deleteTeamRecord()" class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Eliminar</button>
             </div>
@@ -269,7 +269,7 @@
                 <input type="text" id="input-term-table-name" placeholder="Ex: Termos de Carga Março" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
             </div>
             <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">
-                <button onclick="createTermTable()" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold uppercase text-xs">Criar
+                <button id="btn-term-table-create" onclick="createTermTable()" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold uppercase text-xs">Criar
                     Relatório</button>
             </div>
         </div>
@@ -312,7 +312,7 @@
                 </div>
             </div>
             <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">
-                <button onclick="saveTermRecord()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Guardar
+                <button id="btn-term-record-save" onclick="saveTermRecord()" class="flex-1 bg-black text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Guardar
                     Registo</button>
                 <button id="btn-term-record-delete" onclick="deleteTermRecord()" class="hidden flex-1 bg-red-600 text-white py-3 rounded-lg font-bold uppercase text-xs shadow-lg">Eliminar</button>
             </div>
@@ -480,10 +480,10 @@
                     </div>
 
                     <div class="pt-4 flex gap-2">
-                        <button onclick="saveConfirmProject()" class="flex-1 bg-black text-white py-4 rounded-xl font-bold uppercase text-[10px] shadow-lg active:scale-95 transition-all">GRAVAR PROJETO</button>
+                        <button id="btn-confirm-project-save" onclick="saveConfirmProject()" class="flex-1 bg-black text-white py-4 rounded-xl font-bold uppercase text-[10px] shadow-lg active:scale-95 transition-all">GRAVAR PROJETO</button>
                     </div>
                     <div id="confirm-project-delete-container" class="hidden">
-                        <button onclick="deleteConfirmProject()" class="w-full text-red-500 font-bold uppercase text-[8px] hover:underline mt-2">Eliminar Projeto</button>
+                        <button id="btn-confirm-project-delete" onclick="deleteConfirmProject()" class="w-full text-red-500 font-bold uppercase text-[8px] hover:underline mt-2">Eliminar Projeto</button>
                     </div>
                 </div>
             </div>
@@ -518,7 +518,7 @@
                     </div>
 
                     <div class="pt-6 flex gap-2">
-                        <button onclick="saveConfirmToSheet()" class="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 py-3.5 rounded-xl font-bold uppercase text-[10px] shadow-sm transition-all">GRAVAR NO GSHEET</button>
+                        <button id="btn-confirm-to-sheet" onclick="saveConfirmToSheet()" class="flex-1 bg-yellow-400 text-yellow-900 hover:bg-yellow-500 py-3.5 rounded-xl font-bold uppercase text-[10px] shadow-sm transition-all">GRAVAR NO GSHEET</button>
                     </div>
                 </div>
             </div>

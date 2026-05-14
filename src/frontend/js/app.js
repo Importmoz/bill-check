@@ -117,9 +117,10 @@ async function handleLogin() {
     const errorEl = document.getElementById('login-error');
     const errorMsgEl = document.getElementById('error-message');
 
-    if (!email || !pass) return alert("Preencha todos os campos.");
+    if (!email || !pass) return ui.toast("Preencha todos os campos.", "error");
     
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-login');
+    ui.setBtnLoading(btn, true, "A entrar...");
     errorEl.classList.add('hidden');
 
     try {
@@ -132,7 +133,7 @@ async function handleLogin() {
         errorMsgEl.innerText = err.message;
         ui.toast(err.message, 'error');
     } finally {
-        ui.setLoader(false);
+        ui.setBtnLoading(btn, false);
     }
 }
 
@@ -150,7 +151,7 @@ async function showHub() {
         ui.showView('view-hub');
     } catch (err) {
         console.error(err);
-        alert("Erro ao carregar menu principal.");
+        ui.toast("Erro ao carregar menu principal.", "error");
     } finally {
         ui.setLoader(false);
     }
@@ -221,7 +222,8 @@ async function addFinanceSheet() {
     const url = document.getElementById('input-finance-sheet-url').value.trim();
     if (!url) return;
 
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-finance-sheet-add');
+    ui.setBtnLoading(btn, true, "A processar...");
     try {
         const data = await api.processFinanceUrl(url);
         await api.saveFinanceSheet(data);
@@ -230,7 +232,7 @@ async function addFinanceSheet() {
     } catch (err) {
         ui.toast("Erro ao processar folha", "error");
     } finally {
-        ui.setLoader(false);
+        ui.setBtnLoading(btn, false);
     }
 }
 
@@ -240,7 +242,7 @@ async function removeFinanceSheet(id) {
     try {
         await api.deleteFinanceSheet(id);
         await showFinance();
-    } catch (err) { alert(err.message); }
+    } catch (err) { ui.toast(err.message, "error"); }
     finally { ui.setLoader(false); }
 }
 
@@ -249,7 +251,7 @@ async function moveFinanceGroup(id, direction) {
     try {
         await api.updateFinanceGroupOrder(id, direction);
         await showFinance();
-    } catch (err) { alert(err.message); }
+    } catch (err) { ui.toast(err.message, "error"); }
     finally { ui.setLoader(false); }
 }
 
@@ -258,7 +260,7 @@ async function moveFinanceSheet(sheetId, groupId) {
     try {
         await api.saveFinanceSheet({ groupId: groupId || null }, sheetId);
         await showFinance();
-    } catch (err) { alert(err.message); }
+    } catch (err) { ui.toast(err.message, "error"); }
     finally { ui.setLoader(false); }
 }
 
@@ -270,13 +272,14 @@ function openFinanceGroupModal() {
 async function saveFinanceGroup() {
     const name = document.getElementById('input-finance-group-name').value.trim();
     if (!name) return;
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-finance-group-save');
+    ui.setBtnLoading(btn, true);
     try {
         await api.createFinanceGroup(name);
         ui.closeModal('modal-finance-group');
         await showFinance();
-    } catch (err) { alert(err.message); }
-    finally { ui.setLoader(false); }
+    } catch (err) { ui.toast(err.message, "error"); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 
 async function deleteFinanceGroup(id) {
@@ -285,7 +288,7 @@ async function deleteFinanceGroup(id) {
     try {
         await api.deleteFinanceGroup(id);
         await showFinance();
-    } catch (err) { alert(err.message); }
+    } catch (err) { ui.toast(err.message, "error"); }
     finally { ui.setLoader(false); }
 }
 
@@ -296,7 +299,7 @@ async function renameFinanceGroup(id) {
     try {
         await api.pb.collection('groups').update(id, { name: newName });
         await showFinance();
-    } catch (err) { alert(err.message); }
+    } catch (err) { ui.toast(err.message, "error"); }
     finally { ui.setLoader(false); }
 }
 
@@ -309,7 +312,7 @@ async function showDashboard() {
         ui.renderDashboardSummary();
     } catch (err) {
         console.error(err);
-        alert("Erro ao carregar dashboard.");
+        ui.toast("Erro ao carregar dashboard.", "error");
     } finally {
         ui.setLoader(false);
     }
@@ -329,7 +332,7 @@ async function openTable(id) {
         ui.renderTableDetails(editContainer);
     } catch (err) {
         console.error(err);
-        alert("Erro ao carregar tabela.");
+        ui.toast("Erro ao carregar tabela.", "error");
     } finally {
         ui.setLoader(false);
     }
@@ -338,13 +341,14 @@ async function openTable(id) {
 async function createNewTable() {
     const name = document.getElementById('input-table-name').value.trim();
     if (!name) return;
-    ui.setLoader(true);
+    const btn = document.getElementById('modal-table-submit');
+    ui.setBtnLoading(btn, true);
     try {
         await api.createTable(name);
         ui.closeModal('modal-new-table');
         await showDashboard();
     } catch (err) { ui.toast(err.message, "error"); }
-    finally { ui.setLoader(false); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 
 async function saveContainer() {
@@ -353,28 +357,30 @@ async function saveContainer() {
     const freight = parseFloat(document.getElementById('input-freight').value) || 0;
     const editId = document.getElementById('edit-id').value;
 
-    if (!id_str) return alert("Identificação necessária.");
-    if (duty < 0 || freight < 0) return alert("Valores não podem ser negativos.");
+    if (!id_str) return ui.toast("Identificação necessária.", "error");
+    if (duty < 0 || freight < 0) return ui.toast("Valores não podem ser negativos.", "error");
 
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-container-save');
+    ui.setBtnLoading(btn, true);
     try {
         await api.saveContainerData({ table_id: state.currentTableId, container_id_str: id_str, duty, freight }, editId);
         ui.closeModal('modal-container');
         await openTable(state.currentTableId);
     } catch (err) { alert(err.message); }
-    finally { ui.setLoader(false); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 
 async function deleteContainer() {
     const editId = document.getElementById('edit-id').value;
+    const btn = document.getElementById('btn-delete');
     if (editId && confirm("Eliminar registo permanentemente?")) {
-        ui.setLoader(true);
+        ui.setBtnLoading(btn, true);
         try {
             await api.deleteContainerData(editId);
             ui.closeModal('modal-container');
             await openTable(state.currentTableId);
         } catch (err) { alert(err.message); }
-        finally { ui.setLoader(false); }
+        finally { ui.setBtnLoading(btn, false); }
     }
 }
 
@@ -382,16 +388,17 @@ async function confirmPayment() {
     const date = document.getElementById('input-pay-date').value;
     const amount = parseFloat(document.getElementById('input-pay-amount').value) || 0;
     
-    if (!date || amount < 0.01) return alert("Verifique a data e o valor.");
-    if (amount > Math.abs(state.activeBalance)) return alert("Valor superior ao saldo disponível.");
+    if (!date || amount < 0.01) return ui.toast("Verifique a data e o valor.", "error");
+    if (amount > Math.abs(state.activeBalance)) return ui.toast("Valor superior ao saldo disponível.", "error");
 
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-payment-confirm');
+    ui.setBtnLoading(btn, true);
     try {
         await api.registerPayment(state.currentTableId, amount, date);
         ui.closeModal('modal-payment');
         await openTable(state.currentTableId);
     } catch (err) { alert(err.message); }
-    finally { ui.setLoader(false); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 
 async function confirmPaymentFull() {
@@ -497,7 +504,7 @@ function editContainer(c) {
 }
 
 function openPaymentModal() {
-    if (Math.abs(state.activeBalance) < 0.01) return alert("O balanço já está liquidado.");
+    if (Math.abs(state.activeBalance) < 0.01) return ui.toast("O balanço já está liquidado.", "info");
     document.getElementById('modal-payment').classList.remove('hidden');
     
     const balance = state.activeBalance;
@@ -545,7 +552,7 @@ async function showTeam() {
         }
     } catch (err) {
         console.error(err);
-        alert("Erro ao aceder ao módulo de equipes.");
+        ui.toast("Erro ao aceder ao módulo de equipes.", "error");
     } finally {
         ui.setLoader(false);
     }
@@ -562,7 +569,7 @@ async function openTeamTable(id) {
         ui.renderTeamTable(editTeamRecord);
     } catch (err) {
         console.error("Erro no OpenTeamTable:", err);
-        alert(`Erro ao carregar relatório: ${err.message}`);
+        ui.toast(`Erro ao carregar relatório: ${err.message}`, "error");
     } finally {
         ui.setLoader(false);
     }
@@ -576,13 +583,14 @@ function openNewTeamTableModal() {
 async function createTeamTable() {
     const name = document.getElementById('input-team-table-name').value.trim();
     if (!name) return;
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-team-table-create');
+    ui.setBtnLoading(btn, true);
     try {
         await api.createTeamTable(name);
         ui.closeModal('modal-team-table');
         await showTeam();
     } catch (err) { alert(err.message); }
-    finally { ui.setLoader(false); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 
 function openTeamTableActions(table, button) {
@@ -687,7 +695,7 @@ function editTeamRecord(r) {
 
 async function saveTeamRecord() {
     const containerId = document.getElementById('input-team-container-id').value.trim();
-    if (!containerId) return alert("ID do contentor é obrigatório.");
+    if (!containerId) return ui.toast("ID do contentor é obrigatório.", "error");
 
     const data = {
         table_id: api.state.team.currentTableId,
@@ -707,26 +715,28 @@ async function saveTeamRecord() {
         termos_paid: document.getElementById('team-paid-termos').checked,
     };
 
+    const btn = document.getElementById('btn-team-record-save');
     const editId = document.getElementById('team-record-id').value;
-    ui.setLoader(true);
+    ui.setBtnLoading(btn, true);
     try {
         await api.saveTeamRecord(data, editId);
         ui.closeModal('modal-team-record');
         await openTeamTable(api.state.team.currentTableId);
     } catch (err) { alert(err.message); }
-    finally { ui.setLoader(false); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 
 async function deleteTeamRecord() {
     const id = document.getElementById('team-record-id').value;
+    const btn = document.getElementById('btn-team-record-delete');
     if (id && confirm("Eliminar este registo permanentemente?")) {
-        ui.setLoader(true);
+        ui.setBtnLoading(btn, true);
         try {
             await api.deleteTeamRecord(id);
             ui.closeModal('modal-team-record');
             await openTeamTable(api.state.team.currentTableId);
         } catch (err) { alert(err.message); }
-        finally { ui.setLoader(false); }
+        finally { ui.setBtnLoading(btn, false); }
     }
 }
 
@@ -752,10 +762,10 @@ async function showTerm() {
     } catch (err) {
         console.error("Erro ao carregar TERM:", err);
         if (err.status === 404) {
-            alert("ERRO DE CONFIGURAÇÃO: As coleções 'term_tables' e 'term_records' não existem no seu PocketBase. O módulo não funcionará até que sejam criadas.");
+            ui.toast("ERRO DE CONFIGURAÇÃO: As coleções 'term_tables' e 'term_records' não existem no seu PocketBase. O módulo não funcionará até que sejam criadas.", "error");
             ui.showView('view-term-dashboard');
         } else {
-            alert("Erro ao aceder ao módulo TERM: " + err.message);
+            ui.toast("Erro ao aceder ao módulo TERM: " + err.message, "error");
         }
     } finally {
         ui.setLoader(false);
@@ -770,7 +780,7 @@ async function openTermTable(id) {
         ui.renderTermTable(editTermRecord);
     } catch (err) {
         console.error(err);
-        alert(`Erro ao carregar relatório TERM: ${err.message}`);
+        ui.toast(`Erro ao carregar relatório TERM: ${err.message}`, "error");
     } finally {
         ui.setLoader(false);
     }
@@ -784,13 +794,14 @@ function openNewTermTableModal() {
 async function createTermTable() {
     const name = document.getElementById('input-term-table-name').value.trim();
     if (!name) return;
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-term-table-create');
+    ui.setBtnLoading(btn, true);
     try {
         await api.createTermTable(name);
         ui.closeModal('modal-term-table');
         await showTerm();
-    } catch (err) { alert(err.message); }
-    finally { ui.setLoader(false); }
+    } catch (err) { ui.toast(err.message, "error"); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 
 function openTermRecordModal() {
@@ -831,7 +842,7 @@ function editTermRecord(r) {
 
 async function saveTermRecord() {
     const containerId = document.getElementById('input-term-container-id').value.trim();
-    if (!containerId) return alert("ID do contentor é obrigatório.");
+    if (!containerId) return ui.toast("ID do contentor é obrigatório.", "error");
 
     const data = {
         table_id: api.state.term.currentTableId,
@@ -843,25 +854,27 @@ async function saveTermRecord() {
     };
 
     const editId = document.getElementById('term-record-id').value;
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-term-record-save');
+    ui.setBtnLoading(btn, true);
     try {
         await api.saveTermRecord(data, editId);
         ui.closeModal('modal-term-record');
         await openTermTable(api.state.term.currentTableId);
-    } catch (err) { alert(err.message); }
-    finally { ui.setLoader(false); }
+    } catch (err) { ui.toast(err.message, "error"); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 
 async function deleteTermRecord() {
     const id = document.getElementById('term-record-id').value;
+    const btn = document.getElementById('btn-term-record-delete');
     if (id && confirm("Eliminar este registo permanently?")) {
-        ui.setLoader(true);
+        ui.setBtnLoading(btn, true);
         try {
             await api.deleteTermRecord(id);
             ui.closeModal('modal-term-record');
             await openTermTable(api.state.term.currentTableId);
-        } catch (err) { alert(err.message); }
-        finally { ui.setLoader(false); }
+        } catch (err) { ui.toast(err.message, "error"); }
+        finally { ui.setBtnLoading(btn, false); }
     }
 }
 
@@ -978,33 +991,35 @@ async function saveConfirmProject() {
         folderId: extractId(document.getElementById('input-project-drive-id').value),
     };
 
-    if (!data.name || !data.sheetId) return alert("Nome e ID da Folha são obrigatórios.");
+    if (!data.name || !data.sheetId) return ui.toast("Nome e ID da Folha são obrigatórios.", "error");
 
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-confirm-project-save');
+    ui.setBtnLoading(btn, true);
     try {
         await api.saveConfirmProject(data);
         ui.closeModal('modal-confirm-project');
         loadConfirmProjects();
     } catch (err) {
-        alert("Erro ao gravar projeto: " + err.message);
+        ui.toast("Erro ao gravar projeto: " + err.message, "error");
     } finally {
-        ui.setLoader(false);
+        ui.setBtnLoading(btn, false);
     }
 }
 
 async function deleteConfirmProject() {
     const id = document.getElementById('input-project-id').value;
+    const btn = document.getElementById('btn-confirm-project-delete');
     if (!confirm("Tem a certeza que deseja eliminar este projeto?")) return;
 
-    ui.setLoader(true);
+    ui.setBtnLoading(btn, true);
     try {
         await api.deleteConfirmProject(id);
         ui.closeModal('modal-confirm-project');
         loadConfirmProjects();
     } catch (err) {
-        alert("Erro ao eliminar: " + err.message);
+        ui.toast("Erro ao eliminar: " + err.message, "error");
     } finally {
-        ui.setLoader(false);
+        ui.setBtnLoading(btn, false);
     }
 }
 
@@ -1045,7 +1060,7 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
 
 
     } catch (err) {
-        alert("Erro ao carregar projeto: " + err.message);
+        ui.toast("Erro ao carregar projeto: " + err.message, "error");
     } finally {
         ui.setLoader(false);
     }
@@ -1136,7 +1151,7 @@ async function handleCreateFolder(name, parentId) {
         // Abrir a nova pasta
         openDriveExplorer(folder.id);
     } catch (err) {
-        alert("Erro ao criar pasta: " + err.message);
+        ui.toast("Erro ao criar pasta: " + err.message, "error");
     } finally {
         ui.setLoader(false);
     }
@@ -1164,7 +1179,7 @@ async function handleFileUpload(input) {
         // Recarregar pasta
         openDriveExplorer(parentId);
     } catch (err) {
-        alert("Erro no upload: " + err.message);
+        ui.toast("Erro no upload: " + err.message, "error");
         openDriveExplorer(parentId);
     } finally {
         ui.setLoader(false);
@@ -1181,7 +1196,7 @@ async function confirmAndDeleteFile(fileId, fileName, parentId) {
         // Recarregar pasta
         openDriveExplorer(parentId);
     } catch (err) {
-        alert("Erro ao apagar ficheiro: " + err.message);
+        ui.toast("Erro ao apagar ficheiro: " + err.message, "error");
         openDriveExplorer(parentId);
     } finally {
         ui.setLoader(false);
@@ -1226,10 +1241,10 @@ async function openDriveExplorer(folderId = null, isBack = false) {
     } catch (err) { 
         console.error("Erro ao carregar Drive:", err);
         if (err.message.includes('AUTH_REQUIRED')) {
-            alert("Sessão Google expirada ou não autorizada. Por favor, re-autorize a aplicação.");
+            ui.toast("Sessão Google expirada ou não autorizada. Por favor, re-autorize a aplicação.", "error");
             window.location.href = '/api/google/auth';
         } else {
-            alert("Não foi possível aceder à pasta. Verifique se o ID está correto e se autorizou o acesso à sua conta Google.");
+            ui.toast("Não foi possível aceder à pasta. Verifique se o ID está correto e se autorizou o acesso à sua conta Google.", "error");
         }
     }
 }
@@ -1312,7 +1327,7 @@ async function saveConfirmToSheet() {
     });
     
     if (statusIdx === -1) {
-        alert("Erro: Coluna de Confirmação não encontrada no GSheet.");
+        ui.toast("Erro: Coluna de Confirmação não encontrada no GSheet.", "error");
         ui.setLoader(false);
         return;
     }
@@ -1340,7 +1355,8 @@ async function saveConfirmToSheet() {
         }
     });
 
-    ui.setLoader(true);
+    const btn = document.getElementById('btn-confirm-to-sheet');
+    ui.setBtnLoading(btn, true);
     try {
         await api.updateGSheet(spreadsheetId, `A${currentConfirmRow.index + 1}`, [updatedRow]);
 
@@ -1357,7 +1373,7 @@ async function saveConfirmToSheet() {
                 await api.updateGSheetNote(currentProjectSheetId, cleanSheetName, currentConfirmRow.index, statusIdx, comment.trim(), cellColor);
             } catch (noteErr) {
                 console.error("Erro ao gravar nota/cor nativa:", noteErr);
-                alert("Aviso: O status foi gravado, mas falhou ao atualizar a NOTA/cor na célula.");
+                ui.toast("Aviso: O status foi gravado, mas falhou ao atualizar a NOTA/cor na célula.", "warning");
             }
         }
 
@@ -1372,7 +1388,7 @@ async function saveConfirmToSheet() {
             ui.renderConfirmList(data, "", "PENDENTE");
             ui.showView('view-confirm-table');
         }
-    } catch (err) { alert("Erro ao gravar: " + err.message); }
-    finally { ui.setLoader(false); }
+    } catch (err) { ui.toast("Erro ao gravar: " + err.message, "error"); }
+    finally { ui.setBtnLoading(btn, false); }
 }
 

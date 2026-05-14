@@ -73,6 +73,31 @@ export function toast(message, type = 'info') {
 }
 
 /**
+ * Controla o estado de carregamento de um botão
+ */
+export function setBtnLoading(btn, isLoading, originalText = null) {
+    if (!btn) return;
+    
+    if (isLoading) {
+        if (originalText) btn.dataset.originalText = originalText;
+        else if (!btn.dataset.originalText) btn.dataset.originalText = btn.innerText;
+        
+        btn.classList.add('btn-loading');
+        if (btn.classList.contains('bg-black') || btn.classList.contains('bg-blue-600') || btn.classList.contains('bg-slate-900') || btn.classList.contains('bg-purple-600')) {
+            btn.classList.add('btn-loading-white');
+        }
+        btn.disabled = true;
+    } else {
+        btn.classList.remove('btn-loading');
+        btn.classList.remove('btn-loading-white');
+        btn.disabled = false;
+        if (btn.dataset.originalText) {
+            btn.innerText = btn.dataset.originalText;
+        }
+    }
+}
+
+/**
  * Utilitário para ocultar todas as visões principais
  */
 function hideAllViews() {
@@ -1710,12 +1735,12 @@ export function showFilePreview(file) {
                         ocrBtn.innerText = "COPIADO!";
                         ocrBtn.classList.replace('bg-purple-600', 'bg-green-600');
                     } else {
-                        alert("Não foi possível extrair texto legível desta imagem.");
+                        ui.toast("Não foi possível extrair texto legível desta imagem.", "warning");
                         ocrBtn.innerText = originalText;
                     }
                 } catch (err) {
                     console.error("Erro no OCR:", err);
-                    alert("Erro ao processar imagem para OCR.");
+                    ui.toast("Erro ao processar imagem para OCR.", "error");
                     ocrBtn.innerText = originalText;
                 } finally {
                     ocrBtn.disabled = false;
@@ -2112,7 +2137,7 @@ export async function confirmPaymentSelection() {
 
     if (status === 'CONFIRMADO') {
         if (!selectedPaymentIdForLink) {
-            alert('Para marcar como CONFIRMADO, selecione primeiro um pagamento na lista.');
+            ui.toast('Para marcar como CONFIRMADO, selecione primeiro um pagamento na lista.', "warning");
             return;
         }
 
@@ -2120,22 +2145,20 @@ export async function confirmPaymentSelection() {
 
 
         if (allocatedAmount <= 0) {
-            alert("Por favor, insira um valor válido para alocar.");
+            ui.toast("Por favor, insira um valor válido para alocar.", "warning");
             return;
         }
 
         if (allocatedAmount > selectedPaymentMaxAmount + 0.01) {
-            alert("O valor a alocar não pode ser superior ao valor disponível no pagamento.");
+            ui.toast("O valor a alocar não pode ser superior ao valor disponível no pagamento.", "warning");
             return;
         }
     }
 
     const btn = document.querySelector('#payment-mini-filter button.bg-blue-600');
-    const originalText = btn.innerText;
 
     try {
-        btn.innerText = 'A processar...';
-        btn.disabled = true;
+        setBtnLoading(btn, true, 'A processar...');
 
         // 1. Atualizar PocketBase com lógica de Split
         if (selectedPaymentIdForLink && allocatedAmount > 0) {
@@ -2258,7 +2281,7 @@ export async function confirmPaymentSelection() {
                             await updateGSheetNote(state.confirm.sheetId, cleanSheetName, rowObj.originalIndex, statusIdx, comment.trim(), cellColor);
                         } catch (noteErr) {
                             console.error("Erro ao gravar nota/cor:", noteErr);
-                            alert("Aviso: O status foi gravado, mas falhou ao atualizar a cor/nota na célula.");
+                            ui.toast("Aviso: O status foi gravado, mas falhou ao atualizar a cor/nota na célula.", "warning");
                         }
                     }
                 }
@@ -2291,8 +2314,7 @@ export async function confirmPaymentSelection() {
         console.error('Erro ao vincular pagamento:', e);
         alert('Erro ao vincular pagamento: ' + e.message);
     } finally {
-        btn.innerText = originalText;
-        btn.disabled = false;
+        setBtnLoading(btn, false);
     }
 }
 
