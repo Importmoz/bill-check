@@ -130,6 +130,7 @@ async function handleLogin() {
     } catch (err) {
         errorEl.classList.remove('hidden');
         errorMsgEl.innerText = err.message;
+        ui.toast(err.message, 'error');
     } finally {
         ui.setLoader(false);
     }
@@ -176,7 +177,7 @@ async function showFinance() {
         }
     } catch (err) {
         console.error("Erro no módulo financeiro:", err);
-        alert("Erro ao carregar módulo financeiro: " + (err.message || "Erro desconhecido"));
+        ui.toast("Erro ao carregar módulo financeiro", "error");
     } finally {
         ui.setLoader(false);
     }
@@ -227,7 +228,7 @@ async function addFinanceSheet() {
         ui.closeModal('modal-finance-sheet');
         await showFinance();
     } catch (err) {
-        alert("Erro ao processar folha: " + err.message);
+        ui.toast("Erro ao processar folha", "error");
     } finally {
         ui.setLoader(false);
     }
@@ -342,7 +343,7 @@ async function createNewTable() {
         await api.createTable(name);
         ui.closeModal('modal-new-table');
         await showDashboard();
-    } catch (err) { alert(err.message); }
+    } catch (err) { ui.toast(err.message, "error"); }
     finally { ui.setLoader(false); }
 }
 

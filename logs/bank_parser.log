@@ -1498,3 +1498,84 @@ DEBUG: Linha 4: ['Saldo Dispon�vel', '+55.771,39 MZN', nan, nan, nan]
 DEBUG: Banco Detetado: BCI
 DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
 
+2026-05-14T10:09:22.527Z - INFO: Arquivo extraído bank_364aada7-e982-4564-956d-aebabe090a59.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "TRF eMola 876951755 3975692748Ref. 260513224137480C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 1274.0,
+    "balance": 1551.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-13 00:00:00",
+    "bank": "BIM",
+    "account_own...
+STDERR: DEBUG: Diagn�stico de bank_364aada7-e982-4564-956d-aebabe090a59.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 14-05-2026 at� 14-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-14T10:15:12.584Z - INFO: Arquivo extraído bank_2640ecaa-cafd-44c8-9058-7bd740ee4475.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "TRF eMola 876226286 3977860127Ref. 260514120536914C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 4410.0,
+    "balance": 62601.14,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BIM",
+    "ac...
+STDERR: DEBUG: Diagn�stico de bank_2640ecaa-cafd-44c8-9058-7bd740ee4475.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 330788916 em MZN, de 14-05-2026 at� 14-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-14T10:15:26.465Z - INFO: Arquivo extraído bank_c70b92c3-12b8-44cd-b42c-ea6fa3f5c4ab.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 66227527Ref. 260514120507048C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 9996.0,
+    "balance": 11547.28,
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-14 00:00:00",
+    "bank": "BIM",
+    "account_owne...
+STDERR: DEBUG: Diagn�stico de bank_c70b92c3-12b8-44cd-b42c-ea6fa3f5c4ab.xlsx (Primeiras 5 linhas):
+DEBUG: Linha 0: [nan, nan, 'Actividades da Conta', nan, nan]
+DEBUG: Linha 1: [nan, nan, nan, nan, nan]
+DEBUG: Linha 2: [nan, nan, nan, nan, nan]
+DEBUG: Linha 3: [nan, nan, nan, nan, nan]
+DEBUG: Linha 4: [nan, nan, 'Lista de transac��es da conta N� 75470366 em MZN, de 14-05-2026 at� 14-05-2026', nan, nan]
+DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+

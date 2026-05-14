@@ -7,12 +7,69 @@ import { state, uploadBankStatement, saveBankIncome, listBankIncomes, searchPaym
 /**
  * Controla o indicador de carregamento
  */
-export function setLoader(show) {
+export function setLoader(show, message = 'A Processar') {
     const loader = document.getElementById('loader');
     if (loader) {
-        if (show) loader.classList.remove('hidden');
-        else loader.classList.add('hidden');
+        const msgEl = loader.querySelector('span');
+        if (msgEl) msgEl.innerText = message;
+        
+        if (show) {
+            loader.classList.remove('hidden');
+        } else {
+            loader.classList.add('hidden');
+        }
     }
+}
+
+/**
+ * Mostra uma notificação toast premium
+ */
+export function toast(message, type = 'info') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'fixed bottom-10 right-10 z-[10000] flex flex-col gap-3 pointer-events-none';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    const colors = {
+        success: 'bg-green-600',
+        error: 'bg-red-600',
+        info: 'bg-slate-900',
+        warning: 'bg-orange-500'
+    };
+
+    toast.className = `${colors[type] || colors.info} text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-slide-in pointer-events-auto cursor-pointer min-w-[280px] border border-white/10`;
+    
+    const icon = {
+        success: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+        error: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>',
+        info: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>'
+    };
+
+    toast.innerHTML = `
+        <div class="shrink-0">${icon[type] || icon.info}</div>
+        <div class="flex-1 text-xs font-black uppercase tracking-wider">${message}</div>
+    `;
+
+    toast.onclick = () => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 300);
+    };
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(100%)';
+            toast.style.transition = 'all 0.3s ease';
+            setTimeout(() => toast.remove(), 300);
+        }
+    }, 4000);
 }
 
 /**
@@ -33,6 +90,9 @@ export function showView(viewId) {
     const el = document.getElementById(viewId);
     if (el) {
         el.classList.remove('hidden');
+        el.classList.remove('animate-fade-in');
+        void el.offsetWidth; // Trigger reflow to restart animation
+        el.classList.add('animate-fade-in');
         // Garantir que ações da tabela e outros elementos flutuantes sejam geridos
         const actions = document.getElementById('table-actions');
         const teamActions = document.getElementById('team-table-actions');
@@ -1821,13 +1881,13 @@ export async function handleBankUpload(input) {
                     console.warn('[BANK] Erro ao gravar item:', e.message);
                 }
             }
-            alert(`Importação concluída!\n\n✅ Novos registos: ${countNew}\n⚠️ Duplicados ignorados: ${countDup}`);
+            toast(`Importação concluída! Novos: ${countNew}, Duplicados: ${countDup}`, countNew > 0 ? 'success' : 'warning');
             await showBankDashboard();
         } else {
-            alert("Nenhuma entrada de crédito encontrada no ficheiro.");
+            toast("Nenhuma entrada de crédito encontrada no ficheiro.", "warning");
         }
     } catch (error) {
-        alert("Erro no processamento: " + error.message);
+        toast("Erro no processamento: " + error.message, "error");
     } finally {
         input.value = '';
         setLoader(false);
