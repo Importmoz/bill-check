@@ -424,6 +424,8 @@ declare class RealtimeService extends BaseService {
     private maxReconnectAttempts;
     private predefinedReconnectIntervals;
     private pendingConnects;
+    private pendingSubmits;
+    private isProcessingPendingSubmits;
     /**
      * Returns whether the realtime connection has been established.
      */
@@ -483,14 +485,16 @@ declare class RealtimeService extends BaseService {
     unsubscribeByTopicAndListener(topic: string, listener: EventListener): Promise<void>;
     private hasSubscriptionListeners;
     private submitSubscriptions;
+    private finalizePendingSubscriptions;
     private getSubscriptionsCancelKey;
     private getSubscriptionsByTopic;
     private getNonEmptySubscriptionKeys;
+    private hasUnsentSubscriptions;
+    private sendSubscriptions;
     private addAllSubscriptionListeners;
     private removeAllSubscriptionListeners;
     private connect;
     private initConnect;
-    private hasUnsentSubscriptions;
     private connectErrorHandler;
     private disconnect;
 }

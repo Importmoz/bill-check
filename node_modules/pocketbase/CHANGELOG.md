@@ -1,3 +1,8 @@
+## 0.26.9
+
+- Optimized realtime `subscribe`/`unsubscribe` calls to minimize async errors ([pocketbase#7684](https://github.com/pocketbase/pocketbase/issues/7684)).
+
+
 ## 0.26.8
 
 - Properly reject the `authWithOAuth2()` `Promise` when manually calling `pb.cancelRequest(requestKey)` _(previously the manual cancellation didn't account for the waiting realtime subscription)_.

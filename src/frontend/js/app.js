@@ -207,9 +207,15 @@ async function refreshAllFinanceSheets() {
 }
 
 async function handleManualFinanceRefresh() {
-    ui.setLoader(true);
-    await refreshAllFinanceSheets();
-    ui.setLoader(false);
+    const btn = document.getElementById('btn-finance-refresh');
+    ui.setBtnLoading(btn, true, "A actualizar...");
+    ui.setLoader(true, "A sincronizar folhas...");
+    try {
+        await refreshAllFinanceSheets();
+    } finally {
+        ui.setLoader(false);
+        ui.setBtnLoading(btn, false);
+    }
 }
 
 // Modais e Acções Financeiras

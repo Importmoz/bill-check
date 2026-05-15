@@ -286,7 +286,9 @@ To change this behavior per request basis, you can adjust the `requestKey: null|
 Set it to `null` to unset the default request identifier and to disable auto cancellation for the specific request.
 Or set it to a unique string that will be used as request identifier and based on which pending requests will be matched (default to `HTTP_METHOD + path`, eg. "GET /api/users")
 
-Example:
+If you want to globally disable the auto cancellation behavior, you could set `pb.autoCancellation(false)`.
+
+Examples:
 
 ```js
 pb.collection('example').getList(1, 20);                        // cancelled
@@ -304,9 +306,7 @@ pb.collection('example').getList(1, 20); // executed
 pb.collection('example').getList(1, 20); // executed
 ```
 
-**If you want to globally disable the auto cancellation behavior, you could set `pb.autoCancellation(false)`.**
-
-To manually cancel pending requests, you could use `pb.cancelAllRequests()` or `pb.cancelRequest(requestKey)`.
+If you want to manually cancel pending requests, you could use `pb.cancelAllRequests()` or `pb.cancelRequest(requestKey)`.
 
 
 ### Specify TypeScript definitions

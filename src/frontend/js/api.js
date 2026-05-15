@@ -66,6 +66,11 @@ export async function uploadBankStatement(file) {
  * Suporta contextos HTTP e HTTPS
  */
 async function buildSignature(record) {
+    // Se o parser já enviou uma assinatura SHA-256, usamos essa para garantir consistência total
+    if (record.signature && !record.signature.startsWith('fallback_')) {
+        return record.signature;
+    }
+
     const bankVal = Array.isArray(record.bank) ? record.bank[0] : record.bank;
     const bank = (bankVal || '').trim();
     const date = String(record.date || '').split(' ')[0]; // YYYY-MM-DD

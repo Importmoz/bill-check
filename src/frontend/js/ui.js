@@ -14,9 +14,9 @@ export function setLoader(show, message = 'A Processar') {
         if (msgEl) msgEl.innerText = message;
         
         if (show) {
-            loader.classList.remove('hidden');
+            loader.style.display = 'flex';
         } else {
-            loader.classList.add('hidden');
+            loader.style.display = 'none';
         }
     }
 }
@@ -1422,6 +1422,10 @@ export async function saveConfirmOrderEdit(e) {
     const o = window.currentClientRows[index];
     if (!o) return;
 
+    const btn = document.getElementById('btn-confirm-edit-save');
+    setBtnLoading(btn, true, "A gravar...");
+    setLoader(true, "A atualizar Google Sheets...");
+
     const cbm = parseFloat(document.getElementById('edit-cbm').value) || 0;
     const unitDuty = parseFloat(document.getElementById('edit-unitDuty').value) || 0;
     const dutyPrepaid = parseFloat(document.getElementById('edit-dutyPrepaid').value) || 0;
@@ -1439,7 +1443,6 @@ export async function saveConfirmOrderEdit(e) {
     const balanceIdx = cols.findIndex(c => String(c).includes('BALANCE'));
 
     // 2. Preparar valores para a linha específica
-    // Precisamos da linha original completa para não perder dados de outras colunas
     const rowData = [...state.confirm.data[o.originalIndex]];
     if (cbmIdx !== -1) rowData[cbmIdx] = cbm;
     if (unitDutyIdx !== -1) rowData[unitDutyIdx] = unitDuty;
@@ -1448,10 +1451,7 @@ export async function saveConfirmOrderEdit(e) {
     if (paidIdx !== -1) rowData[paidIdx] = paid;
     if (balanceIdx !== -1) rowData[balanceIdx] = balance;
 
-    setLoader(true);
     try {
-        // O range no Google Sheets é 1-based. originalIndex 0 é a primeira linha (A1:Z1).
-        // Aqui originalIndex já vem da iteração sobre state.confirm.data.
         const spreadsheetId = state.confirm.sheetId;
         const sheetName = state.confirm.range.split('!')[0] || 'Folha1';
         const rowNum = o.originalIndex + 1;
@@ -1471,7 +1471,7 @@ export async function saveConfirmOrderEdit(e) {
         toast("Alterações gravadas com sucesso no Google Sheets!", "success");
         closeConfirmEditModal();
         
-        // Re-renderizar os detalhes do cliente para mostrar os novos valores
+        // Re-renderizar os detalhes do cliente
         const currentClient = { 
             displayName: document.getElementById('confirm-client-detail-name').innerText,
             displayIdCode: document.getElementById('confirm-client-detail-id').innerText.replace('ID CODE: ', ''),
@@ -1486,6 +1486,7 @@ export async function saveConfirmOrderEdit(e) {
         toast("Erro ao gravar no Google Sheets: " + err.message, "error");
     } finally {
         setLoader(false);
+        setBtnLoading(btn, false);
     }
 }
 
@@ -1887,20 +1888,23 @@ export async function handleBankUpload(input) {
     const file = input.files[0];
     if (!file) return;
 
-    setLoader(true);
+    const btn = document.getElementById('btn-bank-upload');
+    setBtnLoading(btn, true, "A processar...");
+    setLoader(true, "A analisar ficheiro...");
+    
     try {
         const data = await uploadBankStatement(file);
 
         if (data && data.length > 0) {
+            setLoader(true, `A gravar ${data.length} movimentos...`);
             let countNew = 0;
             let countDup = 0;
             for (const item of data) {
                 try {
-                    const result = await saveBankIncome(item);
-                    // No PocketBase, um objeto novo terá uma data de criação (created) idêntica à de atualização (updated)
-                    // Mas como retornamos o objeto existente em caso de duplicado, basta ver se o ID já existia no nosso fluxo
-                    // Uma forma simples é ver a data de criação: se foi criado há mais de 10 segundos, é duplicado
-                    const isNew = (new Date() - new Date(result.created)) < 10000;
+                                        const result = await saveBankIncome(item);
+                    // PocketBase returns `created` and `updated` timestamps.
+                    // New record: timestamps are almost equal (<1s). Existing record: `created` is older.
+                    const isNew = result && result.created && result.updated && (new Date(result.updated) - new Date(result.created) < 2000);
                     if (isNew) countNew++; else countDup++;
                 } catch (e) {
                     console.warn('[BANK] Erro ao gravar item:', e.message);
@@ -1914,8 +1918,9 @@ export async function handleBankUpload(input) {
     } catch (error) {
         toast("Erro no processamento: " + error.message, "error");
     } finally {
-        input.value = '';
         setLoader(false);
+        setBtnLoading(btn, false);
+        input.value = '';
     }
 }
 
@@ -2159,6 +2164,7 @@ export async function confirmPaymentSelection() {
 
     try {
         setBtnLoading(btn, true, 'A processar...');
+        setLoader(true, 'A gravar reconciliação...');
 
         // 1. Atualizar PocketBase com lógica de Split
         if (selectedPaymentIdForLink && allocatedAmount > 0) {
@@ -2314,6 +2320,7 @@ export async function confirmPaymentSelection() {
         console.error('Erro ao vincular pagamento:', e);
         alert('Erro ao vincular pagamento: ' + e.message);
     } finally {
+        setLoader(false);
         setBtnLoading(btn, false);
     }
 }

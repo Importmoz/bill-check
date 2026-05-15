@@ -5,6 +5,7 @@ import sys
 import re
 import unicodedata
 import datetime
+import hashlib
 
 def normalize_str(s):
     if not s: return ""
@@ -12,6 +13,18 @@ def normalize_str(s):
     # Remover acentos e caracteres especiais
     s = ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
     return s
+
+def build_signature(bank, date_str, amount, balance, reference, description):
+    # Formata valores para garantir consistência com o frontend
+    bank_clean = str(bank or "").strip()
+    date_clean = str(date_str or "").split(' ')[0] # YYYY-MM-DD
+    amount_clean = "{:.2f}".format(float(amount or 0))
+    balance_clean = "{:.2f}".format(float(balance or 0))
+    ref_clean = str(reference or "").strip()
+    desc_clean = re.sub(r'\s+', '', str(description or "")).upper()
+    
+    raw = f"{bank_clean}|{date_clean}|{amount_clean}|{balance_clean}|{ref_clean}|{desc_clean}"
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
 
 def clean_amount(val):
     if pd.isna(val) or val == '': return 0.0
@@ -41,9 +54,10 @@ def clean_amount(val):
         return 0.0
 
 def is_bank_fee(desc):
-    fees = ['COMISS', 'IMPOSTO SELO', 'MANUTENCAO', 'JUROS', 'DESPESAS', 'IOF', 'TAXA']
     d = normalize_str(desc)
-    return any(f in d for f in fees)
+    pattern = r'\b(COMISS[A-Z]*|IMPOSTO|SELO|MANUTENCAO|JUROS|DESPESAS|IOF|TAXA|TAXE|TAX)\b'
+    match = re.search(pattern, d)
+    return match is not None
 
 def extract_order_id(desc):
     match = re.search(r'ID\s*([A-Z0-9]+)', desc, re.IGNORECASE)
@@ -95,18 +109,29 @@ def process_file(filepath):
         print(json.dumps({"error": "O ficheiro está vazio ou não pôde ser interpretado."}))
         sys.exit(1)
 
+    # Nedbank specific: check filename pattern
+    if "00009244900" in filename or "9244900" in filename:
+        bank, owner, acc_num = "NEDBANK", "JUPITER LOGISTICS LDA", "9244900"
+
     # Tentar detetar banco pelo conteúdo de forma agressiva
     if bank == "UNKNOWN":
         # Diagnóstico para o log do servidor
         print(f"DEBUG: Diagnóstico de {filename} (Primeiras 5 linhas):", file=sys.stderr)
-        for i, row in df.head(5).iterrows():
-            print(f"DEBUG: Linha {i}: {list(row.values)[:5]}", file=sys.stderr)
+        
+        # Procurar por números de conta em qualquer lugar do DataFrame
+        all_vals_str = " ".join([str(v) for v in df.values.flatten()])
+        for acc, (b, o) in accounts.items():
+            if acc in all_vals_str or acc.lstrip('0') in all_vals_str:
+                bank, owner, acc_num = b, o, acc
+                print(f"DEBUG: Banco detetado via conteúdo global: {bank}", file=sys.stderr)
+                break
 
+    if bank == "UNKNOWN":
         for i, row in df.head(15).iterrows():
             row_str = " ".join([str(v) for v in row.values])
             for acc, (b, o) in accounts.items():
-                # Correspondência direta por string
-                if acc in row_str:
+                # Correspondência direta por string (importante para zeros à esquerda como no Nedbank)
+                if acc in row_str or acc.lstrip('0') in row_str:
                     bank, owner, acc_num = b, o, acc
                     break
                 # Correspondência matemática (evita erro de notação científica 1.54e+13)
@@ -118,9 +143,8 @@ def process_file(filepath):
                     except: pass
                 if bank != "UNKNOWN": break
 
-
     header_row = -1
-    keywords = ['DATA', 'DESCRI', 'DESCRIO', 'CREDITO', 'CRDITO', 'DEBITO', 'DBITO', 'SALDO', 'VALOR', 'MONTANTE', 'DETALHE', 'MOVIMENTO', 'MOEDA', 'MOV', 'DOCUMENTO', 'OPER']
+    keywords = ['DATA', 'DESCRI', 'DESCRIO', 'CREDITO', 'CRDITO', 'DEBITO', 'DBITO', 'SALDO', 'VALOR', 'MONTANTE', 'DETALHE', 'MOVIMENTO', 'MOEDA', 'MOV', 'DOCUMENTO', 'OPER', 'TRANSAC']
 
     
     # 1. Procurar o cabeçalho nas primeiras 50 linhas
@@ -233,11 +257,18 @@ def process_file(filepath):
             except:
                 date_str = str(date_val)
 
+            ref_val = str(row[ref_col]) if ref_col and not pd.isna(row[ref_col]) else ""
+            bal_val = clean_amount(row[balance_col]) if balance_col else 0.0
+            
+            # Gerar assinatura determinística
+            sig = build_signature(bank, date_str, income, bal_val, ref_val, desc_val)
+
             results.append({
                 "date": date_str, "bank": bank, "account_owner": owner, "account_number": acc_num,
                 "description": desc_val.strip(),
-                "reference": str(row[ref_col]) if ref_col and not pd.isna(row[ref_col]) else "",
-                "amount": income, "balance": clean_amount(row[balance_col]) if balance_col else 0.0,
+                "reference": ref_val,
+                "amount": income, "balance": bal_val,
+                "signature": sig,
                 "order_id": extract_order_id(desc_val), "reconciled": False
             })
         except:
