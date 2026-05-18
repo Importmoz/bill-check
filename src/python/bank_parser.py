@@ -143,6 +143,18 @@ def process_file(filepath):
                     except: pass
                 if bank != "UNKNOWN": break
 
+    # Fallback agressivo: detetar banco por nomes/palavras-chave no nome do arquivo ou conteúdo global
+    if bank == "UNKNOWN":
+        all_vals_str = (" ".join([str(v) for v in df.values.flatten()]) + " " + fn_upper).upper()
+        if "BCI" in all_vals_str:
+            bank, owner = "BCI", "JUPITER LOGISTICS LDA"
+        elif "BIM" in all_vals_str or "MILLENNIUM" in all_vals_str:
+            bank, owner = "BIM", "JUPITER LOGISTICS LDA"
+        elif "NEDBANK" in all_vals_str or "NED" in all_vals_str:
+            bank, owner = "NEDBANK", "JUPITER LOGISTICS LDA"
+        elif "STANDARD" in all_vals_str or "STB" in all_vals_str:
+            bank, owner = "STB", "JUPITER LOGISTICS LDA"
+
     header_row = -1
     keywords = ['DATA', 'DESCRI', 'DESCRIO', 'CREDITO', 'CRDITO', 'DEBITO', 'DBITO', 'SALDO', 'VALOR', 'MONTANTE', 'DETALHE', 'MOVIMENTO', 'MOEDA', 'MOV', 'DOCUMENTO', 'OPER', 'TRANSAC']
 

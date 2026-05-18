@@ -18,10 +18,12 @@ const storage = multer.diskStorage({
     cb(null, tmpDir);
   },
   filename: (req, file, cb) => {
-    // RCE Mitigation: não usar originalname. Usar um UUID seguro.
-    // Preservamos a extensão do ficheiro por precaução (usando parse seguro).
+    // RCE Mitigation: usar UUID seguro mas preservar o nome original sanitizado
+    // para que o bank_parser.py consiga extrair o número de conta/banco correto.
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, `bank_${uuidv4()}${ext}`);
+    const safeBase = path.basename(file.originalname, ext)
+      .replace(/[^a-zA-Z0-9_-]/g, '_'); // Substitui caracteres perigosos por underscore
+    cb(null, `bank_${uuidv4()}_${safeBase}${ext}`);
   }
 });
 

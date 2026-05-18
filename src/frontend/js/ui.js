@@ -550,9 +550,22 @@ export function renderTeamTable(onEditRecord) {
         return tr;
     };
 
+    let visibleGroupsCount = 0;
+
     // Renderizar por Grupos
     groups.forEach(group => {
         const groupRecords = records.filter(r => r.group_id === group.id);
+        
+        // Verificar se o lote está completamente pago ou sem contentores
+        const allRecordsPaid = groupRecords.length > 0 && groupRecords.every(r => 
+            r.interna_paid && r.maputo_paid && r.matola_paid && (parseFloat(r.termos_val) === 0 || r.termos_paid)
+        );
+
+        if (groupRecords.length === 0 || allRecordsPaid) {
+            return; // Ocultar o lote completamente se estiver todo pago ou vazio
+        }
+
+        visibleGroupsCount++;
         let groupUnpaid = { interna: 0, maputo: 0, matola: 0, termos: 0 };
 
         groupRecords.forEach(r => {
@@ -599,7 +612,7 @@ export function renderTeamTable(onEditRecord) {
     }
 
     const totalPendency = (globalTotals.interna || 0) + (globalTotals.maputo || 0) + (globalTotals.matola || 0) + (globalTotals.termos || 0);
-    renderTeamSummary(totalPendency, groups.length, stats.totalRecords, stats.completedRecords);
+    renderTeamSummary(totalPendency, visibleGroupsCount, stats.totalRecords, stats.completedRecords);
 
     footer.innerHTML = `
         <tr class="bg-yellow-400 text-black font-black uppercase text-xs">
@@ -620,6 +633,8 @@ export function renderTeamSummary(total, lotesCount, contentoresCount, concluido
     const el = document.getElementById('team-summary');
     if (!el) return;
 
+    const pendentesCount = contentoresCount - concluidosCount;
+
     el.innerHTML = `
         <div class="bg-white border-2 border-gray-800 rounded-xl p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
             <div class="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -636,12 +651,8 @@ export function renderTeamSummary(total, lotesCount, contentoresCount, concluido
                         <div class="text-lg font-black text-gray-900">${lotesCount}</div>
                     </div>
                     <div>
-                        <div class="text-[8px] font-bold uppercase text-gray-400 mb-0.5">Contentores</div>
-                        <div class="text-lg font-black text-gray-900">${contentoresCount}</div>
-                    </div>
-                    <div>
-                        <div class="text-[8px] font-bold uppercase text-gray-400 mb-0.5">Concluídos</div>
-                        <div class="text-lg font-black text-green-600">${concluidosCount}</div>
+                        <div class="text-[8px] font-bold uppercase text-gray-400 mb-0.5">Pendentes</div>
+                        <div class="text-lg font-black text-orange-500">${pendentesCount}</div>
                     </div>
                 </div>
             </div>
@@ -867,10 +878,13 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         (c.includes('PAID') || c.includes('PAGO')) && !c.includes('PREPAID') && !c.includes('DUTY') && i !== dutyIdx
     );
 
-    const noIdx = columns.findIndex(c => {
-        const h = String(c).toUpperCase();
-        return h === 'NO' || h === 'Nº' || h === 'NUMERO' || h.startsWith('NO.') || h.startsWith('Nº.');
+    let noIdx = columns.findIndex(c => {
+        const h = String(c || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return h === 'NO' || h === 'Nº' || h === 'N' || h === 'NUMERO' || h.startsWith('NO.') || h.startsWith('Nº.') || h.startsWith('N.');
     });
+    if (noIdx === -1 && columns.length > 0) {
+        noIdx = 0;
+    }
 
     console.log(`[CONFIRM-DEBUG] Índices - Status: ${statusIdx} ("${columns[statusIdx]}"), Paid: ${paidIdx} ("${columns[paidIdx]}")`);
 
@@ -965,6 +979,16 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
 
     let groups = Array.from(groupedClients.values());
 
+    // Ordenar os clientes de forma robusta pela numeração do Drive/GSheet (campo client.no)
+    groups.sort((a, b) => {
+        const noA = parseInt(a.no, 10);
+        const noB = parseInt(b.no, 10);
+        if (!isNaN(noA) && !isNaN(noB)) {
+            return noA - noB;
+        }
+        return String(a.no || '').localeCompare(String(b.no || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+
     let totalDuty = 0;
 
     // Aplicar Filtro de Status (Robusto: ignora emojis, mas preserva hífens)
@@ -1046,7 +1070,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         card.innerHTML = `
             <!-- Top Left Badge (Client Number) -->
             <div class="absolute top-0 left-0 px-3 py-1.5 bg-gray-100 text-black rounded-br-xl border-b border-r border-gray-200">
-                <span class="text-[12px] font-black">${client.originalGlobalIndex}</span>
+                <span class="text-[12px] font-black">${client.no || '—'}</span>
             </div>
             
             <!-- Top Right Badge (Status) -->
@@ -1066,7 +1090,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             </div>
         `;
 
-        card.onclick = () => showConfirmDetail(client, client.originalGlobalIndex);
+        card.onclick = () => showConfirmDetail(client, client.no || '—');
         container.appendChild(card);
     });
 }

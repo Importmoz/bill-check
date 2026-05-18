@@ -1095,18 +1095,22 @@ async function autoOpenClientFolder(clientCode, clientName) {
         driveHistory = [];
     }
 
+    // Função de normalização/canonicalização para correspondência ultra-robusta de nomes
+    const canonicalize = (str) => {
+        return String(str || '')
+            .normalize('NFD')                     // Separar acentos dos caracteres base
+            .replace(/\p{Diacritic}/gu, '')      // Remover todos os acentos
+            .toUpperCase()                       // Converter para maiúsculas
+            .replace(/[^A-Z0-9]/g, ' ')          // Substituir tudo o que não for alfanumérico por espaço
+            .replace(/\s+/g, ' ')                // Colapsar múltiplos espaços
+            .trim();
+    };
+
     // Limpar o código de eventuais decimais (.0) que vêm do Excel
     const cleanCode = String(clientCode).split('.')[0].split(',')[0].trim();
-    // Normalizar nome da pasta: remover acentos, converter para maiúsculas e trocar espaços por underscores
-    const cleanName = clientName
-        .normalize('NFD')
-        .replace(/\p{Diacritic}/gu, '')
-        .trim()
-        .toUpperCase()
-        .replace(/\s+/g, '_');
-    const targetPattern = `${cleanCode}-${cleanName}`;
+    const targetPattern = canonicalize(`${cleanCode} ${clientName}`);
 
-    console.log(`[AUTO-DRIVE] Tentando abertura instantânea: "${targetPattern}"`);
+    console.log(`[AUTO-DRIVE] Tentando abertura instantânea (padrão canónico): "${targetPattern}"`);
 
     // Mostrar loader imediatamente
     const explorerContainer = document.getElementById('confirm-drive-files');
@@ -1116,7 +1120,7 @@ async function autoOpenClientFolder(clientCode, clientName) {
     let targetFolder = null;
     if (projectFoldersCache) {
         targetFolder = projectFoldersCache.find(f => {
-            const folderName = f.name.toUpperCase().replace(/\s+/g, '_');
+            const folderName = canonicalize(f.name);
             return folderName.includes(targetPattern);
         });
     }
@@ -1132,7 +1136,7 @@ async function autoOpenClientFolder(clientCode, clientName) {
         const files = await api.listGDriveFiles(rootId);
         targetFolder = files.find(f => {
             if (f.mimeType !== 'application/vnd.google-apps.folder') return false;
-            const folderName = f.name.toUpperCase().replace(/\s+/g, '_');
+            const folderName = canonicalize(f.name);
             return folderName.includes(targetPattern);
         });
 
