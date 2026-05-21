@@ -1444,7 +1444,7 @@ export async function showConfirmDetail(client, clientIndex) {
             `;
 
             tbodyHtml += `
-                <tr class="row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer" onclick="ui.openConfirmEditModal(${index})">
+                <tr data-original-index="${originalIndex}" class="row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer" onclick="ui.openConfirmEditModal(${index})">
                     <td class="p-4 font-bold text-slate-800 text-[12px]">${orderNumber}</td>
                     <td class="p-4 text-center text-slate-600 text-[12px]">${cbm.toFixed(2)}</td>
                     <td class="p-4 text-center font-semibold text-blue-700 text-[12px]">${formatValue(amountDuty)}</td>
@@ -1692,6 +1692,21 @@ export function openConfirmEditModal(index) {
     const o = window.currentClientRows[index];
     if (!o) return;
 
+    // Verificar Lock
+    const originalIndex = o.originalIndex;
+    if (window.activeConfirmLocks && window.activeConfirmLocks[originalIndex]) {
+        const lockInfo = window.activeConfirmLocks[originalIndex];
+        if (lockInfo.userId !== pb.authStore.model?.id) {
+            toast(`Este registo está a ser editado por ${lockInfo.user}`, 'warning');
+            return;
+        }
+    }
+    
+    // Emitir Lock Event
+    if (state.confirm && state.confirm.sheetId) {
+        emitConfirmEvent(state.confirm.sheetId, originalIndex, 'LOCK', { name: pb.authStore.model?.name || 'Utilizador' });
+    }
+
     document.getElementById('edit-index').value = index;
     document.getElementById('edit-orderNumber').value = o.orderNumber;
     document.getElementById('edit-cbm').value = o.cbm;
@@ -1718,8 +1733,11 @@ export function closeConfirmEditModal() {
     document.getElementById('confirm-edit-modal').classList.add('hidden');
     // Emit Unlock Event
     const indexStr = document.getElementById('edit-index')?.value;
-    if (indexStr && state.confirm && state.confirm.sheetId) {
-        emitConfirmEvent(state.confirm.sheetId, parseInt(indexStr), 'UNLOCK');
+    if (indexStr !== undefined && indexStr !== '') {
+        const o = window.currentClientRows[parseInt(indexStr)];
+        if (o && state.confirm && state.confirm.sheetId) {
+            emitConfirmEvent(state.confirm.sheetId, o.originalIndex, 'UNLOCK');
+        }
     }
 }
 
@@ -1738,7 +1756,7 @@ export function calculateConfirmDuty() {
 // --- REAL-TIME EVENT HANDLER ---
 window.activeConfirmLocks = {};
 
-window.handleConfirmRealtimeEvent = function(e) {
+export function handleConfirmRealtimeEvent(e) {
     const record = e.record;
     if (!record) return;
     
