@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
+import { state, pb, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
 
 /**
  * Controla o indicador de carregamento
@@ -101,7 +101,7 @@ export function setBtnLoading(btn, isLoading, originalText = null) {
  * Utilitário para ocultar todas as visões principais
  */
 function hideAllViews() {
-    ['view-login', 'view-hub', 'view-dashboard', 'view-table', 'view-finance', 'view-team-dashboard', 'view-team-table', 'view-term-dashboard', 'view-term-table', 'view-confirm-dashboard', 'view-confirm-table', 'view-confirm-client-detail', 'view-bank-dashboard'].forEach(id => {
+    ['view-login', 'view-hub', 'view-dashboard', 'view-table', 'view-finance', 'view-team-dashboard', 'view-team-table', 'view-term-dashboard', 'view-term-table', 'view-confirm-dashboard', 'view-confirm-table', 'view-confirm-client-detail', 'view-bank-dashboard', 'view-settings'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
@@ -749,7 +749,10 @@ export function renderTermTable(onEditRecord) {
 
         if (r.status === 'PENDING') totals.pending += balance;
         else if (r.status === 'NEXT') totals.next += balance;
-        else if (r.status === 'PAID') totals.paid += balance;
+        else if (r.status === 'PAID') {
+            totals.paid += balance;
+            return; // Pular os registros pagos (Paid) para sumirem do mapa/tabela
+        }
 
         const tr = document.createElement('tr');
         let bgColor = '';
@@ -840,6 +843,76 @@ export function renderTermSummary(total, pending, next) {
     `;
 }
 
+export function registerClientAccess(no, name) {
+    try {
+        const key = `confirm_client_access_${no}_${name.replace(/\s+/g, '_')}`;
+        let count = parseInt(localStorage.getItem(key) || '0', 10);
+        localStorage.setItem(key, count + 1);
+    } catch (e) {
+        console.error("Erro ao registrar acesso do cliente:", e);
+    }
+}
+window.registerClientAccess = registerClientAccess;
+
+export function setConfirmViewMode(mode) {
+    if (!state.confirm) state.confirm = {};
+    state.confirm.viewMode = mode;
+    localStorage.setItem('confirm_view_mode', mode);
+
+    const btnGrid = document.getElementById('btn-view-grid');
+    const btnList = document.getElementById('btn-view-list');
+    const btnTable = document.getElementById('btn-view-table');
+
+    if (btnGrid) btnGrid.className = `p-2 rounded-lg transition-all ${mode === 'grid' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+    if (btnList) btnList.className = `p-2 rounded-lg transition-all ${mode === 'list' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+    if (btnTable) btnTable.className = `p-2 rounded-lg transition-all ${mode === 'table' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+
+    if (typeof window.handleConfirmSearch === 'function') {
+        window.handleConfirmSearch();
+    }
+}
+window.setConfirmViewMode = setConfirmViewMode;
+
+export function registerProjectAccess(sheetId, name) {
+    try {
+        const key = `confirm_project_access_${sheetId}`;
+        let count = parseInt(localStorage.getItem(key) || '0', 10);
+        localStorage.setItem(key, count + 1);
+    } catch (e) {
+        console.error("Erro ao registrar acesso do projeto:", e);
+    }
+}
+window.registerProjectAccess = registerProjectAccess;
+
+export function getProjectAccessCount(sheetId) {
+    try {
+        const key = `confirm_project_access_${sheetId}`;
+        return parseInt(localStorage.getItem(key) || '0', 10);
+    } catch (e) {
+        return 0;
+    }
+}
+window.getProjectAccessCount = getProjectAccessCount;
+
+export function setConfirmProjectViewMode(mode) {
+    if (!state.confirm) state.confirm = {};
+    state.confirm.projectViewMode = mode;
+    localStorage.setItem('confirm_project_view_mode', mode);
+
+    const btnGrid = document.getElementById('btn-proj-view-grid');
+    const btnList = document.getElementById('btn-proj-view-list');
+    const btnTable = document.getElementById('btn-proj-view-table');
+
+    if (btnGrid) btnGrid.className = `p-2 rounded-lg transition-all ${mode === 'grid' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+    if (btnList) btnList.className = `p-2 rounded-lg transition-all ${mode === 'list' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+    if (btnTable) btnTable.className = `p-2 rounded-lg transition-all ${mode === 'table' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+
+    if (typeof window.handleConfirmProjectSearch === 'function') {
+        window.handleConfirmProjectSearch();
+    }
+}
+window.setConfirmProjectViewMode = setConfirmProjectViewMode;
+
 export function renderConfirmList(data, filterText = "", statusFilter = "TODOS") {
     const container = document.getElementById('confirm-list-container');
     if (!container) return;
@@ -851,16 +924,21 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
 
     const columnsUpper = columns.map(c => String(c || '').toUpperCase());
     
-    // Procura exata primeiro, depois parcial, respeitando a ordem de preferência dos targets
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
     const findCol = (targets) => {
-        // 1. Tentar correspondência exata para cada target em ordem de prioridade
-        for (const target of targets) {
-            const idx = columnsUpper.findIndex(c => c === target);
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
             if (idx !== -1) return idx;
         }
-        // 2. Tentar correspondência parcial para cada target em ordem de prioridade
-        for (const target of targets) {
-            const idx = columnsUpper.findIndex(c => c.includes(target));
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
             if (idx !== -1) return idx;
         }
         return -1;
@@ -868,15 +946,15 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
 
     const idCodeIdx = findCol(['ID CODE', 'CODE ID', 'ID']);
     const nameIdx = findCol(['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
-    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMAÇÃO', 'CONFIRM']);
+    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
     const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
     const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
     const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
     
-    // Para o PAID, queremos algo que tenha PAID/PAGO mas que não seja DUTY PREPAID ou AMOUNT DUTY
-    const paidIdx = columnsUpper.findIndex((c, i) => 
-        (c.includes('PAID') || c.includes('PAGO')) && !c.includes('PREPAID') && !c.includes('DUTY') && i !== dutyIdx
-    );
+    const paidIdx = columns.findIndex((c, i) => {
+        const h = cleanString(c);
+        return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY') && i !== dutyIdx;
+    });
 
     let noIdx = columns.findIndex(c => {
         const h = String(c || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -969,6 +1047,10 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             }
         }
 
+        if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
+            rowStatus = 'PARCIAL';
+        }
+
         currentGroup.rows.push({
             originalRow: row,
             originalIndex: i,
@@ -994,10 +1076,16 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     // Aplicar Filtro de Status (Robusto: ignora emojis, mas preserva hífens)
     if (statusFilter !== 'TODOS') {
         const target = statusFilter.toUpperCase().trim();
+        const targetClean = target.replace(/[^A-Z0-9\s-]/g, '').trim();
         groups = groups.filter(client => {
             return client.statuses.some(s => {
                 const current = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-                const targetClean = target.replace(/[^A-Z0-9\s-]/g, '').trim();
+                
+                // Exibir PARCIAL junto com PENDENTE
+                if (targetClean === 'PENDENTE' && current.includes('PARCIAL')) {
+                    return true;
+                }
+                
                 return current.includes(targetClean) || targetClean.includes(current);
             });
         });
@@ -1010,7 +1098,9 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
 
         client.rows.forEach(r => {
             const current = String(r.status || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-            if (statusFilter === 'TODOS' || current.includes(targetClean) || targetClean.includes(current)) {
+            const isMatch = statusFilter === 'TODOS' || current.includes(targetClean) || targetClean.includes(current) || (targetClean === 'PENDENTE' && current.includes('PARCIAL'));
+            
+            if (isMatch) {
                 const rawVal = r.originalRow[dutyIdx];
                 const duty = parseFloat(String(rawVal || '0').replace(/[^0-9.-]+/g, '')) || 0;
                 totalDuty += duty;
@@ -1026,21 +1116,23 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         document.getElementById('confirm-total-duty').innerText = formatMZN(totalDuty);
     }
 
-    if (groups.length === 0) {
-        container.innerHTML = `<div class="col-span-full p-12 text-center text-gray-400 bg-white border-2 border-dashed border-gray-200 rounded-2xl font-bold uppercase">Nenhum cliente encontrado</div>`;
-        return;
-    }
-
     container.innerHTML = '';
 
-    groups.forEach((client, idx) => {
-        const card = document.createElement('div');
-        card.className = "bg-white border border-gray-200 p-3 pt-8 pb-1.5 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all cursor-pointer group relative overflow-hidden";
+    // Sincronizar classes de botões ativos no topo
+    const viewMode = state.confirm.viewMode || localStorage.getItem('confirm_view_mode') || 'grid';
+    const btnGrid = document.getElementById('btn-view-grid');
+    const btnList = document.getElementById('btn-view-list');
+    const btnTable = document.getElementById('btn-view-table');
 
+    if (btnGrid) btnGrid.className = `p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+    if (btnList) btnList.className = `p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+    if (btnTable) btnTable.className = `p-2 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+
+    // Helper de status
+    const getClientStatusAndClass = (client) => {
         let clientStatus = 'PENDENTE';
         let statusClass = "bg-gray-100 text-gray-400";
 
-        // Normalizar status para comparação robusta (remove emojis, mas preserva hífens)
         const cleanStatuses = client.statuses.map(s => 
             String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim()
         );
@@ -1057,6 +1149,9 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         } else if (cleanStatuses.every(s => s.includes('CONFIRMADO'))) {
             clientStatus = 'CONFIRMADO';
             statusClass = "bg-green-600 text-white";
+        } else if (cleanStatuses.some(s => s.includes('PARCIAL')) || (cleanStatuses.some(s => s.includes('CONFIRMADO')) && cleanStatuses.some(s => s.includes('PENDENTE') || s.includes('AGUARDA')))) {
+            clientStatus = 'PARCIAL';
+            statusClass = "bg-yellow-500 text-white font-black";
         } else if (cleanStatuses.some(s => s.includes('PENDENTE'))) {
             clientStatus = 'PENDENTE';
             statusClass = "bg-yellow-400 text-black font-black";
@@ -1064,38 +1159,150 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             clientStatus = 'AGUARDA PAG.';
             statusClass = "bg-gray-100 text-gray-400";
         }
+        return { clientStatus, statusClass };
+    };
 
-        const rowCount = client.rows.length;
+    // === 1 - MODOS DE EXIBIÇÃO ===
+    if (viewMode === 'grid') {
+        container.className = "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 px-4";
+        groups.forEach((client) => {
+            const card = document.createElement('div');
+            card.className = "bg-white border border-gray-200 p-3 pt-8 pb-1.5 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all cursor-pointer group relative overflow-hidden";
 
-        card.innerHTML = `
-            <!-- Top Left Badge (Client Number) -->
-            <div class="absolute top-0 left-0 px-3 py-1.5 bg-gray-100 text-black rounded-br-xl border-b border-r border-gray-200">
-                <span class="text-[12px] font-black">${client.no || '—'}</span>
-            </div>
-            
-            <!-- Top Right Badge (Status) -->
-            <div class="absolute top-0 right-0 px-2.5 py-1 ${statusClass} rounded-bl-xl">
-                <span class="text-[8px] font-black uppercase tracking-wider">${clientStatus}</span>
-            </div>
+            const { clientStatus, statusClass } = getClientStatusAndClass(client);
+            const rowCount = client.rows.length;
 
-            <div class="mt-3">
-                <h4 class="font-bold text-[11px] uppercase tracking-tight leading-tight text-gray-500 group-hover:text-black transition-colors pr-2">${client.displayName || 'Cliente Sem Nome'}</h4>
+            card.innerHTML = `
+                <!-- Top Left Badge (Client Number) -->
+                <div class="absolute top-0 left-0 px-3 py-1.5 bg-gray-100 text-black rounded-br-xl border-b border-r border-gray-200">
+                    <span class="text-[12px] font-black">${client.no || '—'}</span>
+                </div>
                 
-                <div class="flex justify-between items-end mt-0.5">
-                    <p class="text-[9px] font-bold uppercase text-gray-400 leading-none">${rowCount} ORDEM${rowCount > 1 ? 'S' : ''}</p>
-                    <div class="text-gray-400 group-hover:text-yellow-600 transition-all shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                <!-- Top Right Badge (Status) -->
+                <div class="absolute top-0 right-0 px-2.5 py-1 ${statusClass} rounded-bl-xl">
+                    <span class="text-[8px] font-black uppercase tracking-wider">${clientStatus}</span>
+                </div>
+
+                <div class="mt-3">
+                    <h4 class="font-bold text-[11px] uppercase tracking-tight leading-tight text-gray-500 group-hover:text-black transition-colors pr-2">${client.displayName || 'Cliente Sem Nome'}</h4>
+                    
+                    <div class="flex justify-between items-end mt-0.5">
+                        <p class="text-[9px] font-bold uppercase text-gray-400 leading-none">${rowCount} ORDEM${rowCount > 1 ? 'S' : ''}</p>
+                        <div class="text-gray-400 group-hover:text-yellow-600 transition-all shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        </div>
                     </div>
                 </div>
-            </div>
-        `;
+            `;
 
-        card.onclick = () => showConfirmDetail(client, client.no || '—');
-        container.appendChild(card);
-    });
+            card.onclick = () => showConfirmDetail(client, client.no || '—');
+            container.appendChild(card);
+        });
+    } 
+    else if (viewMode === 'list') {
+        container.className = "flex flex-col gap-3 px-4 w-full col-span-full";
+        groups.forEach((client) => {
+            const card = document.createElement('div');
+            card.className = "bg-white border border-gray-200 hover:border-gray-300 p-3 rounded-xl shadow-sm hover:shadow transition-all cursor-pointer flex items-center justify-between group";
+
+            const { clientStatus, statusClass } = getClientStatusAndClass(client);
+            const rowCount = client.rows.length;
+
+            card.innerHTML = `
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center shrink-0 font-black text-xs text-black border border-gray-200">
+                        ${client.no || '—'}
+                    </div>
+                    <div>
+                        <h4 class="font-black text-xs uppercase tracking-tight text-slate-800 leading-tight group-hover:text-black transition-colors">${client.displayName || 'Cliente Sem Nome'}</h4>
+                        <p class="text-[9px] font-bold uppercase text-gray-400 leading-none mt-1">${rowCount} ORDEM${rowCount > 1 ? 'S' : ''}</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-4 shrink-0">
+                    <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
+                    <div class="text-gray-300 group-hover:text-yellow-600 transition-all shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </div>
+                </div>
+            `;
+
+            card.onclick = () => showConfirmDetail(client, client.no || '—');
+            container.appendChild(card);
+        });
+    } 
+    else if (viewMode === 'table') {
+        container.className = "w-full col-span-full px-4 overflow-x-auto custom-scrollbar";
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = "bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm w-full";
+        
+        let tableRowsHtml = '';
+        groups.forEach((client) => {
+            const { clientStatus, statusClass } = getClientStatusAndClass(client);
+            const rowCount = client.rows.length;
+
+            // Calcular somatório do Duty
+            let clientDuty = 0;
+            client.rows.forEach(r => {
+                const rawVal = r.originalRow[dutyIdx];
+                const duty = parseFloat(String(rawVal || '0').replace(/[^0-9.-]+/g, '')) || 0;
+                clientDuty += duty;
+            });
+
+            const trId = `tr-client-${client.no || 'X'}-${client.displayName.replace(/\s+/g, '_')}`;
+
+            tableRowsHtml += `
+                <tr id="${trId}" class="hover:bg-slate-50 border-b border-gray-100 transition-all cursor-pointer group">
+                    <td class="p-3 text-center font-black text-xs text-slate-800">${client.no || '—'}</td>
+                    <td class="p-3 font-bold text-xs uppercase text-slate-700 group-hover:text-black transition-colors">${client.displayName || 'Cliente Sem Nome'}</td>
+                    <td class="p-3 text-center text-xs font-semibold text-slate-500">${rowCount}</td>
+                    <td class="p-3 text-right font-black text-xs text-slate-800">${formatMZN(clientDuty)}</td>
+                    <td class="p-3 text-center">
+                        <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
+                    </td>
+                    <td class="p-3 text-center">
+                        <div class="text-gray-300 group-hover:text-yellow-600 transition-all flex justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        wrapper.innerHTML = `
+            <table class="w-full border-collapse text-left">
+                <thead class="bg-slate-50 border-b border-gray-200 text-slate-500 text-[10px] font-black uppercase tracking-wider">
+                    <tr>
+                        <th class="p-3 text-center w-16">Nº</th>
+                        <th class="p-3">Cliente</th>
+                        <th class="p-3 text-center w-24">Ordens</th>
+                        <th class="p-3 text-right w-36">Total Duty</th>
+                        <th class="p-3 text-center w-36">Status</th>
+                        <th class="p-3 text-center w-12"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    ${tableRowsHtml}
+                </tbody>
+            </table>
+        `;
+        
+        container.appendChild(wrapper);
+
+        groups.forEach((client) => {
+            const trId = `tr-client-${client.no || 'X'}-${client.displayName.replace(/\s+/g, '_')}`;
+            const tr = document.getElementById(trId);
+            if (tr) {
+                tr.onclick = () => showConfirmDetail(client, client.no || '—');
+            }
+        });
+    }
 }
 
 export async function showConfirmDetail(client, clientIndex) {
+    window.currentActiveClient = client;
+    window.currentActiveClientIndex = clientIndex;
     const nameEl = document.getElementById('confirm-client-detail-name');
     const idEl = document.getElementById('confirm-client-detail-id');
     const breadcrumbEl = document.getElementById('confirm-breadcrumb');
@@ -1123,13 +1330,21 @@ export async function showConfirmDetail(client, clientIndex) {
     const columns = state.confirm.columns || [];
     const columnsUpper = columns.map(c => String(c || '').toUpperCase().trim());
 
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
     const findCol = (targets) => {
-        for (const target of targets) {
-            const idx = columnsUpper.findIndex(c => c === target);
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
             if (idx !== -1) return idx;
         }
-        for (const target of targets) {
-            const idx = columnsUpper.findIndex(c => c.includes(target));
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
             if (idx !== -1) return idx;
         }
         return -1;
@@ -1141,13 +1356,16 @@ export async function showConfirmDetail(client, clientIndex) {
     const dutyPrepIdx = findCol(['DUTY PREPAID', 'PREPAID', 'PRE-PAGO']);
     const amtDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
     
-    const paidDutyIdx = columnsUpper.findIndex((c, i) => 
-        (c.includes('PAID') || c.includes('PAGO')) && !c.includes('PREPAID') && !c.includes('DUTY')
-    );
+    const paidDutyIdx = columns.findIndex((c, i) => {
+        const h = cleanString(c);
+        return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
+    });
     
     const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
     const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
     const statusIdx = findCol(['CONFIRMATION', 'STATUS']);
+    const phoneIdx = findCol(['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CONTACTO', 'CELULAR', 'PHONE_NUMBER']);
+    const notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
 
     const getNum = (row, idx) => idx !== -1 ? (parseFloat(String(row[idx]).replace(/[^0-9.-]+/g, '')) || 0) : 0;
     const getRaw = (row, idx) => idx !== -1 && row[idx] !== undefined && row[idx] !== null && row[idx] !== '' ? row[idx] : '—';
@@ -1180,6 +1398,7 @@ export async function showConfirmDetail(client, clientIndex) {
             const amountDuty = getNum(rowData, amtDutyIdx);
             const paid = getNum(rowData, paidDutyIdx);
             const balance = getNum(rowData, balanceIdx);
+            const bankDuty = getRaw(rowData, bankDutyIdx);
 
             totalPaid += paid;
             totalDutyPrepaid += dutyPrepaid;
@@ -1188,10 +1407,32 @@ export async function showConfirmDetail(client, clientIndex) {
             // Salva dados processados para facilitar edição
             window.currentClientRows.push({
                 originalIndex,
-                orderNumber, cbm, unitDuty, dutyPrepaid, amountDuty, paid, balance
+                orderNumber, cbm, unitDuty, dutyPrepaid, amountDuty, paid, balance,
+                bankDuty: bankDuty === '—' ? '' : bankDuty
             });
 
-            let rowStatus = rowData[statusIdx] || 'PENDENTE';
+            let rowStatus = String(rowData[statusIdx] || 'PENDENTE').toUpperCase().trim();
+            if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
+                rowStatus = 'PARCIAL';
+            }
+
+            // Construir o select de banco
+            const cleanCurrent = String(bankDuty || '').trim();
+            const options = ['?', 'BCI BOSS', 'BIM BOSS', 'BCI JUPITER', 'BIM JUPITER', 'STB JUPITER', 'NED JUPITER', 'PAID IN CHINA', 'REPOSIÇÃO', 'COTACAO', 'EMOLA BOSS'];
+            if (cleanCurrent && cleanCurrent !== '—' && !options.includes(cleanCurrent)) {
+                options.push(cleanCurrent);
+            }
+            let optionsHtml = '';
+            options.forEach(opt => {
+                const isSelected = opt === cleanCurrent || (opt === '?' && (!cleanCurrent || cleanCurrent === '—'));
+                optionsHtml += `<option value="${opt}" ${isSelected ? 'selected' : ''}>${opt}</option>`;
+            });
+
+            const bankSelectHtml = `
+                <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${originalIndex}, this.value)" class="p-1 text-slate-700 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block">
+                    ${optionsHtml}
+                </select>
+            `;
 
             tbodyHtml += `
                 <tr class="row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer" onclick="ui.openConfirmEditModal(${index})">
@@ -1201,9 +1442,10 @@ export async function showConfirmDetail(client, clientIndex) {
                     <td class="p-4 text-center text-slate-500 text-[12px]">${formatValue(dutyPrepaid)}</td>
                     <td class="p-4 text-center font-bold text-green-600 text-[12px]">${formatValue(paid)}</td>
                     <td class="p-4 text-center font-bold text-[12px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
+                    <td class="p-4 text-center">${bankSelectHtml}</td>
                     <td class="p-4 text-center">
                         <button onclick="event.stopPropagation(); window.onConfirmRow(${originalIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
-                            class="px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white')}">
+                            class="px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}">
                             ${rowStatus}
                         </button>
                     </td>
@@ -1220,12 +1462,39 @@ export async function showConfirmDetail(client, clientIndex) {
 
         let bankValue = '';
         let accountTerm = '';
+        let clientPhone = '—';
+        let clientNotaDuty = '—';
+
         if (client.rows && client.rows.length > 0) {
             let rawBank = getRaw(client.rows[0].originalRow, bankDutyIdx);
             if (rawBank !== '—') {
                 let parts = String(rawBank).toUpperCase().replace('BOSS', 'FILIPE').trim().split(/\s+/);
                 bankValue = parts[0];
                 if (parts.length > 1) accountTerm = parts.slice(1).join(' ');
+            }
+
+            // Puxar telefone
+            for (const rowObj of client.rows) {
+                const rawPhone = getRaw(rowObj.originalRow, phoneIdx);
+                if (rawPhone !== '—' && String(rawPhone).trim() !== '') {
+                    clientPhone = String(rawPhone).trim();
+                    break;
+                }
+            }
+
+            // Puxar nota de duty
+            const notas = [];
+            for (const rowObj of client.rows) {
+                const rawNota = getRaw(rowObj.originalRow, notaDutyIdx);
+                if (rawNota !== '—' && String(rawNota).trim() !== '') {
+                    const cleaned = String(rawNota).trim();
+                    if (!notas.includes(cleaned)) {
+                        notas.push(cleaned);
+                    }
+                }
+            }
+            if (notas.length > 0) {
+                clientNotaDuty = notas.join(' | ');
             }
         }
 
@@ -1342,7 +1611,9 @@ export async function showConfirmDetail(client, clientIndex) {
             displayValueHtml = formatValue(targetAmount);
         } else {
             // 3. Caso esteja Pendente ou seja uma nova ordem (targetAmount = 0)
-            cardClick = `onclick="ui.openPaymentMiniFilter('${combinedInfo.replace(/'/g, "\\'")}', '${bankValue}', '${remainingToPay}', '')"`;
+            let trueRemaining = totalAmountDuty - totalAllocated;
+            if (trueRemaining < 0) trueRemaining = 0;
+            cardClick = `onclick="ui.openPaymentMiniFilter('${combinedInfo.replace(/'/g, "\\'")}', '${bankValue}', '${trueRemaining}', '', '${(client.displayName || '').replace(/'/g, "\\'")}', '${clientPhone.replace(/'/g, "\\'")}', '${clientNotaDuty.replace(/'/g, "\\'")}')"`;
             cardCursor = "cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all";
 
             if (payments && payments.length > 0) {
@@ -1382,6 +1653,7 @@ export async function showConfirmDetail(client, clientIndex) {
                             <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Duty Prepaid</th>
                             <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Paid</th>
                             <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Balance</th>
+                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Bank in Duty</th>
                             <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Confirmação</th>
                         </tr>
                     </thead>
@@ -1420,6 +1692,16 @@ export function openConfirmEditModal(index) {
     document.getElementById('edit-paid').value = o.paid;
     document.getElementById('edit-balance').value = o.balance;
 
+    const selectEl = document.getElementById('edit-bankDuty');
+    if (selectEl) {
+        const val = o.bankDuty || '?';
+        if (val && !Array.from(selectEl.options).some(opt => opt.value === val)) {
+            const newOpt = new Option(val, val);
+            selectEl.add(newOpt);
+        }
+        selectEl.value = val;
+    }
+
     document.getElementById('confirm-edit-modal').classList.remove('hidden');
 }
 
@@ -1456,15 +1738,45 @@ export async function saveConfirmOrderEdit(e) {
     const amountDuty = parseFloat(document.getElementById('edit-amountDuty').value) || 0;
     const paid = parseFloat(document.getElementById('edit-paid').value) || 0;
     const balance = parseFloat(document.getElementById('edit-balance').value) || 0;
+    const bankDutyVal = document.getElementById('edit-bankDuty').value;
+    const bankDuty = bankDutyVal === '?' ? '' : bankDutyVal;
 
     // 1. Identificar colunas no GSheet
-    const cols = state.confirm.columns;
-    const cbmIdx = cols.findIndex(c => String(c).includes('CBM'));
-    const unitDutyIdx = cols.findIndex(c => String(c).includes('UNIT DUTY'));
-    const dutyPrepaidIdx = cols.findIndex(c => String(c).includes('DUTY PREPAID'));
-    const amountDutyIdx = cols.findIndex(c => String(c).includes('AMOUNT DUTY'));
-    const paidIdx = cols.findIndex(c => (String(c).toUpperCase().includes('PAID') || String(c).toUpperCase().includes('PAGO')) && !String(c).toUpperCase().includes('DUTY'));
-    const balanceIdx = cols.findIndex(c => String(c).includes('BALANCE'));
+    const cols = state.confirm.columns || [];
+
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = cols.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = cols.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const cbmIdx = findCol(['CBM', 'M3', 'VOLUME', 'VOL']);
+    const unitDutyIdx = findCol(['UNIT CBM DUTY', 'UNIT DUTY', 'CBM DUTY', 'UNIT']);
+    const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID', 'PRE-PAGO']);
+    const amountDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+    
+    const paidIdx = cols.findIndex((c, i) => {
+        const h = cleanString(c);
+        return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
+    });
+    
+    const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+    const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
+    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
 
     // 2. Preparar valores para a linha específica
     const rowData = [...state.confirm.data[o.originalIndex]];
@@ -1474,6 +1786,17 @@ export async function saveConfirmOrderEdit(e) {
     if (amountDutyIdx !== -1) rowData[amountDutyIdx] = amountDuty;
     if (paidIdx !== -1) rowData[paidIdx] = paid;
     if (balanceIdx !== -1) rowData[balanceIdx] = balance;
+    if (bankDutyIdx !== -1) rowData[bankDutyIdx] = bankDuty;
+
+    // Atualizar o status automaticamente se aplicável
+    if (statusIdx !== -1) {
+        let currentStatus = String(rowData[statusIdx] || 'PENDENTE').toUpperCase().trim();
+        if (currentStatus === 'CONFIRMADO' && balance > 1.0) {
+            rowData[statusIdx] = 'PARCIAL';
+        } else if ((currentStatus === 'PENDENTE' || currentStatus === 'PARCIAL') && balance <= 0 && paid > 0) {
+            rowData[statusIdx] = 'CONFIRMADO';
+        }
+    }
 
     try {
         const spreadsheetId = state.confirm.sheetId;
@@ -1491,19 +1814,19 @@ export async function saveConfirmOrderEdit(e) {
         o.amountDuty = amountDuty;
         o.paid = paid;
         o.balance = balance;
+        o.bankDuty = bankDuty;
 
         toast("Alterações gravadas com sucesso no Google Sheets!", "success");
         closeConfirmEditModal();
         
         // Re-renderizar os detalhes do cliente
-        const currentClient = { 
-            displayName: document.getElementById('confirm-client-detail-name').innerText,
-            displayIdCode: document.getElementById('confirm-client-detail-id').innerText.replace('ID CODE: ', ''),
-            rows: window.currentClientRows.map(r => ({ ...r, originalRow: state.confirm.data[r.originalIndex] }))
-        };
-        const breadcrumbText = document.getElementById('confirm-breadcrumb').innerText;
-        const clientIdx = parseInt(breadcrumbText.split(' ')[1] || 0);
-        showConfirmDetail(currentClient, clientIdx);
+        if (window.currentActiveClient) {
+            window.currentActiveClient.rows = window.currentActiveClient.rows.map(r => ({
+                ...r,
+                originalRow: state.confirm.data[r.originalIndex]
+            }));
+            showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+        }
 
     } catch (err) {
         console.error(err);
@@ -1511,6 +1834,51 @@ export async function saveConfirmOrderEdit(e) {
     } finally {
         setLoader(false);
         setBtnLoading(btn, false);
+    }
+}
+
+export async function changeBankInDuty(originalRowIndex, newBankValue) {
+    setLoader(true, "A atualizar banco no Google Sheets...");
+    try {
+        const cols = state.confirm.columns;
+        const bankDutyIdx = cols.findIndex(c => {
+            const name = String(c).toUpperCase().trim();
+            return name === 'BANK IN DUTY' || name === 'BANK' || name === 'BANCO';
+        });
+
+        if (bankDutyIdx === -1) {
+            throw new Error("Coluna BANK IN DUTY não encontrada no Google Sheets.");
+        }
+
+        // 1. Preparar valores para a linha específica
+        const rowData = [...state.confirm.data[originalRowIndex]];
+        rowData[bankDutyIdx] = newBankValue === '?' ? '' : newBankValue;
+
+        const spreadsheetId = state.confirm.sheetId;
+        const sheetName = state.confirm.range.split('!')[0] || 'Folha1';
+        const rowNum = originalRowIndex + 1;
+        const range = `${sheetName}!A${rowNum}:Z${rowNum}`;
+
+        await updateGSheet(spreadsheetId, range, [rowData]);
+        
+        // 2. Atualizar estado local
+        state.confirm.data[originalRowIndex] = rowData;
+        
+        toast("Banco atualizado com sucesso no Google Sheets!", "success");
+
+        // 3. Re-renderizar
+        if (window.currentActiveClient) {
+            window.currentActiveClient.rows = window.currentActiveClient.rows.map(r => ({
+                ...r,
+                originalRow: state.confirm.data[r.originalIndex]
+            }));
+            showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+        }
+    } catch (err) {
+        console.error(err);
+        toast("Erro ao atualizar banco no Google Sheets: " + err.message, "error");
+    } finally {
+        setLoader(false);
     }
 }
 
@@ -1676,33 +2044,181 @@ export function renderConfirmProjects(projects, isSearch = false) {
         return;
     }
 
-    projects.forEach(p => {
-        const card = document.createElement('div');
-        // Card inteiro clicável
-        card.className = "bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group transition-all hover:shadow-md hover:border-black hover:bg-slate-50 cursor-pointer active:scale-[0.98]";
-        card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
+    // Sincronizar botões de modo de exibição de projetos
+    const viewMode = state.confirm.projectViewMode || localStorage.getItem('confirm_project_view_mode') || 'grid';
+    const btnGrid = document.getElementById('btn-proj-view-grid');
+    const btnList = document.getElementById('btn-proj-view-list');
+    const btnTable = document.getElementById('btn-proj-view-table');
 
-        card.innerHTML = `
-            <div class="flex items-center gap-3 overflow-hidden">
-                <div class="bg-yellow-400 text-black w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                </div>
-                <div class="overflow-hidden">
-                    <h3 class="text-sm font-black text-slate-800 tracking-tight leading-none truncate group-hover:text-black transition-colors">${p.name}</h3>
-                </div>
+    if (btnGrid) btnGrid.className = `p-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+    if (btnList) btnList.className = `p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+    if (btnTable) btnTable.className = `p-1.5 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
+
+    // === 2 - SEÇÃO DE ACESSO RÁPIDO A PROJETOS (RANKING) ===
+    const accessedProjects = projects
+        .map(p => ({ ...p, accessCount: getProjectAccessCount(p.sheetId) }))
+        .filter(p => p.accessCount > 0)
+        .sort((a, b) => b.accessCount - a.accessCount);
+
+    const topAccessed = accessedProjects.slice(0, 4);
+
+    if (topAccessed.length > 0 && !isSearch) {
+        const rankingContainer = document.createElement('div');
+        rankingContainer.className = "col-span-full mb-2 bg-gradient-to-r from-yellow-50 to-amber-50/50 border border-yellow-100 rounded-2xl p-4 shadow-sm";
+        
+        rankingContainer.innerHTML = `
+            <div class="flex items-center gap-1.5 mb-3">
+                <span class="text-xs">⚡</span>
+                <h4 class="text-[9px] font-black uppercase tracking-wider text-yellow-800">Acesso Rápido (Projetos Mais Utilizados)</h4>
             </div>
-            
-            <div class="flex items-center gap-2 shrink-0">
-                <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
-                    class="w-8 h-8 bg-slate-50 text-slate-300 rounded-lg flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                </button>
-            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3"></div>
         `;
-        container.appendChild(card);
-    });
+        
+        const cardsGrid = rankingContainer.querySelector('.grid');
+        topAccessed.forEach((p, rankIdx) => {
+            const card = document.createElement('div');
+            card.className = "bg-white/90 p-3 rounded-xl border border-yellow-100/70 flex items-center justify-between gap-2 hover:border-yellow-400 hover:bg-white cursor-pointer transition-all active:scale-[0.98]";
+            card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
+            
+            const medal = rankIdx === 0 ? '🥇' : rankIdx === 1 ? '🥈' : rankIdx === 2 ? '🥉' : '⭐';
+            
+            card.innerHTML = `
+                <div class="flex items-center gap-2 overflow-hidden w-full">
+                    <div class="bg-yellow-400 text-black w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm font-black text-xs">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    </div>
+                    <div class="overflow-hidden w-full">
+                        <h5 class="text-xs font-black text-slate-800 truncate uppercase leading-tight">${p.name}</h5>
+                        <p class="text-[8px] text-slate-400 font-bold uppercase">${medal} Rank ${rankIdx + 1} (${p.accessCount} ${p.accessCount === 1 ? 'acesso' : 'acessos'})</p>
+                    </div>
+                </div>
+            `;
+            cardsGrid.appendChild(card);
+        });
+        container.appendChild(rankingContainer);
+    }
 
+    // === 1 - MODOS DE EXIBIÇÃO DE PROJETOS ===
+    if (viewMode === 'grid') {
+        container.className = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 px-4";
+        projects.forEach(p => {
+            const card = document.createElement('div');
+            card.className = "bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group transition-all hover:shadow-md hover:border-black hover:bg-slate-50 cursor-pointer active:scale-[0.98]";
+            card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
 
+            card.innerHTML = `
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="bg-yellow-400 text-black w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    </div>
+                    <div class="overflow-hidden">
+                        <h3 class="text-sm font-black text-slate-800 tracking-tight leading-none truncate group-hover:text-black transition-colors">${p.name}</h3>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
+                        class="w-8 h-8 bg-slate-50 text-slate-300 rounded-lg flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+    else if (viewMode === 'list') {
+        container.className = "flex flex-col gap-2.5 px-4 w-full col-span-full";
+        projects.forEach(p => {
+            const card = document.createElement('div');
+            card.className = "bg-white p-3 rounded-xl border border-gray-100 flex items-center justify-between group transition-all hover:border-black cursor-pointer hover:shadow-sm active:scale-[0.99]";
+            card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
+
+            card.innerHTML = `
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="bg-yellow-400 text-black w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xs font-black text-slate-800 uppercase tracking-tight leading-none group-hover:text-black transition-colors">${p.name}</h3>
+                        <p class="text-[8px] text-slate-400 font-bold uppercase mt-1 leading-none">Sheet ID: ${p.sheetId.slice(0, 15)}...</p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
+                        class="w-7 h-7 bg-slate-50 text-slate-300 rounded-lg flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+    else if (viewMode === 'table') {
+        container.className = "w-full col-span-full px-4 overflow-x-auto custom-scrollbar";
+        
+        const wrapper = document.createElement('div');
+        wrapper.className = "bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm w-full";
+        
+        let tableRowsHtml = '';
+        projects.forEach(p => {
+            const trId = `tr-proj-${p.id}`;
+            tableRowsHtml += `
+                <tr id="${trId}" class="hover:bg-slate-50 border-b border-gray-100 transition-all cursor-pointer group">
+                    <td class="p-3 font-black text-xs uppercase text-slate-700 group-hover:text-black transition-colors flex items-center gap-2">
+                        <div class="bg-yellow-400 text-black w-6 h-6 rounded-md flex items-center justify-center shrink-0 shadow-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        </div>
+                        ${p.name}
+                    </td>
+                    <td class="p-3 text-slate-500 font-mono text-[10px] truncate max-w-[150px]">${p.sheetId}</td>
+                    <td class="p-3 text-slate-500 font-mono text-[10px] truncate max-w-[150px]">${p.folderId || '—'}</td>
+                    <td class="p-3 text-center">
+                        <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
+                            class="w-7 h-7 bg-slate-50 text-slate-400 rounded-lg inline-flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90 mx-auto">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        wrapper.innerHTML = `
+            <table class="w-full border-collapse text-left">
+                <thead class="bg-slate-50 border-b border-gray-200 text-slate-500 text-[10px] font-black uppercase tracking-wider">
+                    <tr>
+                        <th class="p-3">Nome do Projeto</th>
+                        <th class="p-3">ID da Planilha (Sheet ID)</th>
+                        <th class="p-3">ID da Pasta (Folder ID)</th>
+                        <th class="p-3 text-center w-24">Ações</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    ${tableRowsHtml}
+                </tbody>
+            </table>
+        `;
+        
+        container.appendChild(wrapper);
+
+        // Atribuir manipuladores de cliques aos TRs
+        projects.forEach(p => {
+            const tr = document.getElementById(`tr-proj-${p.id}`);
+            if (tr) {
+                tr.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
+            }
+        });
+    }
+}
+
+function parseWhatsAppFormat(text) {
+    if (!text) return "";
+    let html = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    html = html.replace(/\*(.*?)\*/g, "<strong>$1</strong>");
+    html = html.replace(/_(.*?)_/g, "<em>$1</em>");
+    html = html.replace(/~(.*?)~/g, "<del>$1</del>");
+    html = html.replace(/```(.*?)```/gs, "<code class='bg-black/5 p-1 rounded font-mono text-[11px]'>$1</code>");
+    return html;
 }
 
 
@@ -1734,6 +2250,7 @@ export function showFilePreview(file) {
 
     const isImage = file.mimeType.startsWith('image/');
     const isPDF = file.mimeType === 'application/pdf';
+    const isMD = file.mimeType === 'text/markdown' || file.name.toLowerCase().endsWith('.md');
 
     if (isImage) {
         // Para imagens, usamos tag <img> direta para permitir OCR e cópia nativa
@@ -1779,8 +2296,48 @@ export function showFilePreview(file) {
     } else if (isPDF) {
         // Para PDFs, usamos o endpoint local para que o browser utilize o seu visualizador nativo.
         // O visualizador nativo (Chrome/Edge/Firefox) permite selecionar e copiar texto.
-        const pdfUrl = `/api/google/drive/file/${file.id}`;
-        content.innerHTML = `<iframe src="${pdfUrl}" class="w-full h-full border-0 rounded-lg shadow-lg"></iframe>`;
+        const fileUrl = `/api/google/drive/file/${file.id}`;
+        content.innerHTML = `<iframe src="${fileUrl}" class="w-full h-full border-0 rounded-lg shadow-lg bg-white"></iframe>`;
+    } else if (isMD) {
+        const fileUrl = `/api/google/drive/file/${file.id}`;
+        content.innerHTML = `<div class="p-10 flex justify-center items-center h-full w-full bg-[#efeae2] rounded-lg"><div class="animate-pulse font-bold text-gray-500">A processar formato WhatsApp...</div></div>`;
+        
+        fetch(fileUrl)
+            .then(res => res.text())
+            .then(text => {
+                const waHtml = parseWhatsAppFormat(text);
+                content.innerHTML = `
+                <div class="w-full h-full bg-[#efeae2] p-4 md:p-8 overflow-y-auto flex flex-col rounded-lg shadow-lg relative" style="background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');">
+                    <button id="btn-copy-md" class="absolute top-2 right-2 md:top-4 md:right-4 bg-[#00a884] text-white px-3 py-1.5 rounded-full shadow-md text-[10px] font-bold uppercase flex items-center gap-1 hover:bg-[#008f6f] transition-all z-10">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        COPIAR
+                    </button>
+                    <div class="max-w-2xl mx-auto w-full flex flex-col gap-2 mt-8 md:mt-0">
+                        <div class="self-start bg-white text-[#111b21] p-3 rounded-xl rounded-tl-none shadow-sm text-[14px] leading-relaxed whitespace-pre-wrap break-words font-sans max-w-[90%]">${waHtml}</div>
+                    </div>
+                </div>`;
+                
+                const copyBtn = document.getElementById('btn-copy-md');
+                if (copyBtn) {
+                    copyBtn.onclick = async () => {
+                        try {
+                            await navigator.clipboard.writeText(text);
+                            const originalHTML = copyBtn.innerHTML;
+                            copyBtn.innerHTML = "COPIADO!";
+                            copyBtn.classList.replace('bg-[#00a884]', 'bg-gray-500');
+                            setTimeout(() => {
+                                copyBtn.innerHTML = originalHTML;
+                                copyBtn.classList.replace('bg-gray-500', 'bg-[#00a884]');
+                            }, 2000);
+                        } catch (err) {
+                            ui.toast("Erro ao copiar o texto.", "error");
+                        }
+                    };
+                }
+            })
+            .catch(err => {
+                content.innerHTML = `<div class="p-10 text-center text-red-500 font-bold bg-[#efeae2] w-full h-full rounded-lg">Erro ao carregar ficheiro Markdown.</div>`;
+            });
     } else {
         content.innerHTML = `<div class="p-10 text-center text-slate-400 font-bold uppercase text-xs">Pré-visualização não suportada para este tipo de ficheiro.</div>`;
     }
@@ -1795,6 +2352,7 @@ function renderFilePreviewInSidebar(file) {
 
     const isImage = file.mimeType.startsWith('image/');
     const isPDF = file.mimeType === 'application/pdf';
+    const isMD = file.mimeType === 'text/markdown' || file.name.toLowerCase().endsWith('.md');
     const fileUrl = `/api/google/drive/file/${file.id}`;
 
     let previewHtml = '';
@@ -1802,7 +2360,47 @@ function renderFilePreviewInSidebar(file) {
         previewHtml = `<img src="${fileUrl}" class="w-full rounded-lg shadow-md border border-slate-200">`;
     } else if (isPDF) {
         // Usar o visualizador nativo do browser dentro de um iframe
-        previewHtml = `<iframe src="${fileUrl}" class="w-full h-[600px] border border-slate-200 rounded-lg shadow-inner"></iframe>`;
+        previewHtml = `<iframe src="${fileUrl}" class="w-full h-[600px] border border-slate-200 rounded-lg shadow-inner bg-white"></iframe>`;
+    } else if (isMD) {
+        const containerId = 'wa-preview-' + Date.now();
+        previewHtml = `<div id="${containerId}" class="w-full h-[600px] bg-[#efeae2] p-3 overflow-y-auto flex flex-col rounded-lg shadow-inner" style="background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');">
+            <div class="animate-pulse text-xs text-center text-gray-500 mt-10 bg-white/80 rounded px-2 py-1 mx-auto">A formatar...</div>
+        </div>`;
+        
+        setTimeout(() => {
+            fetch(fileUrl)
+                .then(res => res.text())
+                .then(text => {
+                    const waHtml = parseWhatsAppFormat(text);
+                    const el = document.getElementById(containerId);
+                    if(el) {
+                        el.innerHTML = `
+                        <div class="relative w-full h-full flex flex-col">
+                            <button id="btn-copy-md-side" class="absolute top-1 right-1 bg-[#00a884] text-white px-2 py-1 rounded shadow-md text-[9px] font-bold uppercase flex items-center gap-1 hover:bg-[#008f6f] transition-all z-10">
+                                COPIAR
+                            </button>
+                            <div class="self-start bg-white text-[#111b21] p-2.5 rounded-xl rounded-tl-none shadow-sm text-[13px] leading-relaxed whitespace-pre-wrap break-words font-sans max-w-[95%] mt-6">${waHtml}</div>
+                        </div>`;
+                        
+                        const copyBtn = document.getElementById('btn-copy-md-side');
+                        if (copyBtn) {
+                            copyBtn.onclick = async () => {
+                                try {
+                                    await navigator.clipboard.writeText(text);
+                                    copyBtn.innerHTML = "COPIADO!";
+                                    copyBtn.classList.replace('bg-[#00a884]', 'bg-gray-500');
+                                    setTimeout(() => {
+                                        copyBtn.innerHTML = "COPIAR";
+                                        copyBtn.classList.replace('bg-gray-500', 'bg-[#00a884]');
+                                    }, 2000);
+                                } catch (err) {
+                                    ui.toast("Erro ao copiar.", "error");
+                                }
+                            };
+                        }
+                    }
+                });
+        }, 50);
     } else {
         previewHtml = `
             <div class="p-10 text-center border-2 border-dashed border-slate-100 rounded-2xl">
@@ -2057,10 +2655,60 @@ let selectedPaymentMaxAmount = 0;
 let searchPaymentTimeout = null;
 let currentMiniFilterExpectedAmount = 0;
 
-export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmount = '', defaultTerm = '') {
+export function setMiniFilterSearch(value) {
+    const searchInput = document.getElementById('mini-filter-search');
+    if (searchInput) {
+        searchInput.value = value;
+        searchPaymentMiniFilter();
+    }
+}
+
+export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmount = '', defaultTerm = '', clientName = '', phoneNumber = '', notaDuty = '') {
     document.getElementById('payment-mini-filter').classList.remove('hidden');
 
     currentMiniFilterExpectedAmount = parseFloat(defaultAmount) || 0;
+
+    // Atualizar info box do cliente
+    const infoBox = document.getElementById('mini-filter-header-client-info');
+    const nameEl = document.getElementById('mini-filter-client-name');
+    const phoneEl = document.getElementById('mini-filter-client-phone');
+    const notaEl = document.getElementById('mini-filter-client-nota');
+
+    if (infoBox && nameEl && phoneEl && notaEl) {
+        const hasInfo = clientName || phoneNumber || (notaDuty && notaDuty !== '—' && notaDuty.trim() !== '');
+        if (hasInfo) {
+            nameEl.innerText = clientName || '—';
+            
+            // Renderizar números de telefone como badges clicáveis
+            if (phoneNumber && phoneNumber !== '—' && phoneNumber.trim() !== '') {
+                const parts = phoneNumber.split(/[\s|,\/]+/).map(p => p.trim()).filter(p => p.length > 0);
+                if (parts.length > 0) {
+                    let html = '';
+                    parts.forEach(part => {
+                        html += `<span onclick="ui.setMiniFilterSearch('${part.replace(/'/g, "\\'")}')" class="cursor-pointer text-blue-600 hover:text-blue-800 hover:bg-blue-100 transition-all font-black bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 text-[10px] inline-block mr-1 my-0.5">${part}</span>`;
+                    });
+                    phoneEl.innerHTML = html;
+                } else {
+                    phoneEl.innerText = '—';
+                }
+            } else {
+                phoneEl.innerText = '—';
+            }
+            
+            const notaContainer = document.getElementById('mini-filter-client-nota-container');
+            if (notaContainer) {
+                if (notaDuty && notaDuty !== '—' && notaDuty.trim() !== '') {
+                    notaEl.innerText = notaDuty;
+                    notaContainer.classList.remove('hidden');
+                } else {
+                    notaContainer.classList.add('hidden');
+                }
+            }
+            infoBox.classList.remove('hidden');
+        } else {
+            infoBox.classList.add('hidden');
+        }
+    }
 
     // Atualizar opções do banco (para aceitar qualquer valor além dos default)
     const bankSelect = document.getElementById('mini-filter-bank');
@@ -2142,6 +2790,25 @@ export async function searchPaymentMiniFilter() {
     }, 300);
 }
 
+export function checkMiniFilterStatus() {
+    const allocated = parseFloat(document.getElementById('mini-filter-allocate-amount').value) || 0;
+    const statusSelect = document.getElementById('mini-filter-status');
+    if (statusSelect) {
+        if (allocated > 0 && allocated < (currentMiniFilterExpectedAmount - 1.0)) {
+            if (statusSelect.value !== 'PARCIAL') {
+                statusSelect.value = 'PARCIAL';
+                document.getElementById('mini-filter-comment-container').classList.remove('hidden');
+            }
+        } else if (allocated > 0 && allocated >= (currentMiniFilterExpectedAmount - 1.0)) {
+            // Se já não houver diferença em falta, coloca CONFIRMADO por padrão
+            if (statusSelect.value === 'PARCIAL' || statusSelect.value === 'PENDENTE') {
+                statusSelect.value = 'CONFIRMADO';
+                document.getElementById('mini-filter-comment-container').classList.add('hidden');
+            }
+        }
+    }
+}
+
 export function selectPaymentResult(id, date, ref, trElement, fullAmount) {
     selectedPaymentIdForLink = id;
     selectedPaymentDate = date;
@@ -2157,6 +2824,9 @@ export function selectPaymentResult(id, date, ref, trElement, fullAmount) {
     const suggested = Math.min(currentMiniFilterExpectedAmount, selectedPaymentMaxAmount);
     document.getElementById('mini-filter-allocate-amount').value = suggested.toFixed(2);
     document.getElementById('mini-filter-max-available').innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPaymentMaxAmount);
+    
+    // Atualizar visualmente o status para refletir a nova alocação
+    checkMiniFilterStatus();
 }
 
 export async function confirmPaymentSelection() {
@@ -2187,7 +2857,7 @@ export async function confirmPaymentSelection() {
     const btn = document.querySelector('#payment-mini-filter button.bg-blue-600');
 
     try {
-        setBtnLoading(btn, true, 'A processar...');
+        setBtnLoading(btn, true, 'Vincular...');
         setLoader(true, 'A gravar reconciliação...');
 
         // 1. Atualizar PocketBase com lógica de Split
@@ -2198,39 +2868,32 @@ export async function confirmPaymentSelection() {
         // 2. Atualizar Google Sheet (marcar como CONFIRMADO e a DATA)
         if (window.currentClientRows && window.currentClientRows.length > 0) {
             const columns = state.confirm.columns || [];
-            const columnsUpper = columns.map(c => String(c).toUpperCase().replace(/[^A-Z0-9\s-]/g, ''));
             
-            // Deteção robusta de colunas
-            const findStatusIdx = () => {
-                const targets = ['CONFIRMATION', 'CONFIRMACAO', 'CONFIRM', 'STATUS'];
-                for (const t of targets) {
-                    const idx = columnsUpper.findIndex(c => c === t || c.includes(t));
+            const cleanString = (str) => String(str || '')
+                .toUpperCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^A-Z0-9]/g, "")
+                .trim();
+
+            const findCol = (targets) => {
+                const cleanedTargets = targets.map(cleanString);
+                for (const target of cleanedTargets) {
+                    const idx = columns.findIndex(c => cleanString(c) === target);
+                    if (idx !== -1) return idx;
+                }
+                for (const target of cleanedTargets) {
+                    const idx = columns.findIndex(c => cleanString(c).includes(target));
                     if (idx !== -1) return idx;
                 }
                 return -1;
             };
-            const statusIdx = findStatusIdx();
 
-            const findPagIdx = (num) => {
-                const target = `PAG ${num}`;
-                const targetClean = `PAG${num}`;
-                return columnsUpper.findIndex(c => 
-                    c === target || 
-                    c === targetClean || 
-                    c.includes(target) || 
-                    c.includes(`PAG-${num}`)
-                );
-            };
-
-            const pag1Idx = findPagIdx(1);
-            const pag2Idx = findPagIdx(2);
-            const pag3Idx = findPagIdx(3);
-
-            // Deteção de coluna de comentário/OBS
-            const obsIdx = columnsUpper.findIndex(c => 
-                c === 'OBS' || c === 'COMENTARIO' || c === 'NOTAS' || 
-                c.includes('OBSERV') || c.includes('COMENT')
-            );
+            const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+            const pag1Idx = findCol(['PAG 1', 'PAG1']);
+            const pag2Idx = findCol(['PAG 2', 'PAG2']);
+            const pag3Idx = findCol(['PAG 3', 'PAG3']);
+            const obsIdx = findCol(['OBS', 'COMENTARIO', 'NOTAS', 'OBSERVACAO', 'OBSERVACOES']);
 
             if (state.confirm.sheetId) {
                 const getColLetter = (idx) => {
@@ -2266,7 +2929,15 @@ export async function confirmPaymentSelection() {
                     const updates = [];
 
                     if (statusIdx !== -1) {
-                        const newStatus = document.getElementById('mini-filter-status')?.value || 'CONFIRMADO';
+                        let newStatus = document.getElementById('mini-filter-status')?.value || 'CONFIRMADO';
+                        
+                        if (newStatus === 'CONFIRMADO') {
+                            const isPartialAllocation = allocatedAmount < (currentMiniFilterExpectedAmount - 1.0);
+                            if (isPartialAllocation && rowObj.balance > 1.0) {
+                                newStatus = 'PARCIAL';
+                            }
+                        }
+                        
                         updates.push({ idx: statusIdx, val: newStatus });
                     }
 
@@ -2363,4 +3034,120 @@ export function closePaymentMiniFilter() {
         container.classList.add('max-w-3xl');
     }
     if (modal) modal.classList.add('hidden');
+}
+
+// --- MÓDULO DEFINIÇÕES (USERS) ---
+
+export async function loadSettingsUsers() {
+    const tbody = document.getElementById('settings-users-tbody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-gray-500 font-bold">A carregar utilizadores...</td></tr>';
+    
+    try {
+        const users = await getSettingsUsers();
+        tbody.innerHTML = '';
+        
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-gray-400 font-bold">Nenhum utilizador encontrado.</td></tr>';
+            return;
+        }
+        
+        users.forEach(user => {
+            const role = user.role || 'USER';
+            const roleBadge = role === 'ADMIN' 
+                ? '<span class="px-2 py-1 bg-black text-white rounded-md text-[10px] font-black tracking-widest">ADMIN</span>'
+                : '<span class="px-2 py-1 bg-gray-200 text-gray-600 rounded-md text-[10px] font-black tracking-widest">USER</span>';
+                
+            const perms = user.permissions || [];
+            const permsHtml = perms.length > 0 
+                ? perms.map(p => `<span class="px-2 py-1 border border-gray-200 rounded text-[10px] font-bold text-gray-600">${p}</span>`).join(' ')
+                : '<span class="text-xs text-gray-400 italic">Nenhum</span>';
+                
+            const tr = document.createElement('tr');
+            tr.className = 'border-b-2 border-gray-100 hover:bg-gray-50 transition-colors';
+            tr.innerHTML = `
+                <td class="px-6 py-4 font-bold text-gray-900">${user.name || '---'}</td>
+                <td class="px-6 py-4 text-gray-600">${user.email}</td>
+                <td class="px-6 py-4">${roleBadge}</td>
+                <td class="px-6 py-4 flex flex-wrap gap-1">${permsHtml}</td>
+                <td class="px-6 py-4 text-right">
+                    <button onclick="window.editUser('${user.id}')" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Editar">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                    </button>
+                    ${user.id !== pb.authStore.model?.id ? `
+                    <button onclick="window.deleteUser('${user.id}', '${(user.name || user.email).replace(/'/g, "\\'")}')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Apagar">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                    ` : ''}
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        // Armazenar localmente para edição rápida
+        window.__SETTINGS_USERS__ = users;
+        
+    } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-red-500 font-bold">Erro: ${err.message}</td></tr>`;
+    }
+}
+
+export function openUserModal(userId = null) {
+    const modal = document.getElementById('modal-user');
+    const title = document.getElementById('modal-user-title');
+    const idInput = document.getElementById('user-id');
+    const nameInput = document.getElementById('user-name');
+    const emailInput = document.getElementById('user-email');
+    const passInput = document.getElementById('user-password');
+    const passHint = document.getElementById('user-password-hint');
+    const roleSelect = document.getElementById('user-role');
+    const checkboxes = document.querySelectorAll('#user-permissions input[type="checkbox"]');
+    
+    // Reset formulário
+    document.getElementById('form-user').reset();
+    checkboxes.forEach(cb => cb.checked = false);
+    
+    if (userId) {
+        // Edit Mode
+        title.innerText = "Editar Utilizador";
+        passInput.required = false;
+        passHint.classList.remove('hidden');
+        idInput.value = userId;
+        
+        const user = (window.__SETTINGS_USERS__ || []).find(u => u.id === userId);
+        if (user) {
+            nameInput.value = user.name || '';
+            emailInput.value = user.email || '';
+            roleSelect.value = user.role || 'USER';
+            
+            const perms = user.permissions || [];
+            checkboxes.forEach(cb => {
+                if (perms.includes(cb.value)) cb.checked = true;
+            });
+        }
+    } else {
+        // Create Mode
+        title.innerText = "Novo Utilizador";
+        passInput.required = true;
+        passHint.classList.add('hidden');
+        idInput.value = "";
+    }
+    
+    modal.classList.remove('hidden');
+    // Animação de fade-in
+    setTimeout(() => {
+        modal.classList.remove('opacity-0');
+        modal.querySelector('div').classList.remove('scale-95');
+    }, 10);
+}
+
+export function closeUserModal() {
+    const modal = document.getElementById('modal-user');
+    modal.classList.add('opacity-0');
+    modal.querySelector('div').classList.add('scale-95');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+    }, 300);
 }

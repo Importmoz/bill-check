@@ -246,7 +246,7 @@ def process_file(filepath):
             if date_col not in row or pd.isna(row[date_col]): continue
             
             desc_val = str(row[desc_col]) if desc_col else ""
-            if not desc_val or desc_val == 'nan' or is_bank_fee(desc_val): continue
+            if not desc_val or desc_val.lower() == 'nan': continue
             
             income = 0.0
             if credit_col:

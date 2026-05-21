@@ -1,0 +1,15 @@
+node_modules/
+.env
+google-oauth.json
+tokens.json
+logs/
+tmp/
+scratch/
+extracto/
+*.csv
+*.xlsx
+extracto_*.json
+parser_test_output*.json
+data/
+*.pyc
+__pycache__/

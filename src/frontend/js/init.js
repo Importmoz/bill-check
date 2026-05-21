@@ -16,7 +16,8 @@ const VIEWS = [
     'view-confirm-table',
     'view-confirm-client-detail',
     'view-bank-dashboard',
-    'view-table'
+    'view-table',
+    'view-settings'
 ];
 
 const MODALS = [

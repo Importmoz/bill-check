@@ -929,3 +929,31 @@ export async function deleteTermRecord(id) {
     return await pb.collection('term_v2_records').delete(id);
 }
 
+// --- MÓDULO DEFINIÇÕES (USERS) ---
+
+export async function getSettingsUsers() {
+    if (pb.authStore.model?.role !== 'ADMIN') throw new Error("Acesso negado.");
+    return await pb.collection('users').getFullList({
+        sort: '-created',
+    });
+}
+
+export async function createSettingsUser(data) {
+    if (pb.authStore.model?.role !== 'ADMIN') throw new Error("Acesso negado.");
+    data.passwordConfirm = data.password;
+    data.emailVisibility = true;
+    return await pb.collection('users').create(data);
+}
+
+export async function updateSettingsUser(id, data) {
+    if (pb.authStore.model?.role !== 'ADMIN') throw new Error("Acesso negado.");
+    if (data.password) {
+        data.passwordConfirm = data.password;
+    }
+    return await pb.collection('users').update(id, data);
+}
+
+export async function deleteSettingsUser(id) {
+    if (pb.authStore.model?.role !== 'ADMIN') throw new Error("Acesso negado.");
+    return await pb.collection('users').delete(id);
+}

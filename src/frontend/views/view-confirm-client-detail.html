@@ -70,6 +70,25 @@
                                 </div>
                             </div>
 
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-700 mb-1">Bank in Duty</label>
+                                    <select id="edit-bankDuty" class="w-full p-2 border border-slate-300 rounded-lg text-sm focus:outline-blue-500 bg-white font-bold text-slate-800">
+                                        <option value="?">?</option>
+                                        <option value="BCI BOSS">BCI BOSS</option>
+                                        <option value="BIM BOSS">BIM BOSS</option>
+                                        <option value="BCI JUPITER">BCI JUPITER</option>
+                                        <option value="BIM JUPITER">BIM JUPITER</option>
+                                        <option value="STB JUPITER">STB JUPITER</option>
+                                        <option value="NED JUPITER">NED JUPITER</option>
+                                        <option value="PAID IN CHINA">PAID IN CHINA</option>
+                                        <option value="REPOSIÇÃO">REPOSIÇÃO</option>
+                                        <option value="COTACAO">COTACAO</option>
+                                        <option value="EMOLA BOSS">EMOLA BOSS</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div class="pt-4 flex gap-3 justify-end sticky bottom-0 bg-white border-t border-slate-100">
                                 <button type="button" onclick="ui.closeConfirmEditModal()" class="px-6 py-2 rounded-lg text-slate-600 font-medium hover:bg-slate-100">Cancelar</button>
                                 <button id="btn-confirm-edit-save" type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2 rounded-lg font-medium shadow-sm">Salvar Alterações</button>

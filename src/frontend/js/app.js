@@ -108,8 +108,80 @@ window.showBank = showBank;
 // --- LÓGICA DE APLICAÇÃO ---
 
 async function showBank() {
+    if (!checkModulePermission('EXTRACTOS')) return ui.toast('Acesso negado ao módulo EXTRACTOS.', 'error');
     await ui.showBankDashboard();
 }
+
+async function showSettings() {
+    // Apenas ADMIN pode aceder às definições
+    const role = api.pb.authStore.model?.role;
+    if (role !== 'ADMIN') {
+        ui.toast('Acesso negado. Apenas administradores podem aceder às definições.', 'error');
+        return;
+    }
+    ui.showView('view-settings');
+    await ui.loadSettingsUsers();
+}
+window.showSettings = showSettings;
+
+// --- MÓDULO DEFINIÇÕES (USERS) LÓGICA ---
+
+window.editUser = function(id) {
+    ui.openUserModal(id);
+};
+
+window.deleteUser = async function(id, name) {
+    if (!confirm(`Tem a certeza que deseja APAGAR o utilizador "${name}"?\nEsta ação não pode ser desfeita.`)) return;
+    
+    ui.setLoader(true, "A apagar utilizador...");
+    try {
+        await api.deleteSettingsUser(id);
+        ui.toast("Utilizador apagado com sucesso!", "success");
+        await ui.loadSettingsUsers();
+    } catch (err) {
+        console.error(err);
+        ui.toast("Erro ao apagar utilizador: " + err.message, "error");
+    } finally {
+        ui.setLoader(false);
+    }
+};
+
+window.saveUser = async function(e) {
+    e.preventDefault();
+    
+    const id = document.getElementById('user-id').value;
+    const name = document.getElementById('user-name').value.trim();
+    const email = document.getElementById('user-email').value.trim();
+    const password = document.getElementById('user-password').value;
+    const role = document.getElementById('user-role').value;
+    
+    const checkboxes = document.querySelectorAll('#user-permissions input[type="checkbox"]:checked');
+    const permissions = Array.from(checkboxes).map(cb => cb.value);
+    
+    const data = { name, email, role, permissions };
+    if (password) data.password = password;
+    
+    const btn = document.getElementById('btn-save-user');
+    ui.setBtnLoading(btn, true, "A gravar...");
+    
+    try {
+        if (id) {
+            await api.updateSettingsUser(id, data);
+            ui.toast("Utilizador atualizado com sucesso!", "success");
+        } else {
+            if (!password) throw new Error("A senha é obrigatória para novos utilizadores.");
+            await api.createSettingsUser(data);
+            ui.toast("Utilizador criado com sucesso!", "success");
+        }
+        ui.closeUserModal();
+        await ui.loadSettingsUsers();
+    } catch (err) {
+        console.error(err);
+        ui.toast("Erro ao gravar utilizador: " + err.message, "error");
+    } finally {
+        ui.setBtnLoading(btn, false);
+    }
+};
 
 async function handleLogin() {
     const email = document.getElementById('login-user').value.trim();
@@ -142,6 +214,14 @@ function handleLogout() {
     location.reload();
 }
 
+function checkModulePermission(moduleName) {
+    const user = api.pb.authStore.model;
+    if (!user) return false;
+    if (user.role === 'ADMIN') return true;
+    const perms = user.permissions || [];
+    return perms.includes(moduleName);
+}
+
 /**
  * Mostra o Dashboard Principal (Menu de Módulos)
  */
@@ -149,6 +229,34 @@ async function showHub() {
     ui.setLoader(true);
     try {
         ui.showView('view-hub');
+        
+        // RBAC: Mostrar/Ocultar Módulos
+        const user = api.pb.authStore.model;
+        if (user) {
+            const role = user.role || 'USER';
+            const permissions = user.permissions || [];
+            
+            const modules = ['BILL', 'FINANCE', 'TEAM', 'TERM', 'CONFIRM', 'EXTRACTOS'];
+            modules.forEach(mod => {
+                const card = document.getElementById(`card-module-${mod}`);
+                if (card) {
+                    if (role === 'ADMIN' || permissions.includes(mod)) {
+                        card.classList.remove('hidden');
+                    } else {
+                        card.classList.add('hidden');
+                    }
+                }
+            });
+            
+            const settingsCard = document.getElementById('card-module-SETTINGS');
+            if (settingsCard) {
+                if (role === 'ADMIN') {
+                    settingsCard.classList.remove('hidden');
+                } else {
+                    settingsCard.classList.add('hidden');
+                }
+            }
+        }
     } catch (err) {
         console.error(err);
         ui.toast("Erro ao carregar menu principal.", "error");
@@ -166,6 +274,7 @@ async function showHub() {
 let financeRefreshInterval = null;
 
 async function showFinance() {
+    if (!checkModulePermission('FINANCE')) return ui.toast('Acesso negado ao módulo FINANCE.', 'error');
     ui.setLoader(true);
     try {
         await api.fetchFinanceData();
@@ -310,6 +419,7 @@ async function renameFinanceGroup(id) {
 }
 
 async function showDashboard() {
+    if (!checkModulePermission('BILL')) return ui.toast('Acesso negado ao módulo BILL.', 'error');
     ui.setLoader(true);
     try {
         await api.fetchDashboardData();
@@ -544,6 +654,7 @@ document.addEventListener('keypress', (e) => {
 // --- LÓGICA MÓDULO TEAM ---
 
 async function showTeam() {
+    if (!checkModulePermission('TEAM')) return ui.toast('Acesso negado ao módulo TEAM.', 'error');
     ui.setLoader(true);
     try {
         const tables = await api.fetchTeamDashboardData();
@@ -753,6 +864,7 @@ function downloadTeamTableAsImage() {
 // --- LÓGICA MÓDULO TERM ---
 
 async function showTerm() {
+    if (!checkModulePermission('TERM')) return ui.toast('Acesso negado ao módulo TERM.', 'error');
     ui.setLoader(true);
     try {
         const tables = await api.fetchTermDashboardData();
@@ -935,6 +1047,7 @@ let projectFoldersCache = null; // Cache de pastas para abertura instantânea
 
 
 async function showConfirm() {
+    if (!checkModulePermission('CONFIRM')) return ui.toast('Acesso negado ao módulo CONFIRM.', 'error');
     ui.showView('view-confirm-dashboard');
     loadConfirmProjects();
 }
@@ -1030,6 +1143,10 @@ async function deleteConfirmProject() {
 }
 
 async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") {
+    // Registar o acesso do projeto para o ranking
+    if (sheetId && typeof ui.registerProjectAccess === 'function') {
+        ui.registerProjectAccess(sheetId, projectName);
+    }
     ui.setLoader(true);
     currentProjectSheetId = sheetId; // Guardar para recarregar depois
     
@@ -1282,8 +1399,29 @@ function driveGoHome() {
 function onConfirmRow(rowIndex, rowData) {
     currentConfirmRow = { index: rowIndex, data: rowData };
     const columns = api.state.confirm.columns;
-    const idCodeIdx = columns.findIndex(c => String(c).includes('ID CODE'));
-    const statusIdx = columns.findIndex(c => String(c).includes('CONFIRMATION'));
+
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const idCodeIdx = findCol(['ID CODE', 'CODE ID', 'ID']);
+    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
     
     document.getElementById('confirm-action-title').textContent = `CONFIRMAR: ${rowData[idCodeIdx] || 'Registo'}`;
     
@@ -1298,7 +1436,7 @@ function onConfirmRow(rowIndex, rowData) {
     if (datesContainer) {
         datesContainer.innerHTML = '';
         ['PAG 1', 'PAG 2', 'PAG 3'].forEach(label => {
-            const idx = columns.findIndex(c => String(c).trim() === label);
+            const idx = findCol([label]);
             if (idx !== -1) {
                 const div = document.createElement('div');
                 const labelEl = document.createElement('label');
@@ -1329,32 +1467,53 @@ function onConfirmRow(rowIndex, rowData) {
 async function saveConfirmToSheet() {
     if (!currentConfirmRow) return;
     
+    const columns = api.state.confirm.columns;
     const spreadsheetId = currentProjectSheetId;
-    // 1. Deteção Robusta da Coluna de Confirmação
-    const statusIdx = columns.findIndex(c => {
-        const h = String(c).toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        return h.includes('CONFIRMATION') || h.includes('CONFIRMACAO') || h === 'STATUS';
-    });
-    
+
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
     if (statusIdx === -1) {
         ui.toast("Erro: Coluna de Confirmação não encontrada no GSheet.", "error");
         ui.setLoader(false);
         return;
     }
 
-    const selectedStatus = document.getElementById('select-confirm-status').value;
+    let selectedStatus = document.getElementById('select-confirm-status').value;
+    
+    const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+    if (selectedStatus === 'CONFIRMADO' && balanceIdx !== -1) {
+        const balanceVal = parseFloat(String(currentConfirmRow.data[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0;
+        if (balanceVal > 1.0) {
+            selectedStatus = 'PARCIAL';
+        }
+    }
+
     const updatedRow = [...currentConfirmRow.data];
     updatedRow[statusIdx] = selectedStatus;
     
     // 2. Mapear datas de pagamento (PAG 1, PAG 2, PAG 3)
     // Agora salvamos as datas independentemente do status
     ['PAG 1', 'PAG 2', 'PAG 3'].forEach(label => {
-        const idx = columns.findIndex(c => {
-            const h = String(c).toUpperCase().replace(/[^A-Z0-9]/g, '');
-            const l = label.toUpperCase().replace(/[^A-Z0-9]/g, '');
-            return h === l || h.includes(l);
-        });
-        
+        const idx = findCol([label]);
         if (idx !== -1) {
             const inputId = `input-pay-date-${label.replace(' ', '')}`;
             const input = document.getElementById(inputId);

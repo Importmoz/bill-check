@@ -1,0 +1,124 @@
+<div id="view-settings" class="max-w-screen-xl mx-auto hidden min-h-[60vh] py-8">
+    
+    <!-- Top Bar -->
+    <div class="flex items-center justify-between mb-8">
+        <div>
+            <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">Gestão de Utilizadores</h1>
+            <p class="text-gray-500 text-xs font-bold uppercase tracking-widest mt-1">Definições do Sistema e Acessos</p>
+        </div>
+        <div class="flex gap-4">
+            <button onclick="showHub()" class="px-6 py-2.5 bg-gray-100 text-gray-700 font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-gray-200 transition-colors">
+                Voltar ao Hub
+            </button>
+            <button onclick="ui.openUserModal()" class="px-6 py-2.5 bg-black text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-lg hover:shadow-none hover:translate-y-1 transition-all flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+                Novo Utilizador
+            </button>
+        </div>
+    </div>
+
+    <!-- Table Container -->
+    <div class="bg-white rounded-3xl border-2 border-gray-200 overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="bg-gray-50 border-b-2 border-gray-100">
+                        <th class="px-6 py-4 text-xs font-black text-gray-500 uppercase tracking-widest">Nome</th>
+                        <th class="px-6 py-4 text-xs font-black text-gray-500 uppercase tracking-widest">Email</th>
+                        <th class="px-6 py-4 text-xs font-black text-gray-500 uppercase tracking-widest">Papel (Role)</th>
+                        <th class="px-6 py-4 text-xs font-black text-gray-500 uppercase tracking-widest">Módulos Permitidos</th>
+                        <th class="px-6 py-4 text-xs font-black text-gray-500 uppercase tracking-widest text-right">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="settings-users-tbody" class="text-sm">
+                    <!-- Registos renderizados via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Adicionar/Editar Utilizador -->
+    <div id="modal-user" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
+        <div class="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden transform scale-95 transition-transform duration-300">
+            <div class="p-8 border-b-2 border-gray-100 flex justify-between items-center bg-gray-50">
+                <div>
+                    <h2 id="modal-user-title" class="text-2xl font-black text-gray-900 uppercase tracking-tight">Novo Utilizador</h2>
+                    <p class="text-gray-500 text-xs font-bold uppercase tracking-widest mt-1">Configuração de Perfil e Acessos</p>
+                </div>
+                <button onclick="ui.closeUserModal()" class="text-gray-400 hover:text-black transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            
+            <form id="form-user" onsubmit="window.saveUser(event)" class="p-8">
+                <input type="hidden" id="user-id" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <!-- Dados Pessoais -->
+                    <div class="space-y-4">
+                        <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Dados de Acesso</h3>
+                        <div>
+                            <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Nome Completo</label>
+                            <input type="text" id="user-name" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Email</label>
+                            <input type="email" id="user-email" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Senha <span id="user-password-hint" class="text-gray-300 font-normal lowercase">(Opcional ao editar)</span></label>
+                            <input type="password" id="user-password" minlength="8" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Papel (Role)</label>
+                            <select id="user-role" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all bg-white">
+                                <option value="USER">👤 Utilizador Normal</option>
+                                <option value="ADMIN">👑 Administrador</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Permissões de Módulos -->
+                    <div class="bg-gray-50 p-6 rounded-2xl border-2 border-gray-100">
+                        <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">Módulos Permitidos</h3>
+                        <div class="space-y-3" id="user-permissions">
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" value="BILL" class="w-5 h-5 rounded border-gray-300 text-black focus:ring-black">
+                                <span class="font-bold text-sm text-gray-700 group-hover:text-black transition-colors">BILL <span class="text-xs text-gray-400 font-normal ml-1">- Gestão de Custos</span></span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" value="FINANCE" class="w-5 h-5 rounded border-gray-300 text-black focus:ring-black">
+                                <span class="font-bold text-sm text-gray-700 group-hover:text-black transition-colors">FINANCE <span class="text-xs text-gray-400 font-normal ml-1">- Fluxo de Caixa</span></span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" value="TEAM" class="w-5 h-5 rounded border-gray-300 text-black focus:ring-black">
+                                <span class="font-bold text-sm text-gray-700 group-hover:text-black transition-colors">TEAM <span class="text-xs text-gray-400 font-normal ml-1">- Controlo de Equipes</span></span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" value="TERM" class="w-5 h-5 rounded border-gray-300 text-black focus:ring-black">
+                                <span class="font-bold text-sm text-gray-700 group-hover:text-black transition-colors">TERM <span class="text-xs text-gray-400 font-normal ml-1">- Prazos de Contentores</span></span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" value="CONFIRM" class="w-5 h-5 rounded border-gray-300 text-black focus:ring-black">
+                                <span class="font-bold text-sm text-gray-700 group-hover:text-black transition-colors">CONFIRM <span class="text-xs text-gray-400 font-normal ml-1">- Aprovações</span></span>
+                            </label>
+                            <label class="flex items-center gap-3 cursor-pointer group">
+                                <input type="checkbox" value="EXTRACTOS" class="w-5 h-5 rounded border-gray-300 text-black focus:ring-black">
+                                <span class="font-bold text-sm text-gray-700 group-hover:text-black transition-colors">EXTRACTOS <span class="text-xs text-gray-400 font-normal ml-1">- Banca</span></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="flex justify-end gap-3 pt-6 border-t-2 border-gray-100">
+                    <button type="button" onclick="ui.closeUserModal()" class="px-6 py-3 bg-gray-100 text-gray-700 font-bold text-xs uppercase tracking-widest rounded-xl hover:bg-gray-200 transition-colors">
+                        Cancelar
+                    </button>
+                    <button type="submit" id="btn-save-user" class="px-8 py-3 bg-black text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-lg hover:shadow-none hover:translate-y-1 transition-all">
+                        Gravar Utilizador
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

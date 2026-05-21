@@ -136,3 +136,24 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e29
     0%, 100% { opacity: 0.6; }
     50% { opacity: 1; }
 }
+
+/* Responsividade do Painel Vincular Pagamento (Mini-Filtro) */
+@media (max-width: 768px) {
+    #mini-filter-container {
+        flex-direction: column !important;
+        max-height: 92vh !important;
+        width: 95% !important;
+        max-width: 95vw !important;
+        height: auto !important;
+        margin: auto !important;
+        border-radius: 1.5rem !important;
+    }
+    
+    #mini-filter-drive-side.w-80 {
+        width: 100% !important;
+        height: 220px !important;
+        border-left: none !important;
+        border-top: 1px solid #e2e8f0 !important;
+    }
+}
+
