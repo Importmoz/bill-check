@@ -1160,6 +1160,11 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
         const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
         ui.renderConfirmList(data, "", statusFilter);
         
+        // Subscrever eventos realtime para este GSheet
+        if (typeof api.subscribeConfirmEvents === 'function' && typeof ui.handleConfirmRealtimeEvent === 'function') {
+            api.subscribeConfirmEvents(sheetId, ui.handleConfirmRealtimeEvent);
+        }
+        
         // Configura o explorador de Drive
         currentProjectRootFolderId = folderId;
         driveHistory = [folderId]; 
@@ -1397,6 +1402,19 @@ function driveGoHome() {
 }
 
 function onConfirmRow(rowIndex, rowData) {
+    if (window.activeConfirmLocks && window.activeConfirmLocks[rowIndex]) {
+        const lockInfo = window.activeConfirmLocks[rowIndex];
+        if (lockInfo.userId !== api.pb.authStore.model?.id) {
+            ui.toast(`Este registo está a ser editado por ${lockInfo.user}`, 'warning');
+            return;
+        }
+    }
+    
+    // Emit Lock Event
+    if (api.state.confirm && api.state.confirm.sheetId) {
+        api.emitConfirmEvent(api.state.confirm.sheetId, rowIndex, 'LOCK', { name: api.pb.authStore.model?.name || 'Utilizador' });
+    }
+
     currentConfirmRow = { index: rowIndex, data: rowData };
     const columns = api.state.confirm.columns;
 

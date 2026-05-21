@@ -337,6 +337,53 @@ export async function updateGSheetNote(spreadsheetId, sheetName, row, col, note,
     return await res.json();
 }
 
+// --- REALTIME EVENTOS (CONFIRM) ---
+let confirmUnsubscribe = null;
+
+export async function emitConfirmEvent(sheetId, rowIndex, type, payload = {}) {
+    if (!pb.authStore.model) return;
+    try {
+        await pb.collection('confirm_events').create({
+            sheet_id: sheetId,
+            row_index: rowIndex,
+            type: type,
+            payload: payload,
+            user_id: pb.authStore.model.id
+        });
+    } catch (err) {
+        console.warn("Erro ao emitir evento realtime:", err);
+    }
+}
+
+export async function subscribeConfirmEvents(sheetId, callback) {
+    if (confirmUnsubscribe) {
+        await unsubscribeConfirmEvents();
+    }
+    
+    // Subscribe to all events for this specific sheet
+    const filter = `sheet_id = "${sheetId}"`;
+    try {
+        confirmUnsubscribe = await pb.collection('confirm_events').subscribe('*', function (e) {
+            if (e.record.sheet_id === sheetId) {
+                callback(e);
+            }
+        }, { filter });
+    } catch (err) {
+        console.warn("Erro ao subscrever eventos realtime:", err);
+    }
+}
+
+export async function unsubscribeConfirmEvents() {
+    if (confirmUnsubscribe) {
+        try {
+            await pb.collection('confirm_events').unsubscribe('*');
+            confirmUnsubscribe = null;
+        } catch (err) {
+            console.warn("Erro ao cancelar subscrição realtime:", err);
+        }
+    }
+}
+
 export async function listGDriveFiles(folderId) {
     const res = await fetch('/api/google/drive/list', {
         method: 'POST',

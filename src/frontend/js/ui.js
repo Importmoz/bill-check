@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
 
 /**
  * Controla o indicador de carregamento
@@ -112,6 +112,15 @@ function hideAllViews() {
  */
 export function showView(viewId) {
     hideAllViews();
+    
+    // Se estivermos a sair do módulo CONFIRM (GSheet específico), cancelamos a subscrição
+    if (!viewId.startsWith('view-confirm-')) {
+        if (typeof unsubscribeConfirmEvents === 'function') {
+            unsubscribeConfirmEvents();
+        }
+        window.activeConfirmLocks = {}; // Limpar memória de locks
+    }
+    
     const el = document.getElementById(viewId);
     if (el) {
         el.classList.remove('hidden');
@@ -1707,6 +1716,11 @@ export function openConfirmEditModal(index) {
 
 export function closeConfirmEditModal() {
     document.getElementById('confirm-edit-modal').classList.add('hidden');
+    // Emit Unlock Event
+    const indexStr = document.getElementById('edit-index')?.value;
+    if (indexStr && state.confirm && state.confirm.sheetId) {
+        emitConfirmEvent(state.confirm.sheetId, parseInt(indexStr), 'UNLOCK');
+    }
 }
 
 export function calculateConfirmDuty() {
@@ -1719,6 +1733,88 @@ export function calculateConfirmDuty() {
 
     document.getElementById('edit-amountDuty').value = amount.toFixed(2);
     document.getElementById('edit-balance').value = bal.toFixed(2);
+}
+
+// --- REAL-TIME EVENT HANDLER ---
+window.activeConfirmLocks = {};
+
+window.handleConfirmRealtimeEvent = function(e) {
+    const record = e.record;
+    if (!record) return;
+    
+    const row = record.row_index;
+    const type = record.type;
+    const payload = record.payload || {};
+    const userId = record.user_id;
+
+    // Remove lock if expired (older than 5 mins)
+    const now = new Date().getTime();
+    Object.keys(window.activeConfirmLocks).forEach(r => {
+        if (now - window.activeConfirmLocks[r].timestamp > 5 * 60 * 1000) {
+            delete window.activeConfirmLocks[r];
+        }
+    });
+
+    if (type === 'LOCK') {
+        window.activeConfirmLocks[row] = { user: payload.name || 'Outro utilizador', userId: userId, timestamp: now };
+    } else if (type === 'UNLOCK') {
+        if (window.activeConfirmLocks[row] && window.activeConfirmLocks[row].userId === userId) {
+            delete window.activeConfirmLocks[row];
+        }
+    } else if (type === 'UPDATE') {
+        // Atualizar estado e DOM se UPDATE
+        const o = window.currentClientRows?.find(x => x.originalIndex === row);
+        if (o) {
+            // Update visual no DOM se existir (O renderizador do Confirm regenera as linhas no scroll,
+            // mas podemos fazer uma lógica mais profunda se for preciso. Para já, removemos o Lock).
+        }
+        delete window.activeConfirmLocks[row];
+        
+        // Disparar recarregamento silencioso dos dados
+        if (state.confirm.sheetId) {
+            // Apenas avisar o utilizador que dados foram alterados ou recarregar
+            console.log("Realtime UPDATE recebido para a linha", row);
+            // ui.toast(`A linha ${row} foi atualizada por outro utilizador.`, "info");
+            // Para ser 100% real-time, precisaríamos de re-renderizar a tabela ou a linha
+            const tr = document.querySelector(`tr[data-original-index="${row}"]`);
+            if (tr) {
+                const btn = tr.querySelector('button');
+                if (btn && payload.status) {
+                    btn.textContent = payload.status;
+                    btn.className = `px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${payload.status === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (payload.status === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (payload.status === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}`;
+                }
+            }
+        }
+    }
+    
+    // Atualizar UI dos Locks
+    updateLocksUI();
+};
+
+function updateLocksUI() {
+    const trs = document.querySelectorAll('#orders-tbody tr');
+    trs.forEach(tr => {
+        const rowAttr = tr.getAttribute('data-original-index');
+        if (!rowAttr) return;
+        const rowIndex = parseInt(rowAttr);
+        
+        const lockInfo = window.activeConfirmLocks[rowIndex];
+        if (lockInfo && lockInfo.userId !== pb.authStore.model?.id) {
+            tr.classList.add('opacity-50', 'pointer-events-none');
+            tr.title = `A ser editado por ${lockInfo.user}`;
+            const btn = tr.querySelector('button');
+            if (btn && !btn.innerHTML.includes('🔒')) {
+                btn.innerHTML = '🔒 ' + btn.innerHTML;
+            }
+        } else {
+            tr.classList.remove('opacity-50', 'pointer-events-none');
+            tr.title = "";
+            const btn = tr.querySelector('button');
+            if (btn && btn.innerHTML.includes('🔒')) {
+                btn.innerHTML = btn.innerHTML.replace('🔒 ', '');
+            }
+        }
+    });
 }
 
 export async function saveConfirmOrderEdit(e) {
@@ -1818,6 +1914,11 @@ export async function saveConfirmOrderEdit(e) {
 
         toast("Alterações gravadas com sucesso no Google Sheets!", "success");
         closeConfirmEditModal();
+        
+        // Emit Update Event
+        if (state.confirm && state.confirm.sheetId) {
+            emitConfirmEvent(state.confirm.sheetId, o.originalIndex, 'UPDATE', { status: rowData[statusIdx] });
+        }
         
         // Re-renderizar os detalhes do cliente
         if (window.currentActiveClient) {
@@ -2984,6 +3085,13 @@ export async function confirmPaymentSelection() {
                             console.error("Erro ao gravar nota/cor:", noteErr);
                             ui.toast("Aviso: O status foi gravado, mas falhou ao atualizar a cor/nota na célula.", "warning");
                         }
+                    }
+                    
+                    // Emit Update Event
+                    if (state.confirm && state.confirm.sheetId) {
+                        emitConfirmEvent(state.confirm.sheetId, rowObj.originalIndex, 'UPDATE', { 
+                            status: document.getElementById('mini-filter-status')?.value || 'CONFIRMADO' 
+                        });
                     }
                 }
             }

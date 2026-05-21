@@ -3626,3 +3626,51 @@ DEBUG: Banco detetado via conte�do global: BCI
 DEBUG: Banco Detetado: BCI
 DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
 
+2026-05-21T10:16:52.117Z - INFO: Arquivo extraído bank_e88c3de1-affe-42b2-a2ca-52f939f1b587_8ac56eb6-049e-4138-be52-c2193ab6b1a5.xls
+STDOUT: [
+  {
+    "date": "2026-05-21 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF : frigorfico",
+    "reference": "89177849",
+    "amount": 15222.0,
+    "balance": 18712.93,
+    "signature": "f18200a3fb08e145f6c9eda289b621e4f04d6f500aeb0a44e6ea5c017cf3b581",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-21 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER...
+STDERR: DEBUG: Diagn�stico de bank_e88c3de1-affe-42b2-a2ca-52f939f1b587_8ac56eb6-049e-4138-be52-c2193ab6b1a5.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-21T11:20:48.567Z - INFO: Arquivo extraído bank_3bc30446-4184-4fb5-beed-fb92b8b88c40_7748df36-1bfa-4429-9df2-501334da6255.xls
+STDOUT: [
+  {
+    "date": "2026-05-21 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF : frigorfico",
+    "reference": "89177849",
+    "amount": 15222.0,
+    "balance": 18712.93,
+    "signature": "f18200a3fb08e145f6c9eda289b621e4f04d6f500aeb0a44e6ea5c017cf3b581",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-21 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER...
+STDERR: DEBUG: Diagn�stico de bank_3bc30446-4184-4fb5-beed-fb92b8b88c40_7748df36-1bfa-4429-9df2-501334da6255.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
