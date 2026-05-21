@@ -98,6 +98,7 @@ window.navigateToFolder = navigateToFolder;
 
 window.driveGoBack = driveGoBack;
 window.onConfirmRow = onConfirmRow;
+window.closeConfirmActionModal = closeConfirmActionModal;
 window.showFilePreview = ui.showFilePreview;
 window.autoOpenClientFolder = autoOpenClientFolder;
 window.handleCreateFolder = handleCreateFolder;
@@ -1160,6 +1161,38 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
         const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
         ui.renderConfirmList(data, "", statusFilter);
         
+        // Reconstruir locks ativos a partir dos eventos recentes (últimos 5 minutos)
+        try {
+            const recentEvents = await api.getRecentConfirmEvents(sheetId);
+            window.activeConfirmLocks = {};
+            const now = Date.now();
+            recentEvents.forEach(record => {
+                const row = record.row_index;
+                const type = record.type;
+                const userId = record.user_id;
+                const recordTime = new Date(record.created).getTime();
+                
+                // Ignorar se já passou de 5 minutos
+                if (now - recordTime > 5 * 60 * 1000) return;
+                
+                if (type === 'LOCK') {
+                    window.activeConfirmLocks[row] = {
+                        user: record.payload?.name || 'Outro utilizador',
+                        userId: userId,
+                        timestamp: recordTime
+                    };
+                } else if (type === 'UNLOCK') {
+                    if (window.activeConfirmLocks[row] && window.activeConfirmLocks[row].userId === userId) {
+                        delete window.activeConfirmLocks[row];
+                    }
+                } else if (type === 'UPDATE') {
+                    delete window.activeConfirmLocks[row];
+                }
+            });
+        } catch (err) {
+            console.warn("Erro ao reconstruir locks recentes:", err);
+        }
+        
         // Subscrever eventos realtime para este GSheet
         if (typeof api.subscribeConfirmEvents === 'function' && typeof ui.handleConfirmRealtimeEvent === 'function') {
             api.subscribeConfirmEvents(sheetId, ui.handleConfirmRealtimeEvent);
@@ -1402,6 +1435,16 @@ function driveGoHome() {
 }
 
 function onConfirmRow(rowIndex, rowData) {
+    // Limpar locks expirados (mais de 5 minutos)
+    const now = Date.now();
+    if (window.activeConfirmLocks) {
+        Object.keys(window.activeConfirmLocks).forEach(r => {
+            if (now - window.activeConfirmLocks[r].timestamp > 5 * 60 * 1000) {
+                delete window.activeConfirmLocks[r];
+            }
+        });
+    }
+
     if (window.activeConfirmLocks && window.activeConfirmLocks[rowIndex]) {
         const lockInfo = window.activeConfirmLocks[rowIndex];
         if (lockInfo.userId !== api.pb.authStore.model?.id) {
@@ -1480,6 +1523,14 @@ function onConfirmRow(rowIndex, rowData) {
     if (commentInput) commentInput.value = '';
 
     ui.openModal('modal-confirm-action');
+}
+
+function closeConfirmActionModal() {
+    ui.closeModal('modal-confirm-action');
+    const sheetId = currentProjectSheetId || (api.state.confirm && api.state.confirm.sheetId);
+    if (currentConfirmRow && currentConfirmRow.index !== undefined && sheetId) {
+        api.emitConfirmEvent(sheetId, currentConfirmRow.index, 'UNLOCK');
+    }
 }
 
 async function saveConfirmToSheet() {
@@ -1566,6 +1617,15 @@ async function saveConfirmToSheet() {
 
         ui.closeModal('modal-confirm-action');
 
+        // Emissão do evento de update e unlock no real-time
+        if (spreadsheetId && currentConfirmRow) {
+            await api.emitConfirmEvent(spreadsheetId, currentConfirmRow.index, 'UPDATE', {
+                status: selectedStatus,
+                rowData: updatedRow,
+                name: api.pb.authStore.model?.name || 'Utilizador'
+            });
+            await api.emitConfirmEvent(spreadsheetId, currentConfirmRow.index, 'UNLOCK');
+        }
         
         // Recarregar a lista atual e forçar a vista para 'PENDENTE'
         if (currentProjectSheetId) {

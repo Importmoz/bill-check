@@ -1684,6 +1684,9 @@ export async function showConfirmDetail(client, clientIndex) {
     if (window.autoOpenClientFolder) {
         window.autoOpenClientFolder(client.no || '', client.displayName);
     }
+
+    // Atualizar UI dos Locks
+    updateLocksUI();
 }
 
 // === LÓGICA DO MODAL DE EDIÇÃO DE DUTY === //
@@ -1691,6 +1694,16 @@ export async function showConfirmDetail(client, clientIndex) {
 export function openConfirmEditModal(index) {
     const o = window.currentClientRows[index];
     if (!o) return;
+
+    // Limpar locks expirados (mais de 5 minutos)
+    const now = Date.now();
+    if (window.activeConfirmLocks) {
+        Object.keys(window.activeConfirmLocks).forEach(r => {
+            if (now - window.activeConfirmLocks[r].timestamp > 5 * 60 * 1000) {
+                delete window.activeConfirmLocks[r];
+            }
+        });
+    }
 
     // Verificar Lock
     const originalIndex = o.originalIndex;
@@ -1738,6 +1751,7 @@ export function closeConfirmEditModal() {
         if (o && state.confirm && state.confirm.sheetId) {
             emitConfirmEvent(state.confirm.sheetId, o.originalIndex, 'UNLOCK');
         }
+        document.getElementById('edit-index').value = '';
     }
 }
 
@@ -1780,29 +1794,28 @@ export function handleConfirmRealtimeEvent(e) {
             delete window.activeConfirmLocks[row];
         }
     } else if (type === 'UPDATE') {
-        // Atualizar estado e DOM se UPDATE
-        const o = window.currentClientRows?.find(x => x.originalIndex === row);
-        if (o) {
-            // Update visual no DOM se existir (O renderizador do Confirm regenera as linhas no scroll,
-            // mas podemos fazer uma lógica mais profunda se for preciso. Para já, removemos o Lock).
-        }
-        delete window.activeConfirmLocks[row];
-        
-        // Disparar recarregamento silencioso dos dados
-        if (state.confirm.sheetId) {
-            // Apenas avisar o utilizador que dados foram alterados ou recarregar
-            console.log("Realtime UPDATE recebido para a linha", row);
-            // ui.toast(`A linha ${row} foi atualizada por outro utilizador.`, "info");
-            // Para ser 100% real-time, precisaríamos de re-renderizar a tabela ou a linha
-            const tr = document.querySelector(`tr[data-original-index="${row}"]`);
-            if (tr) {
-                const btn = tr.querySelector('button');
-                if (btn && payload.status) {
-                    btn.textContent = payload.status;
-                    btn.className = `px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${payload.status === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (payload.status === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (payload.status === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}`;
+        if (payload.rowData) {
+            state.confirm.data[row] = payload.rowData;
+            // Se o cliente atual ativo contiver esta linha, vamos atualizar o array de rows do cliente ativo
+            if (window.currentActiveClient && window.currentActiveClient.rows) {
+                const foundRow = window.currentActiveClient.rows.find(r => r.originalIndex === row);
+                if (foundRow) {
+                    foundRow.originalRow = payload.rowData;
+                    showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
                 }
             }
+            
+            // Também atualizar a lista principal se a vista da tabela estiver ativa
+            const viewEl = document.getElementById('view-confirm-table');
+            if (viewEl && !viewEl.classList.contains('hidden')) {
+                const filterEl = document.getElementById('confirm-status-filter');
+                const statusFilter = filterEl?.value || 'PENDENTE';
+                const searchEl = document.getElementById('input-confirm-search');
+                const searchText = searchEl?.value || '';
+                renderConfirmList(state.confirm.data, searchText, statusFilter);
+            }
         }
+        delete window.activeConfirmLocks[row];
     }
     
     // Atualizar UI dos Locks
@@ -1935,7 +1948,10 @@ export async function saveConfirmOrderEdit(e) {
         
         // Emit Update Event
         if (state.confirm && state.confirm.sheetId) {
-            emitConfirmEvent(state.confirm.sheetId, o.originalIndex, 'UPDATE', { status: rowData[statusIdx] });
+            emitConfirmEvent(state.confirm.sheetId, o.originalIndex, 'UPDATE', {
+                status: rowData[statusIdx],
+                rowData: rowData
+            });
         }
         
         // Re-renderizar os detalhes do cliente
@@ -1984,6 +2000,19 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
         state.confirm.data[originalRowIndex] = rowData;
         
         toast("Banco atualizado com sucesso no Google Sheets!", "success");
+
+        // Emitir evento UPDATE para outros utilizadores saberem em tempo real
+        if (state.confirm && state.confirm.sheetId) {
+            const statusIdx = cols.findIndex(c => {
+                const name = String(c).toUpperCase().trim();
+                return name === 'CONFIRMATION' || name === 'STATUS' || name === 'CONFIRM';
+            });
+            const status = statusIdx !== -1 ? rowData[statusIdx] : 'PENDENTE';
+            emitConfirmEvent(state.confirm.sheetId, originalRowIndex, 'UPDATE', {
+                status: status,
+                rowData: rowData
+            });
+        }
 
         // 3. Re-renderizar
         if (window.currentActiveClient) {

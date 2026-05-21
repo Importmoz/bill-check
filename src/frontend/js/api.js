@@ -355,6 +355,22 @@ export async function emitConfirmEvent(sheetId, rowIndex, type, payload = {}) {
     }
 }
 
+export async function getRecentConfirmEvents(sheetId) {
+    if (!pb.authStore.model) return [];
+    // Buscar eventos dos últimos 5 minutos
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19);
+    const filter = `sheet_id = "${sheetId}" && created >= "${fiveMinutesAgo}"`;
+    try {
+        return await pb.collection('confirm_events').getFullList({
+            filter: filter,
+            sort: 'created'
+        });
+    } catch (err) {
+        console.warn("Erro ao obter eventos recentes:", err);
+        return [];
+    }
+}
+
 export async function subscribeConfirmEvents(sheetId, callback) {
     if (confirmUnsubscribe) {
         await unsubscribeConfirmEvents();
