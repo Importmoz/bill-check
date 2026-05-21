@@ -28,10 +28,8 @@ RUN pip install --no-cache-dir -r src/python/requirements.txt
 # Copiar o restante do código da aplicação
 COPY . .
 
-# Criar pastas locais para garantir as permissões e executar a aplicação como um utilizador não-root
-RUN mkdir -p /app/data /app/tmp /app/logs && chown -R node:node /app
-
-USER node
+# Criar pastas locais para garantir a sua existência
+RUN mkdir -p /app/data /app/tmp /app/logs
 
 EXPOSE 3000
 
