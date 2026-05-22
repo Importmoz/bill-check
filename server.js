@@ -31,7 +31,13 @@ app.use('/api/', limiter);
 app.use(express.json());
 
 // Servir arquivos estáticos do frontend modularizado
-app.use(express.static(path.join(__dirname, 'src', 'frontend')));
+app.use(express.static(path.join(__dirname, 'src', 'frontend'), {
+  setHeaders: (res, filePath) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+}));
 
 // Rota de configuração para o PocketBase
 app.get('/config.js', (req, res) => {

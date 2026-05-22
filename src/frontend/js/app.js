@@ -10,6 +10,7 @@ const { state, pb } = api;
 
 // --- EXPOSIÇÃO GLOBAL (Compatibilidade com onclick no HTML) ---
 window.ui = ui;
+window.api = api;
 window.handleLogin = handleLogin;
 
 // Inicialização da aplicação (Sendo um módulo, o código corre apenas uma vez e após o parse do DOM)
@@ -1167,9 +1168,9 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
             window.activeConfirmLocks = {};
             const now = Date.now();
             recentEvents.forEach(record => {
-                const row = record.row_index;
+                const row = Number(record.row_index);
                 const type = record.type;
-                const userId = record.user_id;
+                const userId = record.user;
                 const recordTime = new Date(record.created).getTime();
                 
                 // Ignorar se já passou de 5 minutos
@@ -1435,6 +1436,7 @@ function driveGoHome() {
 }
 
 function onConfirmRow(rowIndex, rowData) {
+    console.log("[DEBUG-ONCONFIRM] Called onConfirmRow for rowIndex=" + rowIndex);
     // Limpar locks expirados (mais de 5 minutos)
     const now = Date.now();
     if (window.activeConfirmLocks) {
@@ -1486,7 +1488,10 @@ function onConfirmRow(rowIndex, rowData) {
     
     document.getElementById('confirm-action-title').textContent = `CONFIRMAR: ${rowData[idCodeIdx] || 'Registo'}`;
     
-    const currentStatus = rowData[statusIdx] || 'PENDENTE';
+    let currentStatus = rowData[statusIdx] || 'PENDENTE';
+    if (String(currentStatus).trim() === '?') {
+        currentStatus = 'PENDENTE';
+    }
     const selectStatus = document.getElementById('select-confirm-status');
     if (selectStatus) {
         selectStatus.value = currentStatus;
@@ -1596,6 +1601,16 @@ async function saveConfirmToSheet() {
     const btn = document.getElementById('btn-confirm-to-sheet');
     ui.setBtnLoading(btn, true);
     try {
+        if (window.activeConfirmLocks && window.activeConfirmLocks[currentConfirmRow.index]) {
+            const lockInfo = window.activeConfirmLocks[currentConfirmRow.index];
+            if (lockInfo.userId !== api.pb.authStore.model?.id) {
+                ui.toast(`Este registo está a ser editado por ${lockInfo.user}`, 'warning');
+                ui.closeModal('modal-confirm-action');
+                ui.setBtnLoading(btn, false);
+                return;
+            }
+        }
+
         await api.updateGSheet(spreadsheetId, `A${currentConfirmRow.index + 1}`, [updatedRow]);
 
         // 3. Gerir Comentário e Cor nativamente

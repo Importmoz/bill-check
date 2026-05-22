@@ -973,8 +973,6 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         noIdx = 0;
     }
 
-    console.log(`[CONFIRM-DEBUG] Índices - Status: ${statusIdx} ("${columns[statusIdx]}"), Paid: ${paidIdx} ("${columns[paidIdx]}")`);
-
     let lastIdCode = '';
     let lastName = '';
     let lastNo = '';
@@ -1029,6 +1027,9 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         const currentGroup = groupedClients.get(groupId);
 
         let rowStatus = String(row[statusIdx] || '').trim();
+        if (rowStatus === '?') {
+            rowStatus = 'PENDENTE';
+        }
 
         const rawPaid = paidIdx !== -1 ? row[paidIdx] : 0;
         const paidVal = parseFloat(String(rawPaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
@@ -1087,9 +1088,8 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         const target = statusFilter.toUpperCase().trim();
         const targetClean = target.replace(/[^A-Z0-9\s-]/g, '').trim();
         groups = groups.filter(client => {
-            return client.statuses.some(s => {
+            const matches = client.statuses.some(s => {
                 const current = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-                
                 // Exibir PARCIAL junto com PENDENTE
                 if (targetClean === 'PENDENTE' && current.includes('PARCIAL')) {
                     return true;
@@ -1097,6 +1097,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
                 
                 return current.includes(targetClean) || targetClean.includes(current);
             });
+            return matches;
         });
     }
 
@@ -1181,11 +1182,35 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             const { clientStatus, statusClass } = getClientStatusAndClass(client);
             const rowCount = client.rows.length;
 
+            const hasActiveLock = client.rows.some(r => {
+                const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[r.originalIndex];
+                return lockInfo && lockInfo.userId !== pb.authStore.model?.id;
+            });
+            const lockingUser = client.rows.reduce((name, r) => {
+                if (name) return name;
+                const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[r.originalIndex];
+                if (lockInfo && lockInfo.userId !== pb.authStore.model?.id) {
+                    return lockInfo.user;
+                }
+                return name;
+            }, null);
+
+            let lockBadgeHtml = '';
+            if (hasActiveLock) {
+                lockBadgeHtml = `
+                    <div class="absolute top-0 left-12 px-2 py-1 bg-red-50 text-red-600 border-b border-l border-r border-red-100 rounded-b-lg flex items-center gap-1 animate-pulse z-10">
+                        <span class="text-[8px] font-black uppercase tracking-wider">🔒 ${lockingUser}</span>
+                    </div>
+                `;
+            }
+
             card.innerHTML = `
                 <!-- Top Left Badge (Client Number) -->
                 <div class="absolute top-0 left-0 px-3 py-1.5 bg-gray-100 text-black rounded-br-xl border-b border-r border-gray-200">
                     <span class="text-[12px] font-black">${client.no || '—'}</span>
                 </div>
+                
+                ${lockBadgeHtml}
                 
                 <!-- Top Right Badge (Status) -->
                 <div class="absolute top-0 right-0 px-2.5 py-1 ${statusClass} rounded-bl-xl">
@@ -1217,6 +1242,24 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             const { clientStatus, statusClass } = getClientStatusAndClass(client);
             const rowCount = client.rows.length;
 
+            const hasActiveLock = client.rows.some(r => {
+                const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[r.originalIndex];
+                return lockInfo && lockInfo.userId !== pb.authStore.model?.id;
+            });
+            const lockingUser = client.rows.reduce((name, r) => {
+                if (name) return name;
+                const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[r.originalIndex];
+                if (lockInfo && lockInfo.userId !== pb.authStore.model?.id) {
+                    return lockInfo.user;
+                }
+                return name;
+            }, null);
+
+            let lockStatusHtml = '';
+            if (hasActiveLock) {
+                lockStatusHtml = `<span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded bg-red-50 text-red-600 border border-red-100 flex items-center gap-1 animate-pulse mr-2">🔒 ${lockingUser}</span>`;
+            }
+
             card.innerHTML = `
                 <div class="flex items-center gap-3 overflow-hidden">
                     <div class="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center shrink-0 font-black text-xs text-black border border-gray-200">
@@ -1229,6 +1272,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
                 </div>
                 
                 <div class="flex items-center gap-4 shrink-0">
+                    ${lockStatusHtml}
                     <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
                     <div class="text-gray-300 group-hover:text-yellow-600 transition-all shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
@@ -1251,6 +1295,24 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             const { clientStatus, statusClass } = getClientStatusAndClass(client);
             const rowCount = client.rows.length;
 
+            const hasActiveLock = client.rows.some(r => {
+                const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[r.originalIndex];
+                return lockInfo && lockInfo.userId !== pb.authStore.model?.id;
+            });
+            const lockingUser = client.rows.reduce((name, r) => {
+                if (name) return name;
+                const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[r.originalIndex];
+                if (lockInfo && lockInfo.userId !== pb.authStore.model?.id) {
+                    return lockInfo.user;
+                }
+                return name;
+            }, null);
+
+            let tableLockHtml = '';
+            if (hasActiveLock) {
+                tableLockHtml = `<span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-red-50 text-red-600 border border-red-100 inline-flex items-center gap-1 animate-pulse ml-2">🔒 ${lockingUser}</span>`;
+            }
+
             // Calcular somatório do Duty
             let clientDuty = 0;
             client.rows.forEach(r => {
@@ -1264,7 +1326,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             tableRowsHtml += `
                 <tr id="${trId}" class="hover:bg-slate-50 border-b border-gray-100 transition-all cursor-pointer group">
                     <td class="p-3 text-center font-black text-xs text-slate-800">${client.no || '—'}</td>
-                    <td class="p-3 font-bold text-xs uppercase text-slate-700 group-hover:text-black transition-colors">${client.displayName || 'Cliente Sem Nome'}</td>
+                    <td class="p-3 font-bold text-xs uppercase text-slate-700 group-hover:text-black transition-colors">${client.displayName || 'Cliente Sem Nome'} ${tableLockHtml}</td>
                     <td class="p-3 text-center text-xs font-semibold text-slate-500">${rowCount}</td>
                     <td class="p-3 text-right font-black text-xs text-slate-800">${formatMZN(clientDuty)}</td>
                     <td class="p-3 text-center">
@@ -1420,10 +1482,15 @@ export async function showConfirmDetail(client, clientIndex) {
                 bankDuty: bankDuty === '—' ? '' : bankDuty
             });
 
-            let rowStatus = String(rowData[statusIdx] || 'PENDENTE').toUpperCase().trim();
+            let rowStatus = String(rowData[statusIdx] || 'PENDENTE').trim();
+            if (rowStatus === '?') rowStatus = 'PENDENTE';
+            rowStatus = rowStatus.toUpperCase();
             if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
                 rowStatus = 'PARCIAL';
             }
+
+            const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[originalIndex];
+            const isLockedByOther = lockInfo && lockInfo.userId !== pb.authStore.model?.id;
 
             // Construir o select de banco
             const cleanCurrent = String(bankDuty || '').trim();
@@ -1438,13 +1505,13 @@ export async function showConfirmDetail(client, clientIndex) {
             });
 
             const bankSelectHtml = `
-                <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${originalIndex}, this.value)" class="p-1 text-slate-700 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block">
+                <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${originalIndex}, this.value)" class="p-1 text-slate-700 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
                     ${optionsHtml}
                 </select>
             `;
 
             tbodyHtml += `
-                <tr data-original-index="${originalIndex}" class="row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer" onclick="ui.openConfirmEditModal(${index})">
+                <tr data-original-index="${originalIndex}" class="row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer ${isLockedByOther ? 'opacity-50 pointer-events-none' : ''}" ${isLockedByOther ? `title="A ser editado por ${lockInfo.user}"` : ''} onclick="ui.openConfirmEditModal(${index})">
                     <td class="p-4 font-bold text-slate-800 text-[12px]">${orderNumber}</td>
                     <td class="p-4 text-center text-slate-600 text-[12px]">${cbm.toFixed(2)}</td>
                     <td class="p-4 text-center font-semibold text-blue-700 text-[12px]">${formatValue(amountDuty)}</td>
@@ -1454,8 +1521,9 @@ export async function showConfirmDetail(client, clientIndex) {
                     <td class="p-4 text-center">${bankSelectHtml}</td>
                     <td class="p-4 text-center">
                         <button onclick="event.stopPropagation(); window.onConfirmRow(${originalIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
-                            class="px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}">
-                            ${rowStatus}
+                            class="px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}"
+                            ${isLockedByOther ? 'disabled' : ''}>
+                            ${isLockedByOther ? '🔒 ' : ''}${rowStatus}
                         </button>
                     </td>
                 </tr>
@@ -1588,64 +1656,27 @@ export async function showConfirmDetail(client, clientIndex) {
         let remainingToPay = targetAmount - totalAllocated;
         if (remainingToPay < 0) remainingToPay = 0;
 
-        let cardBorder = "border-green-500";
-        let textColor = "text-green-600";
-        let titleLabel = "Somatório Total (PAID)";
+        let trueRemaining = totalAmountDuty - totalAllocated;
+        if (trueRemaining < 0) trueRemaining = 0;
 
-        if (totalDutyPrepaid > 0) {
-            cardBorder = "border-gray-200 bg-gray-50";
-            textColor = "text-gray-400";
-            titleLabel = "Duty Prepaid";
-            // Não permitiremos clique abaixo
-        }
-
-        let cardClick = '';
-        let cardCursor = '';
-        let displayValueHtml = '';
-
-        // Lógica de Interação: 
-        if (totalDutyPrepaid > 0) {
-            // 1. Caso seja Duty Prepaid (Pago na China)
-            cardClick = "";
-            cardCursor = "cursor-default opacity-60";
-            displayValueHtml = formatValue(targetAmount);
-            titleLabel = "Duty Prepaid (Pago na China)";
-        } else if (remainingToPay <= 0 && targetAmount > 0) {
-            // 2. Caso o pagamento já tenha sido concluído
-            cardClick = "";
-            cardCursor = "cursor-default opacity-60";
-            cardBorder = "border-gray-200 bg-gray-50";
-            textColor = "text-gray-400";
-            titleLabel = "Pagamento Concluído";
-            displayValueHtml = formatValue(targetAmount);
-        } else {
-            // 3. Caso esteja Pendente ou seja uma nova ordem (targetAmount = 0)
-            let trueRemaining = totalAmountDuty - totalAllocated;
-            if (trueRemaining < 0) trueRemaining = 0;
-            cardClick = `onclick="ui.openPaymentMiniFilter('${combinedInfo.replace(/'/g, "\\'")}', '${bankValue}', '${trueRemaining}', '', '${(client.displayName || '').replace(/'/g, "\\'")}', '${clientPhone.replace(/'/g, "\\'")}', '${clientNotaDuty.replace(/'/g, "\\'")}')"`;
-            cardCursor = "cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all";
-
-            if (payments && payments.length > 0) {
-                displayValueHtml = `
-                    <div class="text-[12px] text-gray-500 mb-1 font-semibold uppercase">Falta Pagar</div>
-                    ${formatValue(remainingToPay)}
-                    <div class="text-[10px] text-blue-500 mt-2 font-semibold">Total Esperado: ${formatValue(targetAmount)}</div>
-                `;
-                titleLabel = "Pagamento Parcial Pendente";
-            } else {
-                displayValueHtml = formatValue(targetAmount);
-            }
-        }
+        // Guardar o estado completo para permitir atualizações síncronas do card via SSE
+        window.currentActiveClientState = {
+            combinedInfo,
+            bankValue,
+            clientPhone,
+            clientNotaDuty,
+            targetAmount,
+            totalAllocated,
+            remainingToPay,
+            totalDutyPrepaid,
+            trueRemaining,
+            payments
+        };
 
         const summaryCardHtml = `
             <!-- Somatório Focado -->
             <div id="summary-cards" class="flex justify-end mt-6 mr-4 mb-2">
-                <div ${cardClick} class="${cardCursor} bg-white p-6 rounded-xl border-2 ${cardBorder} shadow-lg min-w-[300px]">
-                    <p class="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest text-center">${titleLabel}</p>
-                    <div class="text-4xl font-black ${textColor} text-center">
-                        ${displayValueHtml}
-                    </div>
-                </div>
+                ${getPaymentCardHtml(client, window.currentActiveClientState)}
             </div>
         ` || '';
 
@@ -1772,42 +1803,55 @@ window.activeConfirmLocks = {};
 
 export function handleConfirmRealtimeEvent(e) {
     const record = e.record;
-    if (!record) return;
+    if (!record) {
+        console.warn("[SSE-FASE-4][RECEÇÃO-UI] Evento recebido vazio.");
+        return;
+    }
     
-    const row = record.row_index;
+    const row = Number(record.row_index);
     const type = record.type;
     const payload = record.payload || {};
-    const userId = record.user_id;
+    const userId = record.user;
+    const userName = payload.name || 'Outro utilizador';
 
-    // Remove lock if expired (older than 5 mins)
+    console.log(`[SSE-FASE-4][PROCESSAR-UI] Evento '${type}' recebido para linha ${row} (User: ${userName}, ID: ${userId})`);
+
+    // Remove lock se expirado (mais de 5 minutos)
     const now = new Date().getTime();
     Object.keys(window.activeConfirmLocks).forEach(r => {
         if (now - window.activeConfirmLocks[r].timestamp > 5 * 60 * 1000) {
+            console.log(`[SSE-FASE-4][LOCK-EXPIRADO] Removendo lock antigo da linha ${r}`);
             delete window.activeConfirmLocks[r];
         }
     });
 
     if (type === 'LOCK') {
-        window.activeConfirmLocks[row] = { user: payload.name || 'Outro utilizador', userId: userId, timestamp: now };
+        window.activeConfirmLocks[row] = { user: userName, userId: userId, timestamp: now };
+        console.log(`[SSE-FASE-4][LOCK-ADICIONADO] Linha ${row} bloqueada por ${userName}. Locks ativos:`, window.activeConfirmLocks);
     } else if (type === 'UNLOCK') {
         if (window.activeConfirmLocks[row] && window.activeConfirmLocks[row].userId === userId) {
             delete window.activeConfirmLocks[row];
+            console.log(`[SSE-FASE-4][LOCK-REMOVIDO] Linha ${row} desbloqueada por ${userName}. Locks ativos:`, window.activeConfirmLocks);
+        } else {
+            console.log(`[SSE-FASE-4][LOCK-IGNORADO] UNLOCK ignorado para linha ${row} (não bloqueada por este utilizador ou já desbloqueada).`);
         }
     } else if (type === 'UPDATE') {
         if (payload.rowData) {
+            console.log(`[SSE-FASE-4][DADOS-ATUALIZADOS] Atualizando dados da linha ${row} com:`, payload.rowData);
             state.confirm.data[row] = payload.rowData;
-            // Se o cliente atual ativo contiver esta linha, vamos atualizar o array de rows do cliente ativo
+            
             if (window.currentActiveClient && window.currentActiveClient.rows) {
                 const foundRow = window.currentActiveClient.rows.find(r => r.originalIndex === row);
                 if (foundRow) {
+                    console.log("[SSE-FASE-4][DETALHE-RE-RENDER] Linha em edição está no ecrã de detalhe ativo. Re-renderizando...");
                     foundRow.originalRow = payload.rowData;
                     showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
                 }
             }
             
-            // Também atualizar a lista principal se a vista da tabela estiver ativa
             const viewEl = document.getElementById('view-confirm-table');
             if (viewEl && !viewEl.classList.contains('hidden')) {
+                console.log("[SSE-FASE-4][TABELA-RE-RENDER] Re-renderizando tabela principal...");
                 const filterEl = document.getElementById('confirm-status-filter');
                 const statusFilter = filterEl?.value || 'PENDENTE';
                 const searchEl = document.getElementById('input-confirm-search');
@@ -1816,36 +1860,158 @@ export function handleConfirmRealtimeEvent(e) {
             }
         }
         delete window.activeConfirmLocks[row];
+        console.log(`[SSE-FASE-4][UPDATE-COMPLETO] Dados da linha ${row} atualizados. Lock removido.`);
     }
     
     // Atualizar UI dos Locks
+    console.log("[SSE-FASE-5][REDESENHAR-UI] Atualizando locks visuais na lista de ordens (detalhe)...");
     updateLocksUI();
-};
+    
+    // Re-renderizar lista principal para atualizar cadeados e estados visuais
+    const filterEl = document.getElementById('confirm-status-filter');
+    const statusFilter = filterEl?.value || 'PENDENTE';
+    const searchEl = document.getElementById('input-confirm-search');
+    const searchText = searchEl?.value || '';
+    renderConfirmList(state.confirm.data, searchText, statusFilter);
+}
 
 function updateLocksUI() {
     const trs = document.querySelectorAll('#orders-tbody tr');
+    console.log(`[SSE-FASE-5][LOCKS-DETALHE] Atualizando estado de bloqueio visual para ${trs.length} linhas de ordens.`);
     trs.forEach(tr => {
         const rowAttr = tr.getAttribute('data-original-index');
         if (!rowAttr) return;
         const rowIndex = parseInt(rowAttr);
         
-        const lockInfo = window.activeConfirmLocks[rowIndex];
+        const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowIndex];
         if (lockInfo && lockInfo.userId !== pb.authStore.model?.id) {
+            console.log(`[SSE-FASE-5][LINHA-BLOQUEADA] Aplicando cadeado e bloqueando edição da linha ${rowIndex} (Editada por: ${lockInfo.user})`);
             tr.classList.add('opacity-50', 'pointer-events-none');
             tr.title = `A ser editado por ${lockInfo.user}`;
             const btn = tr.querySelector('button');
-            if (btn && !btn.innerHTML.includes('🔒')) {
-                btn.innerHTML = '🔒 ' + btn.innerHTML;
+            if (btn) {
+                let cleanText = btn.innerHTML.replace('🔒 ', '').trim();
+                btn.innerHTML = '🔒 ' + cleanText;
+                btn.disabled = true;
             }
+            const select = tr.querySelector('select');
+            if (select) select.disabled = true;
         } else {
             tr.classList.remove('opacity-50', 'pointer-events-none');
             tr.title = "";
             const btn = tr.querySelector('button');
-            if (btn && btn.innerHTML.includes('🔒')) {
-                btn.innerHTML = btn.innerHTML.replace('🔒 ', '');
+            if (btn) {
+                btn.innerHTML = btn.innerHTML.replace('🔒 ', '').trim();
+                btn.disabled = false;
             }
+            const select = tr.querySelector('select');
+            if (select) select.disabled = false;
         }
     });
+
+    // Atualizar o card de pagamento se estivermos no detalhe do cliente
+    updatePaymentCardUI();
+}
+
+export function getPaymentCardHtml(client, stateObj) {
+    if (!client || !stateObj) return '';
+
+    // Formatação Numérica (pt-BR para 2 casas decimais)
+    const formatValue = (val) => new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(val);
+
+    const {
+        combinedInfo,
+        bankValue,
+        clientPhone,
+        clientNotaDuty,
+        targetAmount,
+        totalAllocated,
+        remainingToPay,
+        totalDutyPrepaid,
+        trueRemaining,
+        payments
+    } = stateObj;
+
+    const isClientLockedByOther = client.rows && client.rows.some(rowObj => {
+        const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowObj.originalIndex];
+        return lockInfo && lockInfo.userId !== pb.authStore.model?.id;
+    });
+
+    let cardBorder = "border-green-500";
+    let textColor = "text-green-600";
+    let titleLabel = "Somatório Total (PAID)";
+
+    if (totalDutyPrepaid > 0) {
+        cardBorder = "border-gray-200 bg-gray-50";
+        textColor = "text-gray-400";
+        titleLabel = "Duty Prepaid";
+    }
+
+    let cardClick = '';
+    let cardCursor = '';
+    let displayValueHtml = '';
+
+    if (isClientLockedByOther) {
+        const lockingUser = client.rows.reduce((name, rowObj) => {
+            if (name) return name;
+            const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowObj.originalIndex];
+            if (lockInfo && lockInfo.userId !== pb.authStore.model?.id) return lockInfo.user;
+            return name;
+        }, null);
+        cardClick = "";
+        cardCursor = "cursor-not-allowed opacity-50";
+        cardBorder = "border-red-300 bg-red-50";
+        textColor = "text-red-600";
+        titleLabel = `Bloqueado: Editado por ${lockingUser || 'Outro'}`;
+        displayValueHtml = `<span class="flex items-center justify-center gap-2">🔒 ${formatValue(targetAmount)}</span>`;
+    } else if (totalDutyPrepaid > 0) {
+        cardClick = "";
+        cardCursor = "cursor-default opacity-60";
+        displayValueHtml = formatValue(targetAmount);
+        titleLabel = "Duty Prepaid (Pago na China)";
+    } else if (remainingToPay <= 0 && targetAmount > 0) {
+        cardClick = "";
+        cardCursor = "cursor-default opacity-60";
+        cardBorder = "border-gray-200 bg-gray-50";
+        textColor = "text-gray-400";
+        titleLabel = "Pagamento Concluído";
+        displayValueHtml = formatValue(targetAmount);
+    } else {
+        cardClick = `onclick="ui.openPaymentMiniFilter('${combinedInfo.replace(/'/g, "\\'")}', '${bankValue}', '${trueRemaining}', '', '${(client.displayName || '').replace(/'/g, "\\'")}', '${clientPhone.replace(/'/g, "\\'")}', '${clientNotaDuty.replace(/'/g, "\\'")}')"`;
+        cardCursor = "cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all";
+
+        if (payments && payments.length > 0) {
+            displayValueHtml = `
+                <div class="text-[12px] text-gray-500 mb-1 font-semibold uppercase">Falta Pagar</div>
+                ${formatValue(remainingToPay)}
+                <div class="text-[10px] text-blue-500 mt-2 font-semibold">Total Esperado: ${formatValue(targetAmount)}</div>
+            `;
+            titleLabel = "Pagamento Parcial Pendente";
+        } else {
+            displayValueHtml = formatValue(targetAmount);
+        }
+    }
+
+    return `
+        <div ${cardClick} class="${cardCursor} bg-white p-6 rounded-xl border-2 ${cardBorder} shadow-lg min-w-[300px]">
+            <p class="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-widest text-center">${titleLabel}</p>
+            <div class="text-4xl font-black ${textColor} text-center">
+                ${displayValueHtml}
+            </div>
+        </div>
+    `;
+}
+
+export function updatePaymentCardUI() {
+    const summaryCardsEl = document.getElementById('summary-cards');
+    if (!summaryCardsEl) return;
+    if (window.currentActiveClient && window.currentActiveClientState) {
+        console.log("[SSE-FASE-5][LOCKS-CARD-PAGAMENTO] Atualizando card de pagamento em tempo real baseado em active locks.");
+        summaryCardsEl.innerHTML = getPaymentCardHtml(window.currentActiveClient, window.currentActiveClientState);
+    }
 }
 
 export async function saveConfirmOrderEdit(e) {
@@ -1854,6 +2020,18 @@ export async function saveConfirmOrderEdit(e) {
     const index = parseInt(document.getElementById('edit-index').value);
     const o = window.currentClientRows[index];
     if (!o) return;
+
+    if (window.activeConfirmLocks && window.activeConfirmLocks[o.originalIndex]) {
+        const lockInfo = window.activeConfirmLocks[o.originalIndex];
+        if (lockInfo.userId !== pb.authStore.model?.id) {
+            toast(`Este registo está a ser editado por ${lockInfo.user}`, 'warning');
+            closeConfirmEditModal();
+            if (window.currentActiveClient) {
+                showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+            }
+            return;
+        }
+    }
 
     const btn = document.getElementById('btn-confirm-edit-save');
     setBtnLoading(btn, true, "A gravar...");
@@ -1917,7 +2095,10 @@ export async function saveConfirmOrderEdit(e) {
 
     // Atualizar o status automaticamente se aplicável
     if (statusIdx !== -1) {
-        let currentStatus = String(rowData[statusIdx] || 'PENDENTE').toUpperCase().trim();
+        let currentStatus = String(rowData[statusIdx] || 'PENDENTE').trim();
+        if (currentStatus === '?') currentStatus = 'PENDENTE';
+        currentStatus = currentStatus.toUpperCase();
+        
         if (currentStatus === 'CONFIRMADO' && balance > 1.0) {
             rowData[statusIdx] = 'PARCIAL';
         } else if ((currentStatus === 'PENDENTE' || currentStatus === 'PARCIAL') && balance <= 0 && paid > 0) {
@@ -1973,6 +2154,17 @@ export async function saveConfirmOrderEdit(e) {
 }
 
 export async function changeBankInDuty(originalRowIndex, newBankValue) {
+    if (window.activeConfirmLocks && window.activeConfirmLocks[originalRowIndex]) {
+        const lockInfo = window.activeConfirmLocks[originalRowIndex];
+        if (lockInfo.userId !== pb.authStore.model?.id) {
+            toast(`Este registo está a ser editado por ${lockInfo.user}`, 'warning');
+            if (window.currentActiveClient) {
+                showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+            }
+            return;
+        }
+    }
+
     setLoader(true, "A atualizar banco no Google Sheets...");
     try {
         const cols = state.confirm.columns;
@@ -2007,7 +2199,10 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
                 const name = String(c).toUpperCase().trim();
                 return name === 'CONFIRMATION' || name === 'STATUS' || name === 'CONFIRM';
             });
-            const status = statusIdx !== -1 ? rowData[statusIdx] : 'PENDENTE';
+            let status = statusIdx !== -1 ? rowData[statusIdx] : 'PENDENTE';
+            if (String(status).trim() === '?') {
+                status = 'PENDENTE';
+            }
             emitConfirmEvent(state.confirm.sheetId, originalRowIndex, 'UPDATE', {
                 status: status,
                 rowData: rowData
@@ -2812,6 +3007,17 @@ export function setMiniFilterSearch(value) {
 }
 
 export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmount = '', defaultTerm = '', clientName = '', phoneNumber = '', notaDuty = '') {
+    // 1. Emitir LOCK para todas as ordens (linhas) deste cliente
+    if (window.currentActiveClient && window.currentActiveClient.rows && state.confirm && state.confirm.sheetId) {
+        console.log(`[SSE-FASE-1][EMISSÃO-PAGAMENTO] Bloqueando todas as ordens do cliente '${clientName}' para pagamento concorrente.`);
+        window.currentActiveClient.rows.forEach(rowObj => {
+            const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowObj.originalIndex];
+            if (!lockInfo || lockInfo.userId === pb.authStore.model?.id) {
+                emitConfirmEvent(state.confirm.sheetId, rowObj.originalIndex, 'LOCK', { name: pb.authStore.model?.name || 'Utilizador' });
+            }
+        });
+    }
+
     document.getElementById('payment-mini-filter').classList.remove('hidden');
 
     currentMiniFilterExpectedAmount = parseFloat(defaultAmount) || 0;
@@ -3137,7 +3343,8 @@ export async function confirmPaymentSelection() {
                     // Emit Update Event
                     if (state.confirm && state.confirm.sheetId) {
                         emitConfirmEvent(state.confirm.sheetId, rowObj.originalIndex, 'UPDATE', { 
-                            status: document.getElementById('mini-filter-status')?.value || 'CONFIRMADO' 
+                            status: document.getElementById('mini-filter-status')?.value || 'CONFIRMADO',
+                            rowData: state.confirm.data[rowObj.originalIndex]
                         });
                     }
                 }
@@ -3176,6 +3383,17 @@ export async function confirmPaymentSelection() {
 }
 
 export function closePaymentMiniFilter() {
+    // 1. Emitir UNLOCK para todas as ordens (linhas) deste cliente
+    if (window.currentActiveClient && window.currentActiveClient.rows && state.confirm && state.confirm.sheetId) {
+        console.log("[SSE-FASE-1][EMISSÃO-PAGAMENTO] Desbloqueando todas as ordens do cliente para fecho do popup de pagamento.");
+        window.currentActiveClient.rows.forEach(rowObj => {
+            const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowObj.originalIndex];
+            if (lockInfo && lockInfo.userId === pb.authStore.model?.id) {
+                emitConfirmEvent(state.confirm.sheetId, rowObj.originalIndex, 'UNLOCK');
+            }
+        });
+    }
+
     const side = document.getElementById('mini-filter-drive-side');
     const container = document.getElementById('mini-filter-container');
     const modal = document.getElementById('payment-mini-filter');

@@ -341,61 +341,79 @@ export async function updateGSheetNote(spreadsheetId, sheetName, row, col, note,
 let confirmUnsubscribe = null;
 
 export async function emitConfirmEvent(sheetId, rowIndex, type, payload = {}) {
-    if (!pb.authStore.model) return;
+    if (!pb.authStore.model) {
+        console.warn("[SSE-FASE-1][EMISSÃO-WARN] Tentativa de emitir evento sem estar autenticado.");
+        return;
+    }
     try {
+        console.log(`[SSE-FASE-1][EMISSÃO] Emitindo evento '${type}' para linha ${rowIndex} no GSheet: ${sheetId}`, payload);
         await pb.collection('confirm_events').create({
             sheet_id: sheetId,
             row_index: rowIndex,
             type: type,
             payload: payload,
-            user_id: pb.authStore.model.id
+            user: pb.authStore.model.id
         });
+        console.log(`[SSE-FASE-1][SUCESSO] Evento '${type}' gravado no PocketBase com sucesso para a linha ${rowIndex}.`);
     } catch (err) {
-        console.warn("Erro ao emitir evento realtime:", err);
+        console.error("[SSE-FASE-1][ERRO] Erro ao criar evento no PocketBase:", err);
     }
 }
 
 export async function getRecentConfirmEvents(sheetId) {
-    if (!pb.authStore.model) return [];
-    // Buscar eventos dos últimos 5 minutos
+    if (!pb.authStore.model) {
+        console.warn("[PocketBase Realtime] Tentativa de obter eventos recentes sem estar autenticado.");
+        return [];
+    }
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString().replace('T', ' ').substring(0, 19);
     const filter = `sheet_id = "${sheetId}" && created >= "${fiveMinutesAgo}"`;
     try {
-        return await pb.collection('confirm_events').getFullList({
+        console.log("[PocketBase Realtime] Procurando locks/eventos recentes com filtro:", filter);
+        const list = await pb.collection('confirm_events').getFullList({
             filter: filter,
             sort: 'created'
         });
+        console.log("[PocketBase Realtime] Eventos recentes encontrados:", list.length);
+        return list;
     } catch (err) {
-        console.warn("Erro ao obter eventos recentes:", err);
+        console.error("[PocketBase Realtime] Erro ao obter eventos recentes:", err);
         return [];
     }
 }
 
 export async function subscribeConfirmEvents(sheetId, callback) {
     if (confirmUnsubscribe) {
+        console.log("[SSE-FASE-2][RE-SUBSCRIÇÃO] Cancelando subscrição anterior antes de subscrever novamente...");
         await unsubscribeConfirmEvents();
     }
     
-    // Subscribe to all events for this specific sheet
     const filter = `sheet_id = "${sheetId}"`;
+    console.log(`[SSE-FASE-2][CONEXÃO] Iniciando subscrição SSE no PocketBase para o GSheet: ${sheetId}`);
     try {
         confirmUnsubscribe = await pb.collection('confirm_events').subscribe('*', function (e) {
+            console.log(`[SSE-FASE-3][RECEÇÃO-SSE] Evento '${e.action}' recebido do PocketBase:`, e.record);
             if (e.record.sheet_id === sheetId) {
+                console.log(`[SSE-FASE-3][PROCESSAR] O evento pertence ao GSheet atual (${sheetId}). Enviando para o callback do frontend...`);
                 callback(e);
+            } else {
+                console.log(`[SSE-FASE-3][DESCARTE] Evento descartado (sheet_id do evento [${e.record.sheet_id}] diferente do atual [${sheetId}])`);
             }
         }, { filter });
+        console.log("[SSE-FASE-2][SUCESSO] Subscrição em tempo real efetuada com sucesso!");
     } catch (err) {
-        console.warn("Erro ao subscrever eventos realtime:", err);
+        console.error("[SSE-FASE-2][ERRO] Falha ao conectar ao SSE do PocketBase:", err);
     }
 }
 
 export async function unsubscribeConfirmEvents() {
     if (confirmUnsubscribe) {
+        console.log("[SSE-FASE-2][CANCELAR-SUBSCRIÇÃO] Cancelando subscrição ativa...");
         try {
             await pb.collection('confirm_events').unsubscribe('*');
             confirmUnsubscribe = null;
+            console.log("[SSE-FASE-2][SUCESSO] Subscrição cancelada com sucesso.");
         } catch (err) {
-            console.warn("Erro ao cancelar subscrição realtime:", err);
+            console.error("[SSE-FASE-2][ERRO] Erro ao cancelar subscrição:", err);
         }
     }
 }
