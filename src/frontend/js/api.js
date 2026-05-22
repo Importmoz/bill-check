@@ -306,6 +306,7 @@ export async function readGSheet(spreadsheetId, range = 'A1:Z1000') {
     const data = await res.json();
     state.confirm.sheetId = spreadsheetId; // <-- CORREÇÃO CRÍTICA: Guardar o ID real do projeto
     state.confirm.data = data.values || data; // Retrocompatibilidade se falhar
+    state.confirm.notes = data.notes || []; // Guardar as notas nativas das células
     state.confirm.range = data.range || 'Folha1!A1:Z1000'; // Guardar a aba real
     if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
     return state.confirm.data;

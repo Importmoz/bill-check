@@ -262,8 +262,72 @@ router.post('/sheet/read', async (req, res) => {
 
     const auth = await getGoogleAuth();
     const sheets = google.sheets({ version: 'v4', auth });
-    const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: range || 'A1:Z1000' });
-    res.json({ values: response.data.values, range: response.data.range });
+
+    try {
+      console.log(`[BACKEND] Tentando ler planilha com includeGridData para obter notas (otimizado via fields). Range: ${range || 'A1:Z1000'}`);
+      const response = await sheets.spreadsheets.get({
+        spreadsheetId,
+        ranges: [range || 'A1:Z1000'],
+        includeGridData: true,
+        fields: 'sheets(properties(title),data(rowData(values(note,formattedValue))))'
+      });
+
+      const sheet = response.data.sheets?.[0];
+      const values = [];
+      const notes = [];
+
+      if (sheet && sheet.data && sheet.data[0]) {
+        const gridData = sheet.data[0];
+        const rowData = gridData.rowData || [];
+
+        // 1. Descobrir o número máximo de colunas presente em qualquer linha para evitar arrays truncados
+        let maxCols = 0;
+        for (let r = 0; r < rowData.length; r++) {
+          const cellValues = rowData[r].values || [];
+          if (cellValues.length > maxCols) {
+            maxCols = cellValues.length;
+          }
+        }
+
+        // 2. Construir rowValues e rowNotes preenchendo até maxCols para garantir alinhamento perfeito
+        for (let r = 0; r < rowData.length; r++) {
+          const row = rowData[r];
+          const rowValues = [];
+          const rowNotes = [];
+          const cellValues = row.values || [];
+
+          for (let c = 0; c < maxCols; c++) {
+            const cell = cellValues[c];
+            if (cell) {
+              const val = cell.formattedValue !== undefined ? cell.formattedValue : '';
+              rowValues.push(val);
+              rowNotes.push(cell.note || '');
+            } else {
+              rowValues.push('');
+              rowNotes.push('');
+            }
+          }
+          values.push(rowValues);
+          notes.push(rowNotes);
+        }
+      }
+
+      const nonEnumNotesCount = notes.flat().filter(n => n && n.trim() !== '').length;
+      console.log(`[BACKEND] Leitura com includeGridData concluída. Linhas lidas: ${values.length}, Notas preenchidas encontradas: ${nonEnumNotesCount}`);
+      return res.json({
+        values,
+        notes,
+        range: range || (sheet?.properties?.title ? `${sheet.properties.title}!A1:Z1000` : 'A1:Z1000')
+      });
+    } catch (getErr) {
+      console.warn('[BACKEND] Falha ao ler com includeGridData. Usando fallback values.get. Erro:', getErr.message, getErr.response?.data || getErr);
+      const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: range || 'A1:Z1000' });
+      return res.json({
+        values: response.data.values || [],
+        notes: [],
+        range: response.data.range
+      });
+    }
   } catch (error) {
     console.error('SERVER ERROR (Sheet Read):', error.message);
     if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);

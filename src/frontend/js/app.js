@@ -1525,7 +1525,22 @@ function onConfirmRow(rowIndex, rowData) {
     
     
     const commentInput = document.getElementById('input-confirm-comment');
-    if (commentInput) commentInput.value = '';
+    if (commentInput) {
+        let confirmNote = '';
+        // Procurar por qualquer nota de confirmação não vazia nas ordens do cliente ativo
+        if (window.currentActiveClient && window.currentActiveClient.rows) {
+            const rowWithNote = window.currentActiveClient.rows.find(r => r.confirmNote && r.confirmNote.trim() !== '');
+            if (rowWithNote) {
+                confirmNote = rowWithNote.confirmNote.trim();
+            }
+        }
+        // Fallback para a nota da própria linha caso não tenha no cliente ativo
+        if (!confirmNote) {
+            const rowNotes = (api.state.confirm.notes && api.state.confirm.notes[rowIndex]) ? api.state.confirm.notes[rowIndex] : [];
+            confirmNote = statusIdx !== -1 ? String(rowNotes[statusIdx] || '').trim() : '';
+        }
+        commentInput.value = confirmNote;
+    }
 
     ui.openModal('modal-confirm-action');
 }
@@ -1620,10 +1635,31 @@ async function saveConfirmToSheet() {
                 const rawSheetName = api.state.confirm.range.split('!')[0] || 'Folha1';
                 const cleanSheetName = rawSheetName.replace(/'/g, '');
                 
-                // Amarelo se tiver nota, Branco se estiver vazio
+                // Encontrar o índice da primeira linha (ordem) do cliente ativo
+                let targetRowIndex = currentConfirmRow.index;
+                if (window.currentActiveClient && window.currentActiveClient.rows && window.currentActiveClient.rows.length > 0) {
+                    const sortedRows = [...window.currentActiveClient.rows].sort((a, b) => a.originalIndex - b.originalIndex);
+                    targetRowIndex = sortedRows[0].originalIndex;
+                }
+                
+                // Define a cor: Amarelo se tiver comentário, Branco se estiver vazio
                 const cellColor = comment.trim() !== '' ? 'yellow' : 'clear';
                 
-                await api.updateGSheetNote(currentProjectSheetId, cleanSheetName, currentConfirmRow.index, statusIdx, comment.trim(), cellColor);
+                // Gravar a nota apenas no targetRowIndex (primeira linha do cliente)
+                await api.updateGSheetNote(currentProjectSheetId, cleanSheetName, targetRowIndex, statusIdx, comment.trim(), cellColor);
+                
+                // Atualizar estado local
+                if (!api.state.confirm.notes) api.state.confirm.notes = [];
+                if (!api.state.confirm.notes[targetRowIndex]) api.state.confirm.notes[targetRowIndex] = [];
+                api.state.confirm.notes[targetRowIndex][statusIdx] = comment.trim();
+                
+                // Se a linha editada for diferente da primeira, limpamos a nota dela para evitar duplicação no GSheet
+                if (targetRowIndex !== currentConfirmRow.index) {
+                    await api.updateGSheetNote(currentProjectSheetId, cleanSheetName, currentConfirmRow.index, statusIdx, '', 'clear');
+                    if (api.state.confirm.notes[currentConfirmRow.index]) {
+                        api.state.confirm.notes[currentConfirmRow.index][statusIdx] = '';
+                    }
+                }
             } catch (noteErr) {
                 console.error("Erro ao gravar nota/cor nativa:", noteErr);
                 ui.toast("Aviso: O status foi gravado, mas falhou ao atualizar a NOTA/cor na célula.", "warning");

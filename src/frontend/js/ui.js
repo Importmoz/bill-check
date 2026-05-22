@@ -1061,10 +1061,14 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             rowStatus = 'PARCIAL';
         }
 
+        const rowNotes = (state.confirm.notes && state.confirm.notes[i]) ? state.confirm.notes[i] : [];
+        const confirmNote = statusIdx !== -1 ? String(rowNotes[statusIdx] || '').trim() : '';
+
         currentGroup.rows.push({
             originalRow: row,
             originalIndex: i,
-            status: rowStatus
+            status: rowStatus,
+            confirmNote: confirmNote
         });
         currentGroup.statuses.push(rowStatus);
     }
@@ -1451,6 +1455,8 @@ export async function showConfirmDetail(client, clientIndex) {
     let totalPaid = 0;
     let totalDutyPrepaid = 0;
     let totalAmountDuty = 0;
+    let totalGSheetBalance = 0;
+    let allConfirmed = true;
 
     // Guarda os dados na global para podermos editar
     window.currentClientRows = [];
@@ -1474,6 +1480,7 @@ export async function showConfirmDetail(client, clientIndex) {
             totalPaid += paid;
             totalDutyPrepaid += dutyPrepaid;
             totalAmountDuty += amountDuty;
+            totalGSheetBalance += balance;
 
             // Salva dados processados para facilitar edição
             window.currentClientRows.push({
@@ -1487,6 +1494,10 @@ export async function showConfirmDetail(client, clientIndex) {
             rowStatus = rowStatus.toUpperCase();
             if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
                 rowStatus = 'PARCIAL';
+            }
+
+            if (rowStatus !== 'CONFIRMADO') {
+                allConfirmed = false;
             }
 
             const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[originalIndex];
@@ -1659,7 +1670,6 @@ export async function showConfirmDetail(client, clientIndex) {
         let trueRemaining = totalAmountDuty - totalAllocated;
         if (trueRemaining < 0) trueRemaining = 0;
 
-        // Guardar o estado completo para permitir atualizações síncronas do card via SSE
         window.currentActiveClientState = {
             combinedInfo,
             bankValue,
@@ -1670,15 +1680,18 @@ export async function showConfirmDetail(client, clientIndex) {
             remainingToPay,
             totalDutyPrepaid,
             trueRemaining,
-            payments
+            payments,
+            totalGSheetBalance,
+            allConfirmed
         };
 
+        const cardHtml = getPaymentCardHtml(client, window.currentActiveClientState);
         const summaryCardHtml = `
             <!-- Somatório Focado -->
-            <div id="summary-cards" class="flex justify-end mt-6 mr-4 mb-2">
-                ${getPaymentCardHtml(client, window.currentActiveClientState)}
+            <div id="summary-cards" class="flex justify-end mt-6 mr-4 mb-2 ${cardHtml === '' ? 'hidden' : ''}">
+                ${cardHtml}
             </div>
-        ` || '';
+        `;
 
         // Estrutura HTML baseada no template do utilizador
         body.innerHTML = `
@@ -1916,12 +1929,6 @@ function updateLocksUI() {
 export function getPaymentCardHtml(client, stateObj) {
     if (!client || !stateObj) return '';
 
-    // Formatação Numérica (pt-BR para 2 casas decimais)
-    const formatValue = (val) => new Intl.NumberFormat('pt-BR', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-    }).format(val);
-
     const {
         combinedInfo,
         bankValue,
@@ -1932,8 +1939,27 @@ export function getPaymentCardHtml(client, stateObj) {
         remainingToPay,
         totalDutyPrepaid,
         trueRemaining,
-        payments
+        payments,
+        totalGSheetBalance,
+        allConfirmed
     } = stateObj;
+
+    // Lógica do utilizador:
+    // 1. Mostrar o card se o somatório do balance for igual a 0.
+    // 2. Ocultar o card se o balance não for igual a 0 (diferente de 0).
+    // 3. Ocultar o card se todas as ordens já estiverem com status "CONFIRMADO".
+    const isBalanceZero = totalGSheetBalance !== undefined && Math.abs(totalGSheetBalance) < 0.01;
+    const isAllConfirmed = allConfirmed === true;
+
+    if (!isBalanceZero || isAllConfirmed) {
+        return '';
+    }
+
+    // Formatação Numérica (pt-BR para 2 casas decimais)
+    const formatValue = (val) => new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(val);
 
     const isClientLockedByOther = client.rows && client.rows.some(rowObj => {
         const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowObj.originalIndex];
@@ -2010,7 +2036,13 @@ export function updatePaymentCardUI() {
     if (!summaryCardsEl) return;
     if (window.currentActiveClient && window.currentActiveClientState) {
         console.log("[SSE-FASE-5][LOCKS-CARD-PAGAMENTO] Atualizando card de pagamento em tempo real baseado em active locks.");
-        summaryCardsEl.innerHTML = getPaymentCardHtml(window.currentActiveClient, window.currentActiveClientState);
+        const html = getPaymentCardHtml(window.currentActiveClient, window.currentActiveClientState);
+        summaryCardsEl.innerHTML = html;
+        if (html === '') {
+            summaryCardsEl.classList.add('hidden');
+        } else {
+            summaryCardsEl.classList.remove('hidden');
+        }
     }
 }
 
@@ -3058,6 +3090,41 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
                     notaContainer.classList.add('hidden');
                 }
             }
+            // Injetar Notas/Comentários agregados das ordens do cliente, se existirem
+            const commentsContainer = document.getElementById('mini-filter-client-comments-container');
+            const commentsEl = document.getElementById('mini-filter-client-comments');
+            if (commentsContainer && commentsEl) {
+                console.log("[DEBUG-CONFIRM-NOTES] Abrindo payment-mini-filter para o cliente:", clientName);
+                console.log("[DEBUG-CONFIRM-NOTES] window.currentActiveClient:", window.currentActiveClient);
+                if (window.currentActiveClient && window.currentActiveClient.rows) {
+                    console.log("[DEBUG-CONFIRM-NOTES] Linhas do cliente:", window.currentActiveClient.rows.map(r => ({
+                        originalIndex: r.originalIndex,
+                        status: r.status,
+                        confirmNote: r.confirmNote
+                    })));
+                }
+                const rowsWithNotes = (window.currentActiveClient && window.currentActiveClient.rows)
+                    ? window.currentActiveClient.rows.filter(r => r.confirmNote && r.confirmNote.trim() !== '')
+                    : [];
+                console.log("[DEBUG-CONFIRM-NOTES] Linhas com notas encontradas:", rowsWithNotes.length);
+
+                if (rowsWithNotes.length > 0) {
+                    const uniqueNotes = Array.from(new Set(rowsWithNotes.map(r => r.confirmNote.trim())));
+                    let html = '';
+                    uniqueNotes.forEach(noteText => {
+                        html += `
+                            <div class="py-2 px-3 hover:bg-amber-100/30 rounded-lg transition-colors border-l-4 border-amber-400 bg-amber-50/20 font-bold text-[11px] leading-relaxed text-slate-700">
+                                ${noteText}
+                            </div>
+                        `;
+                    });
+                    commentsEl.innerHTML = html;
+                    commentsContainer.classList.remove('hidden');
+                } else {
+                    commentsContainer.classList.add('hidden');
+                }
+            }
+
             infoBox.classList.remove('hidden');
         } else {
             infoBox.classList.add('hidden');
@@ -3277,6 +3344,10 @@ export async function confirmPaymentSelection() {
                     }
                 }
 
+                // Encontrar o originalIndex da primeira linha (ordem) do cliente ativo
+                const sortedClientRows = [...window.currentClientRows].sort((a, b) => a.originalIndex - b.originalIndex);
+                const firstRowIndex = sortedClientRows[0]?.originalIndex;
+
                 // Fazer o update para cada linha deste cliente
                 for (const rowObj of window.currentClientRows) {
                     const sheetRowNumber = rowObj.originalIndex + 1;
@@ -3329,11 +3400,24 @@ export async function confirmPaymentSelection() {
                         try {
                             const cleanSheetName = sheetName.replace(/'/g, '');
                             
-                            // Define a cor: Amarelo se tiver comentário, Branco se estiver vazio
-                            const cellColor = comment.trim() !== '' ? 'yellow' : 'clear';
-                            
-                            // A chamada vai sempre acontecer para apagar a nota se estiver vazio
-                            await updateGSheetNote(state.confirm.sheetId, cleanSheetName, rowObj.originalIndex, statusIdx, comment.trim(), cellColor);
+                            if (rowObj.originalIndex === firstRowIndex) {
+                                // Define a cor: Amarelo se tiver comentário, Branco se estiver vazio
+                                const cellColor = comment.trim() !== '' ? 'yellow' : 'clear';
+                                await updateGSheetNote(state.confirm.sheetId, cleanSheetName, rowObj.originalIndex, statusIdx, comment.trim(), cellColor);
+                                
+                                // Atualizar estado local
+                                if (!state.confirm.notes) state.confirm.notes = [];
+                                if (!state.confirm.notes[rowObj.originalIndex]) state.confirm.notes[rowObj.originalIndex] = [];
+                                state.confirm.notes[rowObj.originalIndex][statusIdx] = comment.trim();
+                            } else {
+                                // Limpar a nota das outras ordens do cliente no GSheet
+                                await updateGSheetNote(state.confirm.sheetId, cleanSheetName, rowObj.originalIndex, statusIdx, '', 'clear');
+                                
+                                // Atualizar estado local
+                                if (state.confirm.notes && state.confirm.notes[rowObj.originalIndex]) {
+                                    state.confirm.notes[rowObj.originalIndex][statusIdx] = '';
+                                }
+                            }
                         } catch (noteErr) {
                             console.error("Erro ao gravar nota/cor:", noteErr);
                             ui.toast("Aviso: O status foi gravado, mas falhou ao atualizar a cor/nota na célula.", "warning");
