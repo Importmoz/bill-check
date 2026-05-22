@@ -1856,9 +1856,15 @@ export function handleConfirmRealtimeEvent(e) {
             if (window.currentActiveClient && window.currentActiveClient.rows) {
                 const foundRow = window.currentActiveClient.rows.find(r => r.originalIndex === row);
                 if (foundRow) {
-                    console.log("[SSE-FASE-4][DETALHE-RE-RENDER] Linha em edição está no ecrã de detalhe ativo. Re-renderizando...");
+                    console.log("[SSE-FASE-4][DETALHE-RE-RENDER] Linha em edição encontrada nos dados do cliente ativo.");
                     foundRow.originalRow = payload.rowData;
-                    showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+                    
+                    // Apenas atualiza visualmente o detalhe se o usuário estiver de facto na tela de detalhes
+                    const detailView = document.getElementById('view-confirm-client-detail');
+                    if (detailView && !detailView.classList.contains('hidden')) {
+                        console.log("[SSE-FASE-4][DETALHE-RE-RENDER] O ecrã de detalhe está ativo e visível. Re-renderizando...");
+                        showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+                    }
                 }
             }
             
