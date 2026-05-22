@@ -2146,7 +2146,10 @@ export async function saveConfirmOrderEdit(e) {
 
     try {
         const spreadsheetId = state.confirm.sheetId;
-        const sheetName = state.confirm.range.split('!')[0] || 'Folha1';
+        let sheetName = 'Folha1';
+        if (state.confirm.range && state.confirm.range.includes('!')) {
+            sheetName = state.confirm.range.split('!')[0];
+        }
         const rowNum = o.originalIndex + 1;
         const range = `${sheetName}!A${rowNum}:Z${rowNum}`;
 
@@ -2220,7 +2223,10 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
         rowData[bankDutyIdx] = newBankValue === '?' ? '' : newBankValue;
 
         const spreadsheetId = state.confirm.sheetId;
-        const sheetName = state.confirm.range.split('!')[0] || 'Folha1';
+        let sheetName = 'Folha1';
+        if (state.confirm.range && state.confirm.range.includes('!')) {
+            sheetName = state.confirm.range.split('!')[0];
+        }
         const rowNum = originalRowIndex + 1;
         const range = `${sheetName}!A${rowNum}:Z${rowNum}`;
 
@@ -3321,6 +3327,13 @@ export async function confirmPaymentSelection() {
             const pag2Idx = findCol(['PAG 2', 'PAG2']);
             const pag3Idx = findCol(['PAG 3', 'PAG3']);
             const obsIdx = findCol(['OBS', 'COMENTARIO', 'NOTAS', 'OBSERVACAO', 'OBSERVACOES']);
+            
+            const paidIdx = columns.findIndex((c, i) => {
+                const h = cleanString(c);
+                return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
+            });
+            const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+            const amountDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
 
             if (state.confirm.sheetId) {
                 const getColLetter = (idx) => {
@@ -3354,39 +3367,86 @@ export async function confirmPaymentSelection() {
                 const sortedClientRows = [...window.currentClientRows].sort((a, b) => a.originalIndex - b.originalIndex);
                 const firstRowIndex = sortedClientRows[0]?.originalIndex;
 
+                let allocatedAmountRemaining = allocatedAmount;
+                const filterStatus = document.getElementById('mini-filter-status')?.value || 'CONFIRMADO';
+
                 // Fazer o update para cada linha deste cliente
                 for (const rowObj of window.currentClientRows) {
                     const sheetRowNumber = rowObj.originalIndex + 1;
                     const updates = [];
 
-                    if (statusIdx !== -1) {
-                        let newStatus = document.getElementById('mini-filter-status')?.value || 'CONFIRMADO';
-                        
+                    let newStatus = filterStatus;
+
+                    if (newStatus === 'PENDENTE') {
+                        // Reverter pagamentos
+                        if (paidIdx !== -1) {
+                            updates.push({ idx: paidIdx, val: '' });
+                            state.confirm.data[rowObj.originalIndex][paidIdx] = '';
+                        }
+                        if (balanceIdx !== -1) {
+                            updates.push({ idx: balanceIdx, val: rowObj.amountDuty });
+                            state.confirm.data[rowObj.originalIndex][balanceIdx] = rowObj.amountDuty;
+                        }
+                    } else {
+                        // Distribuir o valor do pagamento
+                        const currentBalance = rowObj.balance;
+                        let allocatedForThisRow = 0;
+                        if (currentBalance > 0 && allocatedAmountRemaining > 0) {
+                            allocatedForThisRow = Math.min(allocatedAmountRemaining, currentBalance);
+                            allocatedAmountRemaining -= allocatedForThisRow;
+                        }
+
+                        const newPaid = rowObj.paid + allocatedForThisRow;
+                        const newBalance = Math.max(0, currentBalance - allocatedForThisRow);
+
+                        if (paidIdx !== -1) {
+                            updates.push({ idx: paidIdx, val: newPaid });
+                            state.confirm.data[rowObj.originalIndex][paidIdx] = newPaid;
+                        }
+                        if (balanceIdx !== -1) {
+                            updates.push({ idx: balanceIdx, val: newBalance });
+                            state.confirm.data[rowObj.originalIndex][balanceIdx] = newBalance;
+                        }
+
                         if (newStatus === 'CONFIRMADO') {
-                            const isPartialAllocation = allocatedAmount < (currentMiniFilterExpectedAmount - 1.0);
-                            if (isPartialAllocation && rowObj.balance > 1.0) {
+                            if (newBalance > 1.0) {
                                 newStatus = 'PARCIAL';
                             }
                         }
-                        
+                    }
+
+                    if (statusIdx !== -1) {
                         updates.push({ idx: statusIdx, val: newStatus });
+                        state.confirm.data[rowObj.originalIndex][statusIdx] = newStatus;
                     }
 
                     // Encontrar a primeira coluna PAG vazia
                     const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
                     let dateWritten = false;
-                    for (const pIdx of pagIndices) {
-                        const val = state.confirm.data[rowObj.originalIndex][pIdx];
-                        if (!val || String(val).trim() === '') {
-                            updates.push({ idx: pIdx, val: formattedDateForSheet });
-                            dateWritten = true;
-                            break;
-                        }
-                    }
 
-                    // Se não houver PAG vazia mas as colunas existirem, sobrepõe a última
-                    if (!dateWritten && pagIndices.length > 0) {
-                        updates.push({ idx: pagIndices[pagIndices.length - 1], val: formattedDateForSheet });
+                    if (newStatus !== 'PENDENTE') {
+                        for (const pIdx of pagIndices) {
+                            const val = state.confirm.data[rowObj.originalIndex][pIdx];
+                            if (!val || String(val).trim() === '') {
+                                updates.push({ idx: pIdx, val: formattedDateForSheet });
+                                state.confirm.data[rowObj.originalIndex][pIdx] = formattedDateForSheet;
+                                dateWritten = true;
+                                break;
+                            }
+                        }
+
+                        // Se não houver PAG vazia mas as colunas existirem, sobrepõe a última
+                        if (!dateWritten && pagIndices.length > 0) {
+                            const lastPagIdx = pagIndices[pagIndices.length - 1];
+                            updates.push({ idx: lastPagIdx, val: formattedDateForSheet });
+                            state.confirm.data[rowObj.originalIndex][lastPagIdx] = formattedDateForSheet;
+                        }
+                    } else {
+                        // Se for PENDENTE, limpar as datas de pagamento
+                        for (const pIdx of pagIndices) {
+                            updates.push({ idx: pIdx, val: '' });
+                            state.confirm.data[rowObj.originalIndex][pIdx] = '';
+                        }
                     }
 
                     // Enviar atualizações para o GSheet
@@ -3395,9 +3455,6 @@ export async function confirmPaymentSelection() {
                         const rangeToUpdate = `${prefix}${colLetter}${sheetRowNumber}`;
 
                         await updateGSheet(state.confirm.sheetId, rangeToUpdate, [[u.val]]);
-
-                        // Atualizar estado local
-                        state.confirm.data[rowObj.originalIndex][u.idx] = u.val;
                     }
 
                     // 3. Gerir a NOTA e a COR (DEPOIS de gravar os valores)

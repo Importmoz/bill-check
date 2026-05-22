@@ -314,10 +314,20 @@ router.post('/sheet/read', async (req, res) => {
 
       const nonEnumNotesCount = notes.flat().filter(n => n && n.trim() !== '').length;
       console.log(`[BACKEND] Leitura com includeGridData concluída. Linhas lidas: ${values.length}, Notas preenchidas encontradas: ${nonEnumNotesCount}`);
+      
+      let finalRange = range || 'A1:Z1000';
+      const sheetTitle = sheet?.properties?.title;
+      if (sheetTitle && !finalRange.includes('!')) {
+        const formattedTitle = (sheetTitle.includes(' ') || sheetTitle.includes('-') || /\W/.test(sheetTitle))
+          ? `'${sheetTitle}'`
+          : sheetTitle;
+        finalRange = `${formattedTitle}!${finalRange}`;
+      }
+
       return res.json({
         values,
         notes,
-        range: range || (sheet?.properties?.title ? `${sheet.properties.title}!A1:Z1000` : 'A1:Z1000')
+        range: finalRange
       });
     } catch (getErr) {
       console.warn('[BACKEND] Falha ao ler com includeGridData. Usando fallback values.get. Erro:', getErr.message, getErr.response?.data || getErr);

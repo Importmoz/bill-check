@@ -3884,3 +3884,51 @@ STDOUT: [
 STDERR: DEBUG: Banco Detetado: BIM
 DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
 
+2026-05-22T16:48:57.490Z - INFO: Arquivo extraído bank_49e5abdd-39cb-4657-b943-f47477dc5773_961102a9-5827-4d31-9366-39069e2bd9d4.xls
+STDOUT: [
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "P24-Transf.Rec. 0868564221",
+    "reference": "94797631",
+    "amount": 1862.0,
+    "balance": 13126.59,
+    "signature": "8c96560dd3483f109025f40b1a8813d4c536965d72314e7dddddb57f04b28197",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIP...
+STDERR: DEBUG: Diagn�stico de bank_49e5abdd-39cb-4657-b943-f47477dc5773_961102a9-5827-4d31-9366-39069e2bd9d4.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-22T16:49:08.832Z - INFO: Arquivo extraído bank_932a8568-b2c5-44b6-8989-c0bb8a3df83f_a6c91149-c02a-49fa-9492-6ace269de818.xls
+STDOUT: [
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "P24-Transf.Rec. 0852319751",
+    "reference": "94538273",
+    "amount": 11270.0,
+    "balance": 181706.11,
+    "signature": "cb138c250081a0f82a99c4ec321cd63d51d46f00ac2386f0fd12ac189f59a252",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BCI",
+    "account_owner...
+STDERR: DEBUG: Diagn�stico de bank_932a8568-b2c5-44b6-8989-c0bb8a3df83f_a6c91149-c02a-49fa-9492-6ace269de818.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+

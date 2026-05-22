@@ -1587,16 +1587,28 @@ async function saveConfirmToSheet() {
     }
 
     let selectedStatus = document.getElementById('select-confirm-status').value;
-    
+    const updatedRow = [...currentConfirmRow.data];
+
+    const paidIdx = columns.findIndex((c, i) => {
+        const h = cleanString(c);
+        return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
+    });
+    const amtDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
     const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
-    if (selectedStatus === 'CONFIRMADO' && balanceIdx !== -1) {
-        const balanceVal = parseFloat(String(currentConfirmRow.data[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0;
-        if (balanceVal > 1.0) {
-            selectedStatus = 'PARCIAL';
-        }
+
+    const amountDutyVal = amtDutyIdx !== -1 ? (parseFloat(String(currentConfirmRow.data[amtDutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
+
+    if (selectedStatus === 'CONFIRMADO') {
+        if (paidIdx !== -1) updatedRow[paidIdx] = amountDutyVal;
+        if (balanceIdx !== -1) updatedRow[balanceIdx] = 0;
+    } else if (selectedStatus === 'PENDENTE') {
+        if (paidIdx !== -1) updatedRow[paidIdx] = '';
+        if (balanceIdx !== -1) updatedRow[balanceIdx] = amountDutyVal;
+    } else if (selectedStatus === 'PARCIAL' && balanceIdx !== -1) {
+        const paidVal = paidIdx !== -1 ? (parseFloat(String(updatedRow[paidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
+        updatedRow[balanceIdx] = Math.max(0, amountDutyVal - paidVal);
     }
 
-    const updatedRow = [...currentConfirmRow.data];
     updatedRow[statusIdx] = selectedStatus;
     
     // 2. Mapear datas de pagamento (PAG 1, PAG 2, PAG 3)
@@ -1626,14 +1638,19 @@ async function saveConfirmToSheet() {
             }
         }
 
-        await api.updateGSheet(spreadsheetId, `A${currentConfirmRow.index + 1}`, [updatedRow]);
+        let rawSheetName = 'Folha1';
+        if (api.state.confirm.range && api.state.confirm.range.includes('!')) {
+            rawSheetName = api.state.confirm.range.split('!')[0];
+        }
+        const cleanSheetName = rawSheetName.replace(/'/g, '');
+        const targetRange = `${cleanSheetName}!A${currentConfirmRow.index + 1}`;
+
+        await api.updateGSheet(spreadsheetId, targetRange, [updatedRow]);
 
         // 3. Gerir Comentário e Cor nativamente
         const comment = document.getElementById('input-confirm-comment')?.value || '';
         if (statusIdx !== -1) {
             try {
-                const rawSheetName = api.state.confirm.range.split('!')[0] || 'Folha1';
-                const cleanSheetName = rawSheetName.replace(/'/g, '');
                 
                 // Encontrar o índice da primeira linha (ordem) do cliente ativo
                 let targetRowIndex = currentConfirmRow.index;
