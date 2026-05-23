@@ -1755,13 +1755,14 @@ function startGSheetPolling(spreadsheetId) {
             });
             if (res.ok) {
                 const checkData = await res.json();
+                console.log(`[POLLING-DEBUG] lastTime enviado: ${lastTime} | Drive modifiedTime: ${checkData.modifiedTime} | updated: ${checkData.updated}`);
                 if (checkData.updated) {
                     console.log(`[POLLING] Planilha modificada externamente! Novo modifiedTime: ${checkData.modifiedTime}. Recarregando silenciosamente...`);
                     
                     // Sincronizar o lastModifiedTime local de imediato para evitar que a próxima iteração use a data antiga
                     api.state.confirm.lastModifiedTime = checkData.modifiedTime;
                     
-                    const freshData = await api.readGSheet(spreadsheetId);
+                    const freshData = await api.readGSheet(spreadsheetId, 'A1:Z1000', true);
                     
                     // Atualiza a tabela principal se activa
                     if (isConfirmTableVisible) {
@@ -1805,6 +1806,8 @@ function startGSheetPolling(spreadsheetId) {
                         }
                     }
                 }
+            } else {
+                console.warn(`[POLLING] Falha na resposta da API check-update. Status: ${res.status}`);
             }
         } catch (pollErr) {
             console.warn("[POLLING] Erro ao verificar atualizações do GSheet:", pollErr);

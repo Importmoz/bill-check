@@ -375,7 +375,9 @@ router.post('/sheet/check-update', async (req, res) => {
 
     const response = await drive.files.get({
       fileId: spreadsheetId,
-      fields: 'modifiedTime'
+      fields: 'modifiedTime',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true
     });
 
     const currentModifiedTime = response.data.modifiedTime;
@@ -384,6 +386,8 @@ router.post('/sheet/check-update', async (req, res) => {
     if (lastModifiedTime && currentModifiedTime) {
       updated = new Date(currentModifiedTime).getTime() > new Date(lastModifiedTime).getTime();
     }
+
+    console.log(`[BACKEND][POLLING] ID Planilha: ${spreadsheetId} | Modificado Local (App): ${lastModifiedTime} | Modificado Google Drive: ${currentModifiedTime} | Tem Atualização: ${updated}`);
 
     res.json({
       updated,

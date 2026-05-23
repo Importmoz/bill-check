@@ -1532,23 +1532,23 @@ export async function showConfirmDetail(client, clientIndex) {
             });
 
             const bankSelectHtml = `
-                <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${originalIndex}, this.value)" class="p-1 text-slate-700 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
+                <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${originalIndex}, this.value)" class="py-0.5 px-1 text-slate-700 bg-slate-50 border border-slate-200 rounded text-[10px] font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
                     ${optionsHtml}
                 </select>
             `;
 
             tbodyHtml += `
                 <tr data-original-index="${originalIndex}" class="row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer ${isLockedByOther ? 'opacity-50 pointer-events-none' : ''}" ${isLockedByOther ? `title="A ser editado por ${lockInfo.user}"` : ''} onclick="ui.openConfirmEditModal(${index})">
-                    <td class="p-4 font-bold text-slate-800 text-[12px]">${orderNumber}</td>
-                    <td class="p-4 text-center text-slate-600 text-[12px]">${cbm.toFixed(2)}</td>
-                    <td class="p-4 text-center font-semibold text-blue-700 text-[12px]">${formatValue(amountDuty)}</td>
-                    <td class="p-4 text-center text-slate-500 text-[12px]">${formatValue(dutyPrepaid)}</td>
-                    <td class="p-4 text-center font-bold text-green-600 text-[12px]">${formatValue(paid)}</td>
-                    <td class="p-4 text-center font-bold text-[12px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
-                    <td class="p-4 text-center">${bankSelectHtml}</td>
-                    <td class="p-4 text-center">
+                    <td class="py-0.5 px-4 font-bold text-slate-800 text-[11px]">${orderNumber}</td>
+                    <td class="py-0.5 px-4 text-center text-slate-600 text-[11px]">${cbm.toFixed(2)}</td>
+                    <td class="py-0.5 px-4 text-center font-semibold text-blue-700 text-[11px]">${formatValue(amountDuty)}</td>
+                    <td class="py-0.5 px-4 text-center text-slate-500 text-[11px]">${formatValue(dutyPrepaid)}</td>
+                    <td class="py-0.5 px-4 text-center font-bold text-green-600 text-[11px]">${formatValue(paid)}</td>
+                    <td class="py-0.5 px-4 text-center font-bold text-[11px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
+                    <td class="py-0.5 px-4 text-center">${bankSelectHtml}</td>
+                    <td class="py-0.5 px-4 text-center">
                         <button onclick="event.stopPropagation(); window.onConfirmRow(${originalIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
-                            class="px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}"
+                            class="px-1.5 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}"
                             ${isLockedByOther ? 'disabled' : ''}>
                             ${isLockedByOther ? '🔒 ' : ''}${rowStatus}
                         </button>
@@ -1716,14 +1716,14 @@ export async function showConfirmDetail(client, clientIndex) {
                 <table class="w-full text-left border-collapse">
                     <thead class="bg-slate-50 border-bottom border-slate-200 text-slate-500">
                         <tr>
-                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider border-b border-slate-200">Order Number</th>
-                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">CBM</th>
-                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Amount Duty</th>
-                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Duty Prepaid</th>
-                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Paid</th>
-                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Balance</th>
-                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Bank in Duty</th>
-                            <th class="p-4 text-[11px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Confirmação</th>
+                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider border-b border-slate-200">Order Number</th>
+                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">CBM</th>
+                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Amount Duty</th>
+                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Duty Prepaid</th>
+                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Paid</th>
+                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Balance</th>
+                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Bank in Duty</th>
+                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Confirmação</th>
                         </tr>
                     </thead>
                     <tbody id="orders-tbody" class="divide-y divide-slate-100">
@@ -1837,12 +1837,12 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     });
 
     const bankSelectHtml = `
-        <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${rowIndex}, this.value)" class="p-1 text-slate-700 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
+        <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${rowIndex}, this.value)" class="py-0.5 px-1 text-slate-700 bg-slate-50 border border-slate-200 rounded text-[10px] font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
             ${optionsHtml}
         </select>
     `;
 
-    const buttonClass = `px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}`;
+    const buttonClass = `px-1.5 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}`;
 
     // Atualiza os TDs individualmente para não perder referências
     tr.className = `row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer ${isLockedByOther ? 'opacity-50 pointer-events-none' : ''}`;
@@ -1853,14 +1853,14 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     tr.onclick = () => ui.openConfirmEditModal(indexInActiveClient);
 
     tr.innerHTML = `
-        <td class="p-4 font-bold text-slate-800 text-[12px]">${orderNumber}</td>
-        <td class="p-4 text-center text-slate-600 text-[12px]">${cbm.toFixed(2)}</td>
-        <td class="p-4 text-center font-semibold text-blue-700 text-[12px]">${formatValue(amountDuty)}</td>
-        <td class="p-4 text-center text-slate-500 text-[12px]">${formatValue(dutyPrepaid)}</td>
-        <td class="p-4 text-center font-bold text-green-600 text-[12px]">${formatValue(paid)}</td>
-        <td class="p-4 text-center font-bold text-[12px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
-        <td class="p-4 text-center">${bankSelectHtml}</td>
-        <td class="p-4 text-center">
+        <td class="py-0.5 px-4 font-bold text-slate-800 text-[11px]">${orderNumber}</td>
+        <td class="py-0.5 px-4 text-center text-slate-600 text-[11px]">${cbm.toFixed(2)}</td>
+        <td class="py-0.5 px-4 text-center font-semibold text-blue-700 text-[11px]">${formatValue(amountDuty)}</td>
+        <td class="py-0.5 px-4 text-center text-slate-500 text-[11px]">${formatValue(dutyPrepaid)}</td>
+        <td class="py-0.5 px-4 text-center font-bold text-green-600 text-[11px]">${formatValue(paid)}</td>
+        <td class="py-0.5 px-4 text-center font-bold text-[11px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
+        <td class="py-0.5 px-4 text-center">${bankSelectHtml}</td>
+        <td class="py-0.5 px-4 text-center">
             <button onclick="event.stopPropagation(); window.onConfirmRow(${rowIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
                 class="${buttonClass}"
                 ${isLockedByOther ? 'disabled' : ''}>
@@ -1960,6 +1960,11 @@ export function openConfirmEditModal(index) {
     document.getElementById('edit-amountDuty').value = o.amountDuty;
     document.getElementById('edit-paid').value = o.paid;
     document.getElementById('edit-balance').value = o.balance;
+
+    const badge = document.getElementById('modal-order-badge');
+    if (badge) {
+        badge.innerText = `#${o.orderNumber}`;
+    }
 
     const selectEl = document.getElementById('edit-bankDuty');
     if (selectEl) {
@@ -2507,7 +2512,7 @@ export function renderDriveFiles(files, currentFolderId, containerId = 'confirm-
     files.forEach(file => {
         const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
         const div = document.createElement('div');
-        div.className = "flex items-center gap-3 p-2 border border-gray-200 rounded-lg hover:border-black transition-all bg-white cursor-pointer group";
+        div.className = "flex items-center gap-2 p-1 px-2 border border-slate-100 hover:border-slate-200 rounded-lg hover:shadow-xs transition-all bg-white hover:bg-slate-50 cursor-pointer group";
 
         div.onclick = (e) => {
             if (isFolder) {
@@ -2517,29 +2522,29 @@ export function renderDriveFiles(files, currentFolderId, containerId = 'confirm-
             }
         };
 
-        const iconColor = isFolder ? 'text-blue-500' : 'text-gray-400';
+        const iconColor = isFolder ? 'text-blue-500' : 'text-slate-400';
 
         div.innerHTML = `
-            <div class="${iconColor}">
+            <div class="${iconColor} shrink-0 flex items-center justify-center">
                 ${isFolder ?
-                '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>' :
-                '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>'
+                '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>' :
+                '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>'
             }
             </div>
             <div class="flex-1 min-w-0">
-                <p class="font-bold truncate text-gray-700 group-hover:text-black text-xs">${file.name}</p>
-                <p class="text-[7px] text-gray-400 uppercase">${isFolder ? 'Pasta' : 'Documento'}</p>
+                <p class="font-semibold truncate text-slate-700 group-hover:text-slate-950 text-[10px] leading-tight">${file.name}</p>
+                ${isFolder ? `<p class="text-[7px] text-blue-500 font-bold uppercase tracking-wider mt-0.5">Pasta</p>` : ''}
             </div>
             
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1 shrink-0">
                 ${!isFolder ? `
                     <button onclick="event.stopPropagation(); window.confirmAndDeleteFile('${file.id}', '${file.name}', '${currentFolderId}')" 
-                        class="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all rounded-lg opacity-0 group-hover:opacity-100">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                        class="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all rounded opacity-0 group-hover:opacity-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                     </button>
                 ` : ''}
-                <div class="text-gray-300 group-hover:text-black transition-all">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                <div class="text-slate-300 group-hover:text-slate-500 transition-all p-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </div>
             </div>
         `;
@@ -2828,7 +2833,7 @@ export function showFilePreview(file) {
     const content = document.getElementById('preview-content');
     const filenameEl = document.getElementById('preview-filename');
     const downloadLink = document.getElementById('preview-download-link');
-    const ocrBtn = document.getElementById('btn-ocr-extract');
+    const zoomControls = document.getElementById('preview-zoom-controls');
 
     if (!modal || !content || !filenameEl) return;
 
@@ -2836,7 +2841,7 @@ export function showFilePreview(file) {
     if (downloadLink) downloadLink.href = `/api/google/drive/file/${file.id}`;
     content.innerHTML = '<div class="text-xs font-bold animate-pulse">A CARREGAR PRÉ-VISUALIZAÇÃO...</div>';
 
-    if (ocrBtn) ocrBtn.classList.add('hidden');
+    if (zoomControls) zoomControls.classList.add('hidden');
 
     openModal('modal-file-preview');
 
@@ -2845,45 +2850,17 @@ export function showFilePreview(file) {
     const isMD = file.mimeType === 'text/markdown' || file.name.toLowerCase().endsWith('.md');
 
     if (isImage) {
-        // Para imagens, usamos tag <img> direta para permitir OCR e cópia nativa
         const imgUrl = `/api/google/drive/file/${file.id}`;
-        content.innerHTML = `<img id="preview-img-ocr" src="${imgUrl}" class="max-w-full max-h-full object-contain rounded-lg shadow-lg" crossorigin="anonymous">`;
-
-        if (ocrBtn) {
-            ocrBtn.classList.remove('hidden');
-            ocrBtn.onclick = async () => {
-                const originalText = ocrBtn.innerText;
-                ocrBtn.innerText = "A PROCESSAR...";
-                ocrBtn.disabled = true;
-
-                try {
-                    const img = document.getElementById('preview-img-ocr');
-                    // @ts-ignore
-                    const worker = await Tesseract.createWorker('por');
-                    const ret = await worker.recognize(img.src);
-                    const text = ret.data.text;
-                    await worker.terminate();
-
-                    if (text.trim()) {
-                        await navigator.clipboard.writeText(text);
-                        ocrBtn.innerText = "COPIADO!";
-                        ocrBtn.classList.replace('bg-purple-600', 'bg-green-600');
-                    } else {
-                        ui.toast("Não foi possível extrair texto legível desta imagem.", "warning");
-                        ocrBtn.innerText = originalText;
-                    }
-                } catch (err) {
-                    console.error("Erro no OCR:", err);
-                    ui.toast("Erro ao processar imagem para OCR.", "error");
-                    ocrBtn.innerText = originalText;
-                } finally {
-                    ocrBtn.disabled = false;
-                    setTimeout(() => {
-                        ocrBtn.innerText = "COPIAR TEXTO (OCR)";
-                        ocrBtn.classList.replace('bg-green-600', 'bg-purple-600');
-                    }, 2000);
-                }
-            };
+        content.innerHTML = `
+            <div id="preview-img-wrapper" class="flex items-center justify-center w-full h-full p-4" style="width: 100%; height: 100%;">
+                <img id="preview-img-zoom" src="${imgUrl}" class="max-w-full max-h-full object-contain rounded-lg shadow-lg transition-transform duration-200" style="transform: scale(1.0); transform-origin: center;" crossorigin="anonymous">
+            </div>
+        `;
+        window.imgZoomScale = 1.0;
+        if (zoomControls) {
+            zoomControls.classList.remove('hidden');
+            const zoomLevelEl = document.getElementById('preview-zoom-level');
+            if (zoomLevelEl) zoomLevelEl.innerText = "100%";
         }
     } else if (isPDF) {
         // Para PDFs, usamos o endpoint local para que o browser utilize o seu visualizador nativo.
@@ -2932,6 +2909,50 @@ export function showFilePreview(file) {
             });
     } else {
         content.innerHTML = `<div class="p-10 text-center text-slate-400 font-bold uppercase text-xs">Pré-visualização não suportada para este tipo de ficheiro.</div>`;
+    }
+}
+
+// Controle de Zoom na Imagem
+window.imgZoomScale = 1.0;
+
+export function zoomImage(delta) {
+    const img = document.getElementById('preview-img-zoom');
+    const wrapper = document.getElementById('preview-img-wrapper');
+    const zoomLevelEl = document.getElementById('preview-zoom-level');
+    if (!img || !wrapper) return;
+
+    window.imgZoomScale = Math.max(0.4, Math.min(4.0, window.imgZoomScale + delta));
+    
+    // Atualizar transform scale na imagem
+    img.style.transform = `scale(${window.imgZoomScale})`;
+    
+    // Ajustar o tamanho do wrapper para habilitar scroll no container overflow-auto
+    if (window.imgZoomScale > 1.0) {
+        wrapper.style.width = `${100 * window.imgZoomScale}%`;
+        wrapper.style.height = `${100 * window.imgZoomScale}%`;
+    } else {
+        wrapper.style.width = '100%';
+        wrapper.style.height = '100%';
+    }
+    
+    if (zoomLevelEl) {
+        zoomLevelEl.innerText = `${Math.round(window.imgZoomScale * 100)}%`;
+    }
+}
+
+export function resetZoomImage() {
+    const img = document.getElementById('preview-img-zoom');
+    const wrapper = document.getElementById('preview-img-wrapper');
+    const zoomLevelEl = document.getElementById('preview-zoom-level');
+    if (!img || !wrapper) return;
+
+    window.imgZoomScale = 1.0;
+    img.style.transform = 'scale(1.0)';
+    wrapper.style.width = '100%';
+    wrapper.style.height = '100%';
+    
+    if (zoomLevelEl) {
+        zoomLevelEl.innerText = '100%';
     }
 }
 

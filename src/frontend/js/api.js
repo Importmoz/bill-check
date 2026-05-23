@@ -293,7 +293,7 @@ export function logout() {
 
 /** --- MÓDULO CONFIRM (GOOGLE API) --- **/
 
-export async function readGSheet(spreadsheetId, range = 'A1:Z1000') {
+export async function readGSheet(spreadsheetId, range = 'A1:Z1000', skipModifiedTimeCheck = false) {
     const res = await fetch('/api/google/sheet/read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -311,19 +311,21 @@ export async function readGSheet(spreadsheetId, range = 'A1:Z1000') {
     if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
 
     // Buscar data de modificação inicial da planilha
-    try {
-        const updateCheckRes = await fetch('/api/google/sheet/check-update', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ spreadsheetId })
-        });
-        if (updateCheckRes.ok) {
-            const updateCheckData = await updateCheckRes.json();
-            state.confirm.lastModifiedTime = updateCheckData.modifiedTime;
-            console.log(`[API] Guardado lastModifiedTime inicial da planilha: ${state.confirm.lastModifiedTime}`);
+    if (!skipModifiedTimeCheck) {
+        try {
+            const updateCheckRes = await fetch('/api/google/sheet/check-update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ spreadsheetId })
+            });
+            if (updateCheckRes.ok) {
+                const updateCheckData = await updateCheckRes.json();
+                state.confirm.lastModifiedTime = updateCheckData.modifiedTime;
+                console.log(`[API] Guardado lastModifiedTime inicial da planilha: ${state.confirm.lastModifiedTime}`);
+            }
+        } catch (checkErr) {
+            console.warn("[API] Erro ao obter data de modificação inicial:", checkErr);
         }
-    } catch (checkErr) {
-        console.warn("[API] Erro ao obter data de modificação inicial:", checkErr);
     }
 
     return state.confirm.data;
