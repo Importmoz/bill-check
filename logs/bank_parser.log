@@ -3932,3 +3932,221 @@ DEBUG: Banco detetado via conte�do global: BCI
 DEBUG: Banco Detetado: BCI
 DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
 
+2026-05-23T07:37:02.158Z - INFO: Arquivo extraído bank_0bbb3f95-e0a8-4321-bccf-02719d1f2db5_91cd1344-4b6c-472a-8411-acd3447450c8.xls
+STDOUT: [
+  {
+    "date": "2026-05-21 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "TRF : frigorfico",
+    "reference": "89177849",
+    "amount": 15222.0,
+    "balance": 18712.93,
+    "signature": "f18200a3fb08e145f6c9eda289b621e4f04d6f500aeb0a44e6ea5c017cf3b581",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-21 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER...
+STDERR: DEBUG: Diagn�stico de bank_0bbb3f95-e0a8-4321-bccf-02719d1f2db5_91cd1344-4b6c-472a-8411-acd3447450c8.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-23T07:37:38.704Z - INFO: Arquivo extraído bank_6a41b2e8-7c20-4fc0-b576-358d2e215414_c30e9014-136d-46bc-8efd-5555ef292fee.xls
+STDOUT: [
+  {
+    "date": "2026-05-21 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "Trf.Cred.90844550",
+    "reference": "90844550",
+    "amount": 8134.0,
+    "balance": 8858.58,
+    "signature": "6811a3076cc0f886877069a12e1f33cc93a07af01f04a8e5e376f04a4bfdf47e",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-05-21 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO"...
+STDERR: DEBUG: Diagn�stico de bank_6a41b2e8-7c20-4fc0-b576-358d2e215414_c30e9014-136d-46bc-8efd-5555ef292fee.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-05-23T07:38:05.503Z - INFO: Arquivo extraído bank_a042604d-a2b2-4575-8c0c-4492c4378d1e_Extrato_330788916_21-05-26_23-05-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 355070053Ref. 260522160419332C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 15582.0,
+    "balance": 157976.83,
+    "signature": "c7d76ce694e335f918465567636aa1c8920060b3158c65ece0cef31eb1c88e2f",
+    "order_id": "",
+    "reconci...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T07:38:38.926Z - INFO: Arquivo extraído bank_7871d26e-1aa1-46e1-916b-92f683ff7da1_Extrato_75470366_21-05-26_23-05-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 344148726Ref. 260522191226411C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 58938.28,
+    "signature": "effbd36ce3f9d1ebc23c696ed709b342f7c8cb2e02ff4ceb11c6467770660f9c",
+    "order_id": "",
+    "reconciled": false...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T07:57:20.524Z - INFO: Arquivo extraído bank_64d75e72-91d0-4881-b26c-447845812b97_Extrato_75470366_21-05-26_23-05-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 344148726Ref. 260522191226411C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 58938.28,
+    "signature": "effbd36ce3f9d1ebc23c696ed709b342f7c8cb2e02ff4ceb11c6467770660f9c",
+    "order_id": "",
+    "reconciled": false...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T07:57:38.472Z - INFO: Arquivo extraído bank_0b2f6f07-3f64-418c-862e-e7982ab58940_Extrato_330788916_21-05-26_23-05-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 355070053Ref. 260522160419332C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 15582.0,
+    "balance": 157976.83,
+    "signature": "c7d76ce694e335f918465567636aa1c8920060b3158c65ece0cef31eb1c88e2f",
+    "order_id": "",
+    "reconci...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T08:05:35.894Z - INFO: Arquivo extraído bank_debe1a96-9b57-425b-b61d-5860fde5b00e_Extrato_75470366_23-05-26_25-05-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-23 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 1098357191Ref. 260523091134799C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 68270.28,
+    "signature": "43a3908b4f686d20f685855dd1a40e4904fb453aaf694581bc3ae57521fca704",
+    "order_id": "",
+    "reconciled": fals...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T08:05:59.757Z - INFO: Arquivo extraído bank_4fab8026-385c-48cd-a93f-9227c94d2596_Extrato_330788916_23-05-26_25-05-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-25 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "TRF MPesa 849501803 mkobyUONahRef. 260523095717502C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 159936.83,
+    "signature": "d7d0a5b08bcac37517ac3316f218a5d3f7445894a8b9d30b043dedbee30c151b",
+    "order_id": "",
+    "reconcil...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T08:16:28.527Z - INFO: Arquivo extraído bank_63830317-65a5-46c3-8ee4-e9627bf06782_Extrato_330788916_22-05-26_22-05-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 355070053Ref. 260522160419332C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 15582.0,
+    "balance": 157976.83,
+    "signature": "c7d76ce694e335f918465567636aa1c8920060b3158c65ece0cef31eb1c88e2f",
+    "order_id": "",
+    "reconci...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T08:16:58.542Z - INFO: Arquivo extraído bank_dbd81913-584c-40a1-8d66-bc3ac34e5fa6_Extrato_75470366_22-05-26_22-05-26__1_.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-22 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 344148726Ref. 260522191226411C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 58938.28,
+    "signature": "effbd36ce3f9d1ebc23c696ed709b342f7c8cb2e02ff4ceb11c6467770660f9c",
+    "order_id": "",
+    "reconciled": false...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T08:45:36.729Z - INFO: Arquivo extraído bank_86ad07b5-ee46-4724-9892-b0212a0ce92d_Extrato_330788916_23-05-26_26-05-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-25 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "TRF MPesa 849501803 mkobyUONahRef. 260523095717502C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 159936.83,
+    "signature": "d7d0a5b08bcac37517ac3316f218a5d3f7445894a8b9d30b043dedbee30c151b",
+    "order_id": "",
+    "reconcil...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-05-23T10:07:31.443Z - INFO: Arquivo extraído bank_9fb31c93-1d52-4179-b91a-a40131445a0b_Extrato_330788916_23-05-26_25-05-26__1_.xlsx
+STDOUT: [
+  {
+    "date": "2026-05-23 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 207429457Ref. 260523112357083C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 5684.0,
+    "balance": 170520.83,
+    "signature": "f89d0079c7bd0998528fa827e032c44c4cea7e0bfe096c6ef5ff27d11737e29f",
+    "order_id": "",
+    "reconcil...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
