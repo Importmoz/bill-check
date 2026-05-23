@@ -309,6 +309,23 @@ export async function readGSheet(spreadsheetId, range = 'A1:Z1000') {
     state.confirm.notes = data.notes || []; // Guardar as notas nativas das células
     state.confirm.range = data.range || 'Folha1!A1:Z1000'; // Guardar a aba real
     if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
+
+    // Buscar data de modificação inicial da planilha
+    try {
+        const updateCheckRes = await fetch('/api/google/sheet/check-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId })
+        });
+        if (updateCheckRes.ok) {
+            const updateCheckData = await updateCheckRes.json();
+            state.confirm.lastModifiedTime = updateCheckData.modifiedTime;
+            console.log(`[API] Guardado lastModifiedTime inicial da planilha: ${state.confirm.lastModifiedTime}`);
+        }
+    } catch (checkErr) {
+        console.warn("[API] Erro ao obter data de modificação inicial:", checkErr);
+    }
+
     return state.confirm.data;
 }
 
@@ -415,6 +432,40 @@ export async function unsubscribeConfirmEvents() {
             console.log("[SSE-FASE-2][SUCESSO] Subscrição cancelada com sucesso.");
         } catch (err) {
             console.error("[SSE-FASE-2][ERRO] Erro ao cancelar subscrição:", err);
+        }
+    }
+}
+
+// --- REALTIME EVENTOS BANCO (bank_incomes) ---
+let bankUnsubscribe = null;
+
+export async function subscribeBankEvents(callback) {
+    if (bankUnsubscribe) {
+        console.log("[SSE-BANCO][RE-SUBSCRIÇÃO] Cancelando subscrição de banco anterior...");
+        await unsubscribeBankEvents();
+    }
+    
+    console.log("[SSE-BANCO][CONEXÃO] Iniciando subscrição SSE no PocketBase para extratos (bank_incomes)");
+    try {
+        bankUnsubscribe = await pb.collection('bank_incomes').subscribe('*', function (e) {
+            console.log(`[SSE-BANCO][RECEÇÃO] Evento de banco '${e.action}':`, e.record);
+            callback(e);
+        });
+        console.log("[SSE-BANCO][SUCESSO] Subscrição de banco em tempo real efetuada!");
+    } catch (err) {
+        console.error("[SSE-BANCO][ERRO] Falha ao conectar ao SSE de banco:", err);
+    }
+}
+
+export async function unsubscribeBankEvents() {
+    if (bankUnsubscribe) {
+        console.log("[SSE-BANCO][CANCELAR] Cancelando subscrição de banco ativa...");
+        try {
+            await pb.collection('bank_incomes').unsubscribe('*');
+            bankUnsubscribe = null;
+            console.log("[SSE-BANCO][SUCESSO] Subscrição de banco cancelada.");
+        } catch (err) {
+            console.error("[SSE-BANCO][ERRO] Erro ao cancelar subscrição de banco:", err);
         }
     }
 }

@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
 
 /**
  * Controla o indicador de carregamento
@@ -117,6 +117,12 @@ export function showView(viewId) {
     if (!viewId.startsWith('view-confirm-')) {
         if (typeof unsubscribeConfirmEvents === 'function') {
             unsubscribeConfirmEvents();
+        }
+        if (typeof unsubscribeBankEvents === 'function') {
+            unsubscribeBankEvents();
+        }
+        if (typeof window.stopGSheetPolling === 'function') {
+            window.stopGSheetPolling();
         }
         window.activeConfirmLocks = {}; // Limpar memória de locks
     }
@@ -1005,16 +1011,14 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         if (isNewNo) lastNo = noValue;
         else noValue = lastNo;
 
-        if (filterText) {
-            const searchStr = `${name} ${idCode}`.toLowerCase();
-            if (!searchStr.includes(filterText.toLowerCase())) continue;
-        }
+        // Filtro de busca de texto será aplicado no final de forma agregada
 
         // Criar um ID de grupo único que combina ID + NOME para evitar colisões
         const groupId = `${idCode}_${name}`.replace(/\s+/g, '_') || `ROW_${i}`;
 
         if (!groupedClients.has(groupId)) {
             groupedClients.set(groupId, {
+                groupId: groupId,
                 displayIdCode: idCode,
                 displayName: name,
                 no: noValue,
@@ -1074,6 +1078,18 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     }
 
     let groups = Array.from(groupedClients.values());
+    if (!state.confirm) state.confirm = {};
+    state.confirm.groupedClients = groups;
+
+    // Aplicar Filtro de Busca de Texto para renderização visual
+    if (filterText) {
+        const term = filterText.toLowerCase();
+        groups = groups.filter(client => {
+            const nameMatch = (client.displayName || '').toLowerCase().includes(term);
+            const idMatch = (client.displayIdCode || '').toLowerCase().includes(term);
+            return nameMatch || idMatch;
+        });
+    }
 
     // Ordenar os clientes de forma robusta pela numeração do Drive/GSheet (campo client.no)
     groups.sort((a, b) => {
@@ -1722,7 +1738,10 @@ export async function showConfirmDetail(client, clientIndex) {
         `;
     }
 
-    showView('view-confirm-client-detail');
+    const detailView = document.getElementById('view-confirm-client-detail');
+    if (!detailView || detailView.classList.contains('hidden')) {
+        showView('view-confirm-client-detail');
+    }
 
     // Abrir pasta automaticamente se existir número e nome
     if (window.autoOpenClientFolder) {
@@ -1731,6 +1750,175 @@ export async function showConfirmDetail(client, clientIndex) {
 
     // Atualizar UI dos Locks
     updateLocksUI();
+}
+
+export async function updateConfirmDetailRow(rowIndex, rowData) {
+    if (!window.currentActiveClient || !window.currentActiveClient.rows) return;
+
+    // 1. Atualizar o objeto local na memória
+    const foundRow = window.currentActiveClient.rows.find(r => r.originalIndex === rowIndex);
+    if (!foundRow) return;
+    foundRow.originalRow = rowData;
+
+    // 2. Encontrar o elemento no DOM
+    const tr = document.querySelector(`tr[data-original-index="${rowIndex}"]`);
+    if (!tr) return;
+
+    // 3. Mapear Colunas para obter os índices necessários
+    const columns = state.confirm.columns || [];
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
+    const cbmIdx = findCol(['CBM', 'M3', 'VOLUME', 'VOL']);
+    const unitDutyIdx = findCol(['UNIT CBM DUTY', 'UNIT DUTY', 'CBM DUTY', 'UNIT']);
+    const dutyPrepIdx = findCol(['DUTY PREPAID', 'PREPAID', 'PRE-PAGO']);
+    const amtDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+    
+    const paidIdx = columns.findIndex((c, i) => {
+        const h = cleanString(c);
+        return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
+    });
+    
+    const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+    const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
+    const statusIdx = findCol(['CONFIRMATION', 'STATUS']);
+
+    const getNum = (row, idx) => idx !== -1 ? (parseFloat(String(row[idx]).replace(/[^0-9.-]+/g, '')) || 0) : 0;
+    const getRaw = (row, idx) => idx !== -1 && row[idx] !== undefined && row[idx] !== null && row[idx] !== '' ? row[idx] : '—';
+    const formatValue = (val) => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
+
+    const orderNumber = getRaw(rowData, orderNumIdx);
+    const cbm = getNum(rowData, cbmIdx);
+    const unitDuty = getNum(rowData, unitDutyIdx);
+    const dutyPrepaid = getNum(rowData, dutyPrepIdx);
+    const amountDuty = getNum(rowData, amtDutyIdx);
+    const paid = getNum(rowData, paidIdx);
+    const balance = getNum(rowData, balanceIdx);
+    const bankDuty = getRaw(rowData, bankDutyIdx);
+
+    let rowStatus = String(rowData[statusIdx] || 'PENDENTE').trim();
+    if (rowStatus === '?') rowStatus = 'PENDENTE';
+    rowStatus = rowStatus.toUpperCase();
+    if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
+        rowStatus = 'PARCIAL';
+    }
+
+    const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowIndex];
+    const isLockedByOther = lockInfo && lockInfo.userId !== pb.authStore.model?.id;
+
+    // Atualizar HTML interno da linha
+    const cleanCurrent = String(bankDuty || '').trim();
+    const options = ['?', 'BCI BOSS', 'BIM BOSS', 'BCI JUPITER', 'BIM JUPITER', 'STB JUPITER', 'NED JUPITER', 'PAID IN CHINA', 'REPOSIÇÃO', 'COTACAO', 'EMOLA BOSS'];
+    if (cleanCurrent && cleanCurrent !== '—' && !options.includes(cleanCurrent)) {
+        options.push(cleanCurrent);
+    }
+    let optionsHtml = '';
+    options.forEach(opt => {
+        const isSelected = opt === cleanCurrent || (opt === '?' && (!cleanCurrent || cleanCurrent === '—'));
+        optionsHtml += `<option value="${opt}" ${isSelected ? 'selected' : ''}>${opt}</option>`;
+    });
+
+    const bankSelectHtml = `
+        <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${rowIndex}, this.value)" class="p-1 text-slate-700 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
+            ${optionsHtml}
+        </select>
+    `;
+
+    const buttonClass = `px-3 py-1.5 rounded-lg font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}`;
+
+    // Atualiza os TDs individualmente para não perder referências
+    tr.className = `row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer ${isLockedByOther ? 'opacity-50 pointer-events-none' : ''}`;
+    tr.title = isLockedByOther ? `A ser editado por ${lockInfo.user}` : '';
+    
+    // Configurar o evento onclick da linha com o índice correto na UI
+    const indexInActiveClient = window.currentActiveClient.rows.findIndex(r => r.originalIndex === rowIndex);
+    tr.onclick = () => ui.openConfirmEditModal(indexInActiveClient);
+
+    tr.innerHTML = `
+        <td class="p-4 font-bold text-slate-800 text-[12px]">${orderNumber}</td>
+        <td class="p-4 text-center text-slate-600 text-[12px]">${cbm.toFixed(2)}</td>
+        <td class="p-4 text-center font-semibold text-blue-700 text-[12px]">${formatValue(amountDuty)}</td>
+        <td class="p-4 text-center text-slate-500 text-[12px]">${formatValue(dutyPrepaid)}</td>
+        <td class="p-4 text-center font-bold text-green-600 text-[12px]">${formatValue(paid)}</td>
+        <td class="p-4 text-center font-bold text-[12px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
+        <td class="p-4 text-center">${bankSelectHtml}</td>
+        <td class="p-4 text-center">
+            <button onclick="event.stopPropagation(); window.onConfirmRow(${rowIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
+                class="${buttonClass}"
+                ${isLockedByOther ? 'disabled' : ''}>
+                ${isLockedByOther ? '🔒 ' : ''}${rowStatus}
+            </button>
+        </td>
+    `;
+
+    // 4. Recalcular os totais agregados e atualizar o card de pagamento suavemente
+    let totalPaid = 0;
+    let totalDutyPrepaid = 0;
+    let totalAmountDuty = 0;
+    let totalGSheetBalance = 0;
+    let allConfirmed = true;
+
+    window.currentActiveClient.rows.forEach(r => {
+        const rData = r.originalRow;
+        totalPaid += getNum(rData, paidIdx);
+        totalDutyPrepaid += getNum(rData, dutyPrepIdx);
+        totalAmountDuty += getNum(rData, amtDutyIdx);
+        
+        const bal = getNum(rData, balanceIdx);
+        totalGSheetBalance += bal;
+
+        let rStatus = String(rData[statusIdx] || 'PENDENTE').trim();
+        if (rStatus === '?') rStatus = 'PENDENTE';
+        rStatus = rStatus.toUpperCase();
+        if (rStatus === 'CONFIRMADO' && bal > 1.0) rStatus = 'PARCIAL';
+
+        if (rStatus !== 'CONFIRMADO') allConfirmed = false;
+    });
+
+    // Atualizar no estado global do cliente ativo para o card de pagamento
+    if (window.currentActiveClientState) {
+        let targetAmount = totalAmountDuty;
+        if (totalPaid > 0) targetAmount = totalPaid;
+        if (totalDutyPrepaid > 0) targetAmount = totalDutyPrepaid;
+
+        const payments = window.currentActiveClientState.payments || [];
+        let totalAllocated = 0;
+        payments.forEach(p => totalAllocated += p.amount);
+
+        let remainingToPay = targetAmount - totalAllocated;
+        if (remainingToPay < 0) remainingToPay = 0;
+
+        let trueRemaining = totalAmountDuty - totalAllocated;
+        if (trueRemaining < 0) trueRemaining = 0;
+
+        window.currentActiveClientState.targetAmount = targetAmount;
+        window.currentActiveClientState.remainingToPay = remainingToPay;
+        window.currentActiveClientState.totalDutyPrepaid = totalDutyPrepaid;
+        window.currentActiveClientState.trueRemaining = trueRemaining;
+        window.currentActiveClientState.totalGSheetBalance = totalGSheetBalance;
+        window.currentActiveClientState.allConfirmed = allConfirmed;
+
+        // Atualiza a UI do card de pagamento sem destruir nada além do card
+        updatePaymentCardUI();
+    }
 }
 
 // === LÓGICA DO MODAL DE EDIÇÃO DE DUTY === //
@@ -1862,8 +2050,8 @@ export function handleConfirmRealtimeEvent(e) {
                     // Apenas atualiza visualmente o detalhe se o usuário estiver de facto na tela de detalhes
                     const detailView = document.getElementById('view-confirm-client-detail');
                     if (detailView && !detailView.classList.contains('hidden')) {
-                        console.log("[SSE-FASE-4][DETALHE-RE-RENDER] O ecrã de detalhe está ativo e visível. Re-renderizando...");
-                        showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+                        console.log("[SSE-FASE-4][DETALHE-RE-RENDER] O ecrã de detalhe está ativo e visível. Atualizando linha suavemente...");
+                        updateConfirmDetailRow(row, payload.rowData);
                     }
                 }
             }
@@ -1892,6 +2080,31 @@ export function handleConfirmRealtimeEvent(e) {
     const searchEl = document.getElementById('input-confirm-search');
     const searchText = searchEl?.value || '';
     renderConfirmList(state.confirm.data, searchText, statusFilter);
+}
+
+export function handleBankRealtimeEvent(e) {
+    const record = e.record;
+    if (!record) return;
+
+    console.log(`[SSE-BANCO][RECEÇÃO-UI] Evento '${e.action}' no bank_incomes:`, record);
+
+    // 1. Se estivermos na aba Banco (Extratos), atualiza a tabela
+    const financeView = document.getElementById('view-finance');
+    if (financeView && !financeView.classList.contains('hidden')) {
+        console.log("[SSE-BANCO][UI] Tela do Banco está ativa. Atualizando extratos...");
+        if (typeof window.handleManualFinanceRefresh === 'function') {
+            window.handleManualFinanceRefresh();
+        }
+    }
+
+    // 2. Se o mini-filtro de pagamentos estiver aberto, atualiza a lista
+    const paymentMiniFilter = document.getElementById('payment-mini-filter');
+    if (paymentMiniFilter && !paymentMiniFilter.classList.contains('hidden')) {
+        console.log("[SSE-BANCO][UI] Mini-filtro de pagamentos está aberto. Atualizando a lista...");
+        if (typeof searchPaymentMiniFilter === 'function') {
+            searchPaymentMiniFilter();
+        }
+    }
 }
 
 function updateLocksUI() {
@@ -2176,13 +2389,9 @@ export async function saveConfirmOrderEdit(e) {
             });
         }
         
-        // Re-renderizar os detalhes do cliente
+        // Re-renderizar os detalhes do cliente suavemente
         if (window.currentActiveClient) {
-            window.currentActiveClient.rows = window.currentActiveClient.rows.map(r => ({
-                ...r,
-                originalRow: state.confirm.data[r.originalIndex]
-            }));
-            showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+            updateConfirmDetailRow(o.originalIndex, rowData);
         }
 
     } catch (err) {
@@ -2253,13 +2462,9 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
             });
         }
 
-        // 3. Re-renderizar
+        // 3. Re-renderizar suavemente
         if (window.currentActiveClient) {
-            window.currentActiveClient.rows = window.currentActiveClient.rows.map(r => ({
-                ...r,
-                originalRow: state.confirm.data[r.originalIndex]
-            }));
-            showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+            updateConfirmDetailRow(originalRowIndex, rowData);
         }
     } catch (err) {
         console.error(err);
@@ -3517,8 +3722,18 @@ export async function confirmPaymentSelection() {
             renderConfirmList(state.confirm.data, term);
         }
         
-        // Mostrar a vista principal atualizada
-        showView('view-confirm-table');
+        // Atualizar suavemente os detalhes do cliente se o operador estiver nele
+        const detailView = document.getElementById('view-confirm-client-detail');
+        if (detailView && !detailView.classList.contains('hidden')) {
+            if (window.currentActiveClient && window.currentActiveClient.rows) {
+                window.currentClientRows.forEach(rowObj => {
+                    const updatedRowData = state.confirm.data[rowObj.originalIndex];
+                    updateConfirmDetailRow(rowObj.originalIndex, updatedRowData);
+                });
+            }
+        } else {
+            showView('view-confirm-table');
+        }
 
     } catch (e) {
         console.error('Erro ao vincular pagamento:', e);

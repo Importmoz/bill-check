@@ -1198,6 +1198,14 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
         if (typeof api.subscribeConfirmEvents === 'function' && typeof ui.handleConfirmRealtimeEvent === 'function') {
             api.subscribeConfirmEvents(sheetId, ui.handleConfirmRealtimeEvent);
         }
+
+        // Subscrever eventos de banco em tempo real
+        if (typeof api.subscribeBankEvents === 'function' && typeof ui.handleBankRealtimeEvent === 'function') {
+            api.subscribeBankEvents(ui.handleBankRealtimeEvent);
+        }
+
+        // Iniciar polling de atualizações externas da planilha
+        startGSheetPolling(sheetId);
         
         // Configura o explorador de Drive
         currentProjectRootFolderId = folderId;
@@ -1695,15 +1703,124 @@ async function saveConfirmToSheet() {
             await api.emitConfirmEvent(spreadsheetId, currentConfirmRow.index, 'UNLOCK');
         }
         
-        // Recarregar a lista atual e forçar a vista para 'PENDENTE'
-        if (currentProjectSheetId) {
-            const data = await api.readGSheet(currentProjectSheetId);
-            const filterEl = document.getElementById('confirm-status-filter');
-            if (filterEl) filterEl.value = 'PENDENTE';
-            ui.renderConfirmList(data, "", "PENDENTE");
-            ui.showView('view-confirm-table');
+        // Atualizar estado local com os novos dados da linha de forma síncrona
+        if (api.state.confirm && api.state.confirm.data) {
+            api.state.confirm.data[currentConfirmRow.index] = updatedRow;
         }
+
+        // Atualizar a lista localmente de forma instantânea
+        const filterEl = document.getElementById('confirm-status-filter');
+        if (filterEl) filterEl.value = 'PENDENTE';
+        ui.renderConfirmList(api.state.confirm.data, "", "PENDENTE");
+        ui.showView('view-confirm-table');
     } catch (err) { ui.toast("Erro ao gravar: " + err.message, "error"); }
     finally { ui.setBtnLoading(btn, false); }
 }
+
+// --- POLLING GOOGLE SHEETS METADATA ---
+let gsheetPollingInterval = null;
+let gsheetPollingActive = false;
+
+function startGSheetPolling(spreadsheetId) {
+    stopGSheetPolling();
+    gsheetPollingActive = false;
+    
+    console.log(`[POLLING] Iniciando verificação de atualizações para o GSheet: ${spreadsheetId}`);
+    gsheetPollingInterval = setInterval(async () => {
+        if (gsheetPollingActive) {
+            console.log("[POLLING] Ignorando verificação: leitura anterior ainda activa.");
+            return;
+        }
+
+        const isConfirmTableVisible = !document.getElementById('view-confirm-table')?.classList.contains('hidden');
+        const isClientDetailVisible = !document.getElementById('view-confirm-client-detail')?.classList.contains('hidden');
+        
+        if (!isConfirmTableVisible && !isClientDetailVisible) {
+            return;
+        }
+
+        const editModal = document.getElementById('confirm-edit-modal');
+        if (editModal && !editModal.classList.contains('hidden')) {
+            return;
+        }
+
+        try {
+            gsheetPollingActive = true;
+            
+            const lastTime = api.state.confirm.lastModifiedTime;
+            const res = await fetch('/api/google/sheet/check-update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ spreadsheetId, lastModifiedTime: lastTime })
+            });
+            if (res.ok) {
+                const checkData = await res.json();
+                if (checkData.updated) {
+                    console.log(`[POLLING] Planilha modificada externamente! Novo modifiedTime: ${checkData.modifiedTime}. Recarregando silenciosamente...`);
+                    
+                    // Sincronizar o lastModifiedTime local de imediato para evitar que a próxima iteração use a data antiga
+                    api.state.confirm.lastModifiedTime = checkData.modifiedTime;
+                    
+                    const freshData = await api.readGSheet(spreadsheetId);
+                    
+                    // Atualiza a tabela principal se activa
+                    if (isConfirmTableVisible) {
+                        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
+                        const searchEl = document.getElementById('input-confirm-search');
+                        const searchText = searchEl?.value || '';
+                        ui.renderConfirmList(freshData, searchText, statusFilter);
+                    }
+                    
+                    // Se estiver no detalhe do cliente ativo, atualiza suas ordens
+                    if (isClientDetailVisible && window.currentActiveClient) {
+                        const clientIndex = window.currentActiveClientIndex;
+                        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
+                        const searchEl = document.getElementById('input-confirm-search');
+                        const searchText = searchEl?.value || '';
+                        ui.renderConfirmList(freshData, searchText, statusFilter);
+                        
+                        const freshClient = api.state.confirm.groupedClients?.find(c => 
+                            (c.groupId && window.currentActiveClient.groupId && c.groupId === window.currentActiveClient.groupId) || 
+                            (c.displayIdCode && c.displayIdCode === window.currentActiveClient.displayIdCode)
+                        );
+                        if (freshClient) {
+                            console.log("[POLLING] Comparando e atualizando pontualmente faturas do cliente ativo:", freshClient.groupId);
+                            
+                            // Atualizar apenas as faturas/ordens que sofreram alterações reais no GSheet
+                            if (window.currentActiveClient.rows && freshClient.rows) {
+                                freshClient.rows.forEach(newRow => {
+                                    const oldRow = window.currentActiveClient.rows.find(r => r.originalIndex === newRow.originalIndex);
+                                    if (oldRow) {
+                                        const hasChanged = JSON.stringify(oldRow.originalRow) !== JSON.stringify(newRow.originalRow);
+                                        if (hasChanged) {
+                                            console.log(`[POLLING] Linha ${newRow.originalIndex} modificada. Atualizando suavemente no DOM.`);
+                                            ui.updateConfirmDetailRow(newRow.originalIndex, newRow.originalRow);
+                                        }
+                                    }
+                                });
+                            }
+                            
+                            // Manter a referência sincronizada na memória
+                            window.currentActiveClient = freshClient;
+                        }
+                    }
+                }
+            }
+        } catch (pollErr) {
+            console.warn("[POLLING] Erro ao verificar atualizações do GSheet:", pollErr);
+        } finally {
+            gsheetPollingActive = false;
+        }
+    }, 5000);
+}
+
+function stopGSheetPolling() {
+    if (gsheetPollingInterval) {
+        console.log("[POLLING] Parando polling de atualizações.");
+        clearInterval(gsheetPollingInterval);
+        gsheetPollingInterval = null;
+    }
+}
+
+window.stopGSheetPolling = stopGSheetPolling;
 

@@ -364,4 +364,37 @@ router.post('/sheet/update', async (req, res) => {
   }
 });
 
+// Verificar se a planilha foi atualizada (polling de metadados do Drive)
+router.post('/sheet/check-update', async (req, res) => {
+  try {
+    const { spreadsheetId, lastModifiedTime } = req.body;
+    if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
+
+    const auth = await getGoogleAuth();
+    const drive = google.drive({ version: 'v3', auth });
+
+    const response = await drive.files.get({
+      fileId: spreadsheetId,
+      fields: 'modifiedTime'
+    });
+
+    const currentModifiedTime = response.data.modifiedTime;
+    
+    let updated = false;
+    if (lastModifiedTime && currentModifiedTime) {
+      updated = new Date(currentModifiedTime).getTime() > new Date(lastModifiedTime).getTime();
+    }
+
+    res.json({
+      updated,
+      modifiedTime: currentModifiedTime
+    });
+  } catch (error) {
+    console.error('SERVER ERROR (Sheet Check Update):', error.message);
+    if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
+    const status = (error.message.includes('AUTH_REQUIRED') || error.message.includes('invalid_grant')) ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
 module.exports = router;
