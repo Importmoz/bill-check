@@ -364,6 +364,34 @@ router.post('/sheet/update', async (req, res) => {
   }
 });
 
+// Atualizar planilhas em lote (Batch Update)
+router.post('/sheet/batch-update', async (req, res) => {
+  try {
+    const { spreadsheetId, data } = req.body;
+    if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
+    if (!data || !Array.isArray(data)) return res.status(400).json({ error: "Data array is required" });
+
+    const auth = await getGoogleAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+    
+    console.log(`[BACKEND] Executando batchUpdate de planilhas. Total de ranges: ${data.length}`);
+    const response = await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId,
+      resource: {
+        valueInputOption: 'USER_ENTERED',
+        data: data
+      }
+    });
+    res.json(response.data);
+  } catch (error) {
+    console.error('SERVER ERROR (Sheet Batch Update):', error.message);
+    if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
+    const status = (error.message.includes('AUTH_REQUIRED') || error.message.includes('invalid_grant')) ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+
 // Verificar se a planilha foi atualizada (polling de metadados do Drive)
 router.post('/sheet/check-update', async (req, res) => {
   try {

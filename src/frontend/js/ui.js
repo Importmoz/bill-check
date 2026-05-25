@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetBatch, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
 
 /**
  * Controla o indicador de carregamento
@@ -1603,8 +1603,11 @@ export async function showConfirmDetail(client, clientIndex) {
         }
 
         let targetAmount = totalAmountDuty; // Baseamos o alvo no total do dever (Duty)
-        if (totalPaid > 0) targetAmount = totalPaid; // Se já tiverem preenchido o pago, usamos o pago
-        if (totalDutyPrepaid > 0) targetAmount = totalDutyPrepaid; // Se for prepaid, o alvo é o prepaid
+        if (totalDutyPrepaid > 0) {
+            targetAmount = totalDutyPrepaid; // Se for prepaid, o alvo é o prepaid
+        } else if (totalPaid > totalAmountDuty) {
+            targetAmount = totalPaid; // Se houver overpayment, usamos o pago
+        }
 
         // Buscar todos os pagamentos já alocados a este cliente
         const payments = await getPaymentsByAllocatedTo(combinedInfo);
@@ -1698,7 +1701,8 @@ export async function showConfirmDetail(client, clientIndex) {
             trueRemaining,
             payments,
             totalGSheetBalance,
-            allConfirmed
+            allConfirmed,
+            totalPaid
         };
 
         const cardHtml = getPaymentCardHtml(client, window.currentActiveClientState);
@@ -1896,8 +1900,11 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     // Atualizar no estado global do cliente ativo para o card de pagamento
     if (window.currentActiveClientState) {
         let targetAmount = totalAmountDuty;
-        if (totalPaid > 0) targetAmount = totalPaid;
-        if (totalDutyPrepaid > 0) targetAmount = totalDutyPrepaid;
+        if (totalDutyPrepaid > 0) {
+            targetAmount = totalDutyPrepaid;
+        } else if (totalPaid > totalAmountDuty) {
+            targetAmount = totalPaid;
+        }
 
         const payments = window.currentActiveClientState.payments || [];
         let totalAllocated = 0;
@@ -1915,6 +1922,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         window.currentActiveClientState.trueRemaining = trueRemaining;
         window.currentActiveClientState.totalGSheetBalance = totalGSheetBalance;
         window.currentActiveClientState.allConfirmed = allConfirmed;
+        window.currentActiveClientState.totalPaid = totalPaid;
 
         // Atualiza a UI do card de pagamento sem destruir nada além do card
         updatePaymentCardUI();
@@ -2165,17 +2173,20 @@ export function getPaymentCardHtml(client, stateObj) {
         trueRemaining,
         payments,
         totalGSheetBalance,
-        allConfirmed
+        allConfirmed,
+        totalPaid
     } = stateObj;
 
-    // Lógica do utilizador:
-    // 1. Mostrar o card se o somatório do balance for igual a 0.
-    // 2. Ocultar o card se o balance não for igual a 0 (diferente de 0).
-    // 3. Ocultar o card se todas as ordens já estiverem com status "CONFIRMADO".
+    // Lógica do utilizador adaptada para pagamentos parciais:
+    // O card deve estar visível se o cliente não estiver totalmente confirmado
+    // E (o saldo na planilha for zero, OU houver pagamentos vinculados, OU houver um valor pago na planilha).
     const isBalanceZero = totalGSheetBalance !== undefined && Math.abs(totalGSheetBalance) < 0.01;
     const isAllConfirmed = allConfirmed === true;
+    const hasPaymentsLinked = payments && payments.length > 0;
+    const hasPaidAmount = totalPaid !== undefined && totalPaid > 0.01;
 
-    if (!isBalanceZero || isAllConfirmed) {
+    const shouldShowCard = !isAllConfirmed && (isBalanceZero || hasPaymentsLinked || hasPaidAmount);
+    if (!shouldShowCard) {
         return '';
     }
 
@@ -2543,6 +2554,8 @@ export async function applyBulkUpdate() {
 
         let updatedCount = 0;
         let skippedCount = 0;
+        const batchUpdates = [];
+        const localUpdates = [];
 
         for (const rowInfo of window.currentClientRows) {
             const originalIndex = rowInfo.originalIndex;
@@ -2589,23 +2602,38 @@ export async function applyBulkUpdate() {
                 // Emitir LOCK temporário para o real-time
                 emitConfirmEvent(spreadsheetId, originalIndex, 'LOCK', { name: pb.authStore.model?.name || 'Utilizador' });
 
-                // Salvar no Google Sheets
+                // Acumular a gravação no Google Sheets
                 const rowNum = originalIndex + 1;
                 const range = `${cleanSheetName}!A${rowNum}:Z${rowNum}`;
-                await updateGSheet(spreadsheetId, range, [rowData]);
-
-                // Atualizar estado local
-                state.confirm.data[originalIndex] = rowData;
-
-                // Emitir UPDATE e UNLOCK
-                emitConfirmEvent(spreadsheetId, originalIndex, 'UPDATE', {
-                    status: selectedStatus || rowData[statusIdx] || 'PENDENTE',
-                    rowData: rowData,
-                    name: pb.authStore.model?.name || 'Utilizador'
+                batchUpdates.push({
+                    range,
+                    values: [rowData]
                 });
-                emitConfirmEvent(spreadsheetId, originalIndex, 'UNLOCK');
+
+                localUpdates.push({
+                    originalIndex,
+                    rowData,
+                    status: selectedStatus || rowData[statusIdx] || 'PENDENTE'
+                });
 
                 updatedCount++;
+            }
+        }
+
+        if (batchUpdates.length > 0) {
+            await updateGSheetBatch(spreadsheetId, batchUpdates);
+
+            for (const item of localUpdates) {
+                // Atualizar estado local
+                state.confirm.data[item.originalIndex] = item.rowData;
+
+                // Emitir UPDATE e UNLOCK
+                emitConfirmEvent(spreadsheetId, item.originalIndex, 'UPDATE', {
+                    status: item.status,
+                    rowData: item.rowData,
+                    name: pb.authStore.model?.name || 'Utilizador'
+                });
+                emitConfirmEvent(spreadsheetId, item.originalIndex, 'UNLOCK');
             }
         }
 
@@ -3427,10 +3455,7 @@ export function renderBankOwnerSummary() {
 
 // === LÓGICA DO MINI-FILTRO DE PAGAMENTOS === //
 
-let selectedPaymentIdForLink = null;
-let selectedPaymentDate = null;
-let selectedPaymentRef = null;
-let selectedPaymentMaxAmount = 0;
+let selectedPaymentsForLink = [];
 let searchPaymentTimeout = null;
 let currentMiniFilterExpectedAmount = 0;
 
@@ -3559,9 +3584,7 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
         document.getElementById('mini-filter-comment').value = '';
     }
 
-    selectedPaymentIdForLink = null;
-    selectedPaymentDate = null;
-    selectedPaymentMaxAmount = 0;
+    selectedPaymentsForLink = [];
 
     searchPaymentMiniFilter();
 }
@@ -3591,16 +3614,24 @@ export async function searchPaymentMiniFilter() {
 
             results.forEach(rec => {
                 const tr = document.createElement('tr');
-                tr.className = 'hover:bg-blue-50 cursor-pointer transition-colors border-b border-slate-50';
+                const isSelected = selectedPaymentsForLink.some(p => p.id === rec.id);
+                const checkedAttr = isSelected ? 'checked' : '';
+                const rowClass = isSelected ? 'bg-blue-100 border-blue-200 font-bold' : 'hover:bg-blue-50';
+
+                tr.className = `${rowClass} cursor-pointer transition-colors border-b border-slate-50`;
+                tr.dataset.id = rec.id;
 
                 const refText = rec.reference || rec.description || '';
-                tr.onclick = () => selectPaymentResult(rec.id, rec.date, refText, tr, rec.amount);
+                tr.onclick = () => togglePaymentSelection(rec.id, rec.date, refText, rec.amount);
 
                 // Formatar Data
                 const dateStr = rec.date ? rec.date.split(' ')[0] : '—';
                 const amountFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(rec.amount);
 
                 tr.innerHTML = `
+                    <td class="px-3 py-2 text-center" onclick="event.stopPropagation();">
+                        <input type="checkbox" ${checkedAttr} onchange="ui.togglePaymentSelection('${rec.id}', '${rec.date}', '${refText.replace(/'/g, "\\'")}', parseFloat('${rec.amount}'))" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                    </td>
                     <td class="px-4 py-3 whitespace-nowrap">${dateStr}</td>
                     <td class="px-4 py-3 font-semibold text-slate-700">${rec.bank || '—'}</td>
                     <td class="px-4 py-3 text-slate-600 truncate max-w-xs" title="${rec.description}">${rec.description || rec.reference || '—'}</td>
@@ -3625,7 +3656,6 @@ export function checkMiniFilterStatus() {
                 document.getElementById('mini-filter-comment-container').classList.remove('hidden');
             }
         } else if (allocated > 0 && allocated >= (currentMiniFilterExpectedAmount - 1.0)) {
-            // Se já não houver diferença em falta, coloca CONFIRMADO por padrão
             if (statusSelect.value === 'PARCIAL' || statusSelect.value === 'PENDENTE') {
                 statusSelect.value = 'CONFIRMADO';
                 document.getElementById('mini-filter-comment-container').classList.add('hidden');
@@ -3634,24 +3664,52 @@ export function checkMiniFilterStatus() {
     }
 }
 
-export function selectPaymentResult(id, date, ref, trElement, fullAmount) {
-    selectedPaymentIdForLink = id;
-    selectedPaymentDate = date;
-    selectedPaymentRef = ref;
-    selectedPaymentMaxAmount = parseFloat(fullAmount);
+export function togglePaymentSelection(id, date, ref, fullAmount) {
+    const idx = selectedPaymentsForLink.findIndex(p => p.id === id);
+    if (idx !== -1) {
+        selectedPaymentsForLink.splice(idx, 1);
+    } else {
+        selectedPaymentsForLink.push({
+            id: id,
+            date: date,
+            ref: ref,
+            amount: parseFloat(fullAmount)
+        });
+    }
 
-    // Destacar linha
+    // Atualizar a linha correspondente no DOM (se estiver visível)
     const tbody = document.getElementById('mini-filter-results');
-    Array.from(tbody.rows).forEach(r => r.classList.remove('bg-blue-100', 'border-blue-200'));
-    trElement.classList.add('bg-blue-100', 'border-blue-200');
+    if (tbody) {
+        const row = Array.from(tbody.rows).find(r => r.dataset.id === id);
+        if (row) {
+            const isSelected = selectedPaymentsForLink.some(p => p.id === id);
+            const checkbox = row.querySelector('input[type="checkbox"]');
+            if (checkbox) checkbox.checked = isSelected;
+            if (isSelected) {
+                row.classList.add('bg-blue-100', 'border-blue-200', 'font-bold');
+                row.classList.remove('hover:bg-blue-50');
+            } else {
+                row.classList.remove('bg-blue-100', 'border-blue-200', 'font-bold');
+                row.classList.add('hover:bg-blue-50');
+            }
+        }
+    }
+
+    // Recalcular o total disponível selecionado
+    const totalMaxAvailable = selectedPaymentsForLink.reduce((sum, p) => sum + p.amount, 0);
 
     // Preencher campo de alocação com o valor sugerido
-    const suggested = Math.min(currentMiniFilterExpectedAmount, selectedPaymentMaxAmount);
-    document.getElementById('mini-filter-allocate-amount').value = suggested.toFixed(2);
-    document.getElementById('mini-filter-max-available').innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(selectedPaymentMaxAmount);
-    
-    // Atualizar visualmente o status para refletir a nova alocação
+    const suggested = Math.min(currentMiniFilterExpectedAmount, totalMaxAvailable);
+    document.getElementById('mini-filter-allocate-amount').value = suggested > 0 ? suggested.toFixed(2) : '';
+    document.getElementById('mini-filter-max-available').innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(totalMaxAvailable);
+
+    // Atualizar visualização do status para refletir a nova alocação
     checkMiniFilterStatus();
+}
+
+// Manter retrocompatibilidade se alguma outra parte chamar
+export function selectPaymentResult(id, date, ref, trElement, fullAmount) {
+    togglePaymentSelection(id, date, ref, fullAmount);
 }
 
 export async function confirmPaymentSelection() {
@@ -3659,22 +3717,21 @@ export async function confirmPaymentSelection() {
     const combinedInfo = document.getElementById('mini-filter-combined-info').value;
     const allocatedAmount = parseFloat(document.getElementById('mini-filter-allocate-amount').value) || 0;
 
+    const totalMaxAvailable = selectedPaymentsForLink.reduce((sum, p) => sum + p.amount, 0);
+
     if (status === 'CONFIRMADO') {
-        if (!selectedPaymentIdForLink) {
-            ui.toast('Para marcar como CONFIRMADO, selecione primeiro um pagamento na lista.', "warning");
+        if (selectedPaymentsForLink.length === 0) {
+            ui.toast('Para marcar como CONFIRMADO, selecione primeiro um ou mais pagamentos na lista.', "warning");
             return;
         }
-
-
-
 
         if (allocatedAmount <= 0) {
             ui.toast("Por favor, insira um valor válido para alocar.", "warning");
             return;
         }
 
-        if (allocatedAmount > selectedPaymentMaxAmount + 0.01) {
-            ui.toast("O valor a alocar não pode ser superior ao valor disponível no pagamento.", "warning");
+        if (allocatedAmount > totalMaxAvailable + 0.01) {
+            ui.toast("O valor a alocar não pode ser superior ao valor disponível nos pagamentos selecionados.", "warning");
             return;
         }
     }
@@ -3685,12 +3742,30 @@ export async function confirmPaymentSelection() {
         setBtnLoading(btn, true, 'Vincular...');
         setLoader(true, 'A gravar reconciliação...');
 
-        // 1. Atualizar PocketBase com lógica de Split
-        if (selectedPaymentIdForLink && allocatedAmount > 0) {
-            await markPaymentReconciled(selectedPaymentIdForLink, combinedInfo, allocatedAmount);
+        // 1. Distribuir o valor alocado e atualizar PocketBase
+        const usedPayments = [];
+        if (selectedPaymentsForLink.length > 0 && allocatedAmount > 0) {
+            let allocatedAmountRemaining = allocatedAmount;
+            for (const pay of selectedPaymentsForLink) {
+                if (allocatedAmountRemaining <= 0) break;
+                const toAllocate = Math.min(allocatedAmountRemaining, pay.amount);
+                if (toAllocate > 0) {
+                    usedPayments.push({
+                        id: pay.id,
+                        date: pay.date,
+                        ref: pay.ref,
+                        amount: toAllocate
+                    });
+                    allocatedAmountRemaining -= toAllocate;
+                }
+            }
         }
 
-        // 2. Atualizar Google Sheet (marcar como CONFIRMADO e a DATA)
+        for (const up of usedPayments) {
+            await markPaymentReconciled(up.id, combinedInfo, up.amount);
+        }
+
+        // 2. Google Sheet - Distribuir saldos e escrever as datas das respectivas transações utilizadas
         if (window.currentClientRows && window.currentClientRows.length > 0) {
             const columns = state.confirm.columns || [];
             
@@ -3743,18 +3818,6 @@ export async function confirmPaymentSelection() {
                 }
                 const prefix = sheetName ? `${sheetName}!` : '';
 
-                // Formatar a data para o GSheet (MM/DD/YYYY) conforme solicitado
-                let formattedDateForSheet = selectedPaymentDate;
-                if (selectedPaymentDate) {
-                    const d = new Date(selectedPaymentDate);
-                    if (!isNaN(d.getTime())) {
-                        const dd = String(d.getDate()).padStart(2, '0');
-                        const mm = String(d.getMonth() + 1).padStart(2, '0');
-                        const yyyy = d.getFullYear();
-                        formattedDateForSheet = `${mm}/${dd}/${yyyy}`;
-                    }
-                }
-
                 // Encontrar o originalIndex da primeira linha (ordem) do cliente ativo
                 const sortedClientRows = [...window.currentClientRows].sort((a, b) => a.originalIndex - b.originalIndex);
                 const firstRowIndex = sortedClientRows[0]?.originalIndex;
@@ -3762,22 +3825,30 @@ export async function confirmPaymentSelection() {
                 let allocatedAmountRemaining = allocatedAmount;
                 const filterStatus = document.getElementById('mini-filter-status')?.value || 'CONFIRMADO';
 
+                // Criar rastreadores de contribuição para cada pagamento usado
+                const payTrackers = usedPayments.map(up => ({
+                    date: up.date,
+                    remaining: up.amount
+                }));
+
+                const batchUpdates = [];
+                const localStateUpdates = [];
+
                 // Fazer o update para cada linha deste cliente
                 for (const rowObj of window.currentClientRows) {
                     const sheetRowNumber = rowObj.originalIndex + 1;
-                    const updates = [];
+                    const originalIndex = rowObj.originalIndex;
+                    const rowData = [...state.confirm.data[originalIndex]];
 
                     let newStatus = filterStatus;
 
                     if (newStatus === 'PENDENTE') {
                         // Reverter pagamentos
                         if (paidIdx !== -1) {
-                            updates.push({ idx: paidIdx, val: '' });
-                            state.confirm.data[rowObj.originalIndex][paidIdx] = '';
+                            rowData[paidIdx] = '';
                         }
                         if (balanceIdx !== -1) {
-                            updates.push({ idx: balanceIdx, val: rowObj.amountDuty });
-                            state.confirm.data[rowObj.originalIndex][balanceIdx] = rowObj.amountDuty;
+                            rowData[balanceIdx] = rowObj.amountDuty;
                         }
                     } else {
                         // Distribuir o valor do pagamento
@@ -3792,12 +3863,10 @@ export async function confirmPaymentSelection() {
                         const newBalance = Math.max(0, currentBalance - allocatedForThisRow);
 
                         if (paidIdx !== -1) {
-                            updates.push({ idx: paidIdx, val: newPaid });
-                            state.confirm.data[rowObj.originalIndex][paidIdx] = newPaid;
+                            rowData[paidIdx] = newPaid;
                         }
                         if (balanceIdx !== -1) {
-                            updates.push({ idx: balanceIdx, val: newBalance });
-                            state.confirm.data[rowObj.originalIndex][balanceIdx] = newBalance;
+                            rowData[balanceIdx] = newBalance;
                         }
 
                         if (newStatus === 'CONFIRMADO') {
@@ -3805,72 +3874,120 @@ export async function confirmPaymentSelection() {
                                 newStatus = 'PARCIAL';
                             }
                         }
-                    }
 
-                    if (statusIdx !== -1) {
-                        updates.push({ idx: statusIdx, val: newStatus });
-                        state.confirm.data[rowObj.originalIndex][statusIdx] = newStatus;
-                    }
-
-                    // Encontrar a primeira coluna PAG vazia
-                    const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
-                    let dateWritten = false;
-
-                    if (newStatus !== 'PENDENTE') {
-                        for (const pIdx of pagIndices) {
-                            const val = state.confirm.data[rowObj.originalIndex][pIdx];
-                            if (!val || String(val).trim() === '') {
-                                updates.push({ idx: pIdx, val: formattedDateForSheet });
-                                state.confirm.data[rowObj.originalIndex][pIdx] = formattedDateForSheet;
-                                dateWritten = true;
-                                break;
+                        // Determinar quais pagamentos contribuíram para esta linha
+                        let rowAllocatedRemaining = allocatedForThisRow;
+                        const rowPaymentDates = [];
+                        for (const pt of payTrackers) {
+                            if (rowAllocatedRemaining <= 0) break;
+                            const contribution = Math.min(rowAllocatedRemaining, pt.remaining);
+                            if (contribution > 0) {
+                                rowPaymentDates.push(pt.date);
+                                pt.remaining -= contribution;
+                                rowAllocatedRemaining -= contribution;
                             }
                         }
 
-                        // Se não houver PAG vazia mas as colunas existirem, sobrepõe a última
-                        if (!dateWritten && pagIndices.length > 0) {
-                            const lastPagIdx = pagIndices[pagIndices.length - 1];
-                            updates.push({ idx: lastPagIdx, val: formattedDateForSheet });
-                            state.confirm.data[rowObj.originalIndex][lastPagIdx] = formattedDateForSheet;
-                        }
-                    } else {
-                        // Se for PENDENTE, limpar as datas de pagamento
+                        // Formatar as datas
+                        const formattedDates = rowPaymentDates.map(dStr => {
+                            if (!dStr) return '';
+                            const d = new Date(dStr);
+                            if (isNaN(d.getTime())) return dStr;
+                            const dd = String(d.getDate()).padStart(2, '0');
+                            const mm = String(d.getMonth() + 1).padStart(2, '0');
+                            const yyyy = d.getFullYear();
+                            return `${mm}/${dd}/${yyyy}`;
+                        });
+
+                        // Encontrar as colunas PAG vazias e escrever as datas
+                        const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
+                        let dateIdx = 0;
+                        
                         for (const pIdx of pagIndices) {
-                            updates.push({ idx: pIdx, val: '' });
-                            state.confirm.data[rowObj.originalIndex][pIdx] = '';
+                            if (dateIdx >= formattedDates.length) break;
+                            const val = rowData[pIdx];
+                            if (!val || String(val).trim() === '') {
+                                const formattedDateForSheet = formattedDates[dateIdx++];
+                                rowData[pIdx] = formattedDateForSheet;
+                            }
+                        }
+
+                        // Se ainda sobrarem datas e não couberem em colunas vazias, sobrepõe a última
+                        if (dateIdx < formattedDates.length && pagIndices.length > 0) {
+                            const lastPagIdx = pagIndices[pagIndices.length - 1];
+                            const formattedDateForSheet = formattedDates[formattedDates.length - 1];
+                            rowData[lastPagIdx] = formattedDateForSheet;
                         }
                     }
 
-                    // Enviar atualizações para o GSheet
-                    for (const u of updates) {
-                        const colLetter = getColLetter(u.idx);
-                        const rangeToUpdate = `${prefix}${colLetter}${sheetRowNumber}`;
-
-                        await updateGSheet(state.confirm.sheetId, rangeToUpdate, [[u.val]]);
+                    if (statusIdx !== -1) {
+                        rowData[statusIdx] = newStatus;
                     }
 
-                    // 3. Gerir a NOTA e a COR (DEPOIS de gravar os valores)
+                    if (newStatus === 'PENDENTE') {
+                        // Se for PENDENTE, limpar as datas de pagamento
+                        const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
+                        for (const pIdx of pagIndices) {
+                            rowData[pIdx] = '';
+                        }
+                    }
+
+                    // Acumular para o lote do Google Sheets
+                    const lastColLetter = getColLetter(rowData.length - 1);
+                    const rangeToUpdate = `${prefix}A${sheetRowNumber}:${lastColLetter}${sheetRowNumber}`;
+                    batchUpdates.push({
+                        range: rangeToUpdate,
+                        values: [rowData]
+                    });
+
+                    localStateUpdates.push({
+                        originalIndex,
+                        rowData,
+                        newStatus
+                    });
+                }
+
+                // 1. Enviar todas as atualizações de valores no GSheet em uma única chamada de lote
+                if (batchUpdates.length > 0) {
+                    await updateGSheetBatch(state.confirm.sheetId, batchUpdates);
+                }
+
+                // 2. Atualizar estado local
+                for (const item of localStateUpdates) {
+                    state.confirm.data[item.originalIndex] = item.rowData;
+                }
+
+                // 3. Gerir as NOTAS e as CORES de forma otimizada
+                if (statusIdx !== -1) {
                     const comment = document.getElementById('mini-filter-comment')?.value || '';
-                    if (statusIdx !== -1) {
+                    const cleanSheetName = sheetName.replace(/'/g, '');
+
+                    for (const item of localStateUpdates) {
+                        const originalIndex = item.originalIndex;
                         try {
-                            const cleanSheetName = sheetName.replace(/'/g, '');
-                            
-                            if (rowObj.originalIndex === firstRowIndex) {
-                                // Define a cor: Amarelo se tiver comentário, Branco se estiver vazio
-                                const cellColor = comment.trim() !== '' ? 'yellow' : 'clear';
-                                await updateGSheetNote(state.confirm.sheetId, cleanSheetName, rowObj.originalIndex, statusIdx, comment.trim(), cellColor);
-                                
-                                // Atualizar estado local
-                                if (!state.confirm.notes) state.confirm.notes = [];
-                                if (!state.confirm.notes[rowObj.originalIndex]) state.confirm.notes[rowObj.originalIndex] = [];
-                                state.confirm.notes[rowObj.originalIndex][statusIdx] = comment.trim();
+                            if (originalIndex === firstRowIndex) {
+                                const existingNote = state.confirm.notes?.[originalIndex]?.[statusIdx] || '';
+                                const hasNewComment = comment.trim() !== '';
+                                const needsNoteUpdate = hasNewComment || existingNote.trim() !== '';
+
+                                if (needsNoteUpdate) {
+                                    const cellColor = hasNewComment ? 'yellow' : 'clear';
+                                    await updateGSheetNote(state.confirm.sheetId, cleanSheetName, originalIndex, statusIdx, comment.trim(), cellColor);
+                                    
+                                    // Atualizar estado local
+                                    if (!state.confirm.notes) state.confirm.notes = [];
+                                    if (!state.confirm.notes[originalIndex]) state.confirm.notes[originalIndex] = [];
+                                    state.confirm.notes[originalIndex][statusIdx] = comment.trim();
+                                }
                             } else {
-                                // Limpar a nota das outras ordens do cliente no GSheet
-                                await updateGSheetNote(state.confirm.sheetId, cleanSheetName, rowObj.originalIndex, statusIdx, '', 'clear');
-                                
-                                // Atualizar estado local
-                                if (state.confirm.notes && state.confirm.notes[rowObj.originalIndex]) {
-                                    state.confirm.notes[rowObj.originalIndex][statusIdx] = '';
+                                const existingNote = state.confirm.notes?.[originalIndex]?.[statusIdx] || '';
+                                if (existingNote.trim() !== '') {
+                                    await updateGSheetNote(state.confirm.sheetId, cleanSheetName, originalIndex, statusIdx, '', 'clear');
+                                    
+                                    // Atualizar estado local
+                                    if (state.confirm.notes && state.confirm.notes[originalIndex]) {
+                                        state.confirm.notes[originalIndex][statusIdx] = '';
+                                    }
                                 }
                             }
                         } catch (noteErr) {
@@ -3878,12 +3995,14 @@ export async function confirmPaymentSelection() {
                             ui.toast("Aviso: O status foi gravado, mas falhou ao atualizar a cor/nota na célula.", "warning");
                         }
                     }
-                    
-                    // Emit Update Event
+                }
+
+                // 4. Emitir eventos UPDATE para o real-time
+                for (const item of localStateUpdates) {
                     if (state.confirm && state.confirm.sheetId) {
-                        emitConfirmEvent(state.confirm.sheetId, rowObj.originalIndex, 'UPDATE', { 
-                            status: document.getElementById('mini-filter-status')?.value || 'CONFIRMADO',
-                            rowData: state.confirm.data[rowObj.originalIndex]
+                        emitConfirmEvent(state.confirm.sheetId, item.originalIndex, 'UPDATE', { 
+                            status: item.newStatus,
+                            rowData: item.rowData
                         });
                     }
                 }

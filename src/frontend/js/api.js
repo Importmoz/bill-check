@@ -344,6 +344,20 @@ export async function updateGSheet(spreadsheetId, range, values) {
     return await res.json();
 }
 
+export async function updateGSheetBatch(spreadsheetId, data) {
+    const res = await fetch('/api/google/sheet/batch-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spreadsheetId, data })
+    });
+    if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Erro ao atualizar GSheet em lote");
+    }
+    return await res.json();
+}
+
+
 export async function updateGSheetNote(spreadsheetId, sheetName, row, col, note, color = null) {
     const res = await fetch('/api/google/sheet/update-notes', {
         method: 'POST',
