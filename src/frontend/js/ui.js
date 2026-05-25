@@ -3896,18 +3896,25 @@ export async function confirmPaymentSelection() {
                             const dd = String(d.getDate()).padStart(2, '0');
                             const mm = String(d.getMonth() + 1).padStart(2, '0');
                             const yyyy = d.getFullYear();
-                            return `${mm}/${dd}/${yyyy}`;
+                            // Alterado de MM/DD/YYYY para YYYY-MM-DD para compatibilidade universal em qualquer locale
+                            return `${yyyy}-${mm}-${dd}`;
                         });
+
+                        console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - rowPaymentDates:`, rowPaymentDates, "formattedDates:", formattedDates);
 
                         // Encontrar as colunas PAG vazias e escrever as datas
                         const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
                         let dateIdx = 0;
                         
+                        console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Colunas PAG:`, pagIndices);
+
                         for (const pIdx of pagIndices) {
                             if (dateIdx >= formattedDates.length) break;
                             const val = rowData[pIdx];
+                            console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Coluna index ${pIdx} val atual: "${val}"`);
                             if (!val || String(val).trim() === '') {
                                 const formattedDateForSheet = formattedDates[dateIdx++];
+                                console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Gravando data na coluna ${pIdx}:`, formattedDateForSheet);
                                 rowData[pIdx] = formattedDateForSheet;
                             }
                         }
@@ -3916,6 +3923,7 @@ export async function confirmPaymentSelection() {
                         if (dateIdx < formattedDates.length && pagIndices.length > 0) {
                             const lastPagIdx = pagIndices[pagIndices.length - 1];
                             const formattedDateForSheet = formattedDates[formattedDates.length - 1];
+                            console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Sobrepondo data na última coluna ${lastPagIdx}:`, formattedDateForSheet);
                             rowData[lastPagIdx] = formattedDateForSheet;
                         }
                     }
