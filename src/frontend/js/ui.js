@@ -2479,6 +2479,172 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
     }
 }
 
+export async function applyBulkUpdate() {
+    if (!window.currentActiveClient || !window.currentClientRows || window.currentClientRows.length === 0) {
+        toast("Nenhuma ordem ativa para atualizar.", "error");
+        return;
+    }
+
+    const bulkBankSelect = document.getElementById('bulk-bank');
+    const bulkStatusSelect = document.getElementById('bulk-status');
+    if (!bulkBankSelect || !bulkStatusSelect) return;
+
+    const selectedBank = bulkBankSelect.value;
+    const selectedStatus = bulkStatusSelect.value;
+
+    if (!selectedBank && !selectedStatus) {
+        toast("Por favor, selecione um Banco ou um Estado para aplicar.", "warning");
+        return;
+    }
+
+    let confirmMsg = "Tem a certeza que deseja aplicar esta alteração em massa a todas as ordens deste cliente?";
+    if (!confirm(confirmMsg)) return;
+
+    setLoader(true, "A atualizar ordens em massa no Google Sheets...");
+
+    try {
+        const columns = state.confirm.columns;
+        const spreadsheetId = state.confirm.sheetId;
+
+        let sheetName = 'Folha1';
+        if (state.confirm.range && state.confirm.range.includes('!')) {
+            sheetName = state.confirm.range.split('!')[0];
+        }
+        const cleanSheetName = sheetName.replace(/'/g, '');
+
+        const cleanString = (str) => String(str || '')
+            .toUpperCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^A-Z0-9]/g, "")
+            .trim();
+
+        const findCol = (targets) => {
+            const cleanedTargets = targets.map(cleanString);
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => cleanString(c) === target);
+                if (idx !== -1) return idx;
+            }
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => cleanString(c).includes(target));
+                if (idx !== -1) return idx;
+            }
+            return -1;
+        };
+
+        const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
+        const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+        const paidIdx = columns.findIndex((c, i) => {
+            const h = cleanString(c);
+            return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
+        });
+        const amtDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+        const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+
+        let updatedCount = 0;
+        let skippedCount = 0;
+
+        for (const rowInfo of window.currentClientRows) {
+            const originalIndex = rowInfo.originalIndex;
+
+            // Verificar se o registo está bloqueado por outro utilizador
+            const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[originalIndex];
+            const isLockedByOther = lockInfo && lockInfo.userId !== pb.authStore.model?.id;
+            if (isLockedByOther) {
+                skippedCount++;
+                continue;
+            }
+
+            // Preparar a linha clonada
+            const rowData = [...state.confirm.data[originalIndex]];
+            let modified = false;
+
+            // Atualizar Banco se selecionado
+            if (selectedBank) {
+                if (bankDutyIdx !== -1) {
+                    rowData[bankDutyIdx] = selectedBank === '?' ? '' : selectedBank;
+                    modified = true;
+                }
+            }
+
+            // Atualizar Status se selecionado
+            if (selectedStatus) {
+                if (statusIdx !== -1) {
+                    rowData[statusIdx] = selectedStatus;
+                    modified = true;
+
+                    const amountDutyVal = amtDutyIdx !== -1 ? (parseFloat(String(rowData[amtDutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
+
+                    if (selectedStatus === 'CONFIRMADO') {
+                        if (paidIdx !== -1) rowData[paidIdx] = amountDutyVal;
+                        if (balanceIdx !== -1) rowData[balanceIdx] = 0;
+                    } else if (selectedStatus === 'PENDENTE') {
+                        if (paidIdx !== -1) rowData[paidIdx] = '';
+                        if (balanceIdx !== -1) rowData[balanceIdx] = amountDutyVal;
+                    }
+                }
+            }
+
+            if (modified) {
+                // Emitir LOCK temporário para o real-time
+                emitConfirmEvent(spreadsheetId, originalIndex, 'LOCK', { name: pb.authStore.model?.name || 'Utilizador' });
+
+                // Salvar no Google Sheets
+                const rowNum = originalIndex + 1;
+                const range = `${cleanSheetName}!A${rowNum}:Z${rowNum}`;
+                await updateGSheet(spreadsheetId, range, [rowData]);
+
+                // Atualizar estado local
+                state.confirm.data[originalIndex] = rowData;
+
+                // Emitir UPDATE e UNLOCK
+                emitConfirmEvent(spreadsheetId, originalIndex, 'UPDATE', {
+                    status: selectedStatus || rowData[statusIdx] || 'PENDENTE',
+                    rowData: rowData,
+                    name: pb.authStore.model?.name || 'Utilizador'
+                });
+                emitConfirmEvent(spreadsheetId, originalIndex, 'UNLOCK');
+
+                updatedCount++;
+            }
+        }
+
+        if (updatedCount > 0) {
+            toast(`${updatedCount} ordens atualizadas com sucesso em massa!`, "success");
+        }
+        if (skippedCount > 0) {
+            toast(`${skippedCount} ordens ignoradas por estarem a ser editadas por outros utilizadores.`, "warning");
+        }
+
+        // Resetar selects
+        bulkBankSelect.value = "";
+        bulkStatusSelect.value = "";
+
+        // Reprocessar agrupamentos
+        const filterText = document.getElementById('input-confirm-search')?.value || '';
+        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
+        renderConfirmList(state.confirm.data, filterText, statusFilter);
+
+        // Re-exibir o detalhe do cliente atualizado
+        const freshClient = state.confirm.groupedClients?.find(c => 
+            (c.groupId && window.currentActiveClient.groupId && c.groupId === window.currentActiveClient.groupId) || 
+            (c.displayIdCode && c.displayIdCode === window.currentActiveClient.displayIdCode)
+        );
+
+        if (freshClient) {
+            await showConfirmDetail(freshClient, window.currentActiveClientIndex);
+        } else {
+            showView('view-confirm-table');
+        }
+
+    } catch (err) {
+        console.error(err);
+        toast("Erro ao aplicar alterações em massa: " + err.message, "error");
+    } finally {
+        setLoader(false);
+    }
+}
+
 export function openConfirmTotalModal() {
     const t = document.getElementById('confirm-toast');
     if (t) {

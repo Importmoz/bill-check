@@ -15,6 +15,67 @@
         <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
             <!-- Ordens / Linhas do GSheet -->
             <div class="lg:col-span-3 space-y-6">
+                <!-- Botão de Toggle para Ações em Massa -->
+                <div class="px-1">
+                    <button id="btn-toggle-bulk-actions" onclick="document.getElementById('confirm-bulk-actions-panel').classList.toggle('hidden')" 
+                        class="text-[9px] font-black uppercase bg-slate-50 text-slate-500 border border-slate-200 px-3 py-1.5 rounded-lg hover:bg-slate-100 hover:text-slate-800 transition-all flex items-center gap-1.5 shadow-xs active:scale-95 cursor-pointer">
+                        <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                        Ações em Massa
+                    </button>
+                </div>
+
+                <!-- Painel de Ações em Massa (Bulk Actions) -->
+                <div id="confirm-bulk-actions-panel" class="hidden bg-gradient-to-r from-slate-50 to-white border border-slate-200/80 p-4 rounded-3xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                        </div>
+                        <div>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Ações em Massa</h4>
+                            <p class="text-[10px] text-slate-400 font-bold uppercase leading-none mt-0.5">Atualizar todas as ordens</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-wrap items-center gap-4 w-full sm:w-auto justify-end">
+                        <!-- Banco em Massa -->
+                        <div class="flex flex-col gap-1">
+                            <label for="bulk-bank" class="text-[9px] font-black text-slate-400 uppercase tracking-wider">Banco</label>
+                            <select id="bulk-bank" class="py-1.5 px-3 text-slate-700 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-w-[140px] shadow-sm cursor-pointer">
+                                <option value="">Sem Alteração</option>
+                                <option value="?">?</option>
+                                <option value="BCI BOSS">BCI BOSS</option>
+                                <option value="BIM BOSS">BIM BOSS</option>
+                                <option value="BCI JUPITER">BCI JUPITER</option>
+                                <option value="BIM JUPITER">BIM JUPITER</option>
+                                <option value="STB JUPITER">STB JUPITER</option>
+                                <option value="NED JUPITER">NED JUPITER</option>
+                                <option value="PAID IN CHINA">PAID IN CHINA</option>
+                                <option value="REPOSIÇÃO">REPOSIÇÃO</option>
+                                <option value="COTACAO">COTACAO</option>
+                                <option value="EMOLA BOSS">EMOLA BOSS</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Status em Massa -->
+                        <div class="flex flex-col gap-1">
+                            <label for="bulk-status" class="text-[9px] font-black text-slate-400 uppercase tracking-wider">Estado</label>
+                            <select id="bulk-status" class="py-1.5 px-3 text-slate-700 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-w-[140px] shadow-sm cursor-pointer">
+                                <option value="">Sem Alteração</option>
+                                <option value="PENDENTE">PENDENTE</option>
+                                <option value="CONFIRMADO">CONFIRMADO</option>
+                            </select>
+                        </div>
+
+                        <!-- Botão Aplicar -->
+                        <div class="self-end pb-0.5">
+                            <button onclick="ui.applyBulkUpdate()" class="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-blue-500/10 active:scale-95 flex items-center gap-2 cursor-pointer h-[34px]">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17 4 12"></path></svg>
+                                Aplicar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Conteúdo da Tabela e Modal renderizados via JS -->
                 <div id="confirm-client-orders">
                     <!-- Linhas do cliente aqui -->
