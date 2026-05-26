@@ -238,7 +238,7 @@ async function showHub() {
             const role = user.role || 'USER';
             const permissions = user.permissions || [];
             
-            const modules = ['BILL', 'FINANCE', 'TEAM', 'TERM', 'CONFIRM', 'EXTRACTOS'];
+            const modules = ['BILL', 'FINANCE', 'TEAM', 'TERM', 'CONFIRM', 'EXTRACTOS', 'QUOTE'];
             modules.forEach(mod => {
                 const card = document.getElementById(`card-module-${mod}`);
                 if (card) {
@@ -1826,4 +1826,161 @@ function stopGSheetPolling() {
 }
 
 window.stopGSheetPolling = stopGSheetPolling;
+
+// --- MÓDULO DE COTAÇÕES (QUOTE) CONTROLLER ---
+
+async function showQuoteDashboard() {
+    if (!checkModulePermission('QUOTE')) return ui.toast('Acesso negado ao módulo QUOTE.', 'error');
+    ui.setLoader(true, "A carregar cotações...");
+    try {
+        await api.listQuotes();
+        ui.showView('view-quote-dashboard');
+        ui.renderQuoteDashboard();
+    } catch (err) {
+        console.error(err);
+        ui.toast("Erro ao abrir módulo de cotações.", "error");
+    } finally {
+        ui.setLoader(false);
+    }
+}
+
+function showQuoteForm(id) {
+    if (!checkModulePermission('QUOTE')) return ui.toast('Acesso negado ao módulo QUOTE.', 'error');
+    ui.showView('view-quote-form');
+    ui.renderQuoteForm(id);
+    changeQuoteType(); // Forçar alinhamento de visual e preview inicial
+}
+
+function changeQuoteType() {
+    const type = document.getElementById('input-quote-type')?.value || 'TRANSPORTE';
+    
+    const transportSection = document.getElementById('section-form-transport');
+    const importSection = document.getElementById('section-form-import');
+    
+    if (type === 'TRANSPORTE') {
+        transportSection?.classList.remove('hidden');
+        importSection?.classList.add('hidden');
+    } else if (type === 'IMPORTACAO') {
+        transportSection?.classList.add('hidden');
+        importSection?.classList.remove('hidden');
+    } else if (type === 'GLOBAL') {
+        transportSection?.classList.remove('hidden');
+        importSection?.classList.remove('hidden');
+    }
+    
+    handleQuoteFieldChange();
+}
+
+function handleQuoteFieldChange() {
+    ui.updateQuotePreview();
+}
+
+function handleQuoteSearch() {
+    ui.renderQuoteDashboard();
+}
+
+async function handleSaveQuote() {
+    const id = document.getElementById('input-quote-id').value;
+    const client = document.getElementById('input-quote-client').value.trim();
+    const cargo = document.getElementById('input-quote-cargo').value.trim();
+    const type = document.getElementById('input-quote-type').value;
+    const status = document.getElementById('input-quote-status').value;
+    const number = document.getElementById('input-quote-number').value.trim();
+    const rate = parseFloat(document.getElementById('input-quote-rate').value) || 63.90;
+    const terms = document.getElementById('input-quote-terms').value;
+
+    if (!client || !cargo) {
+        return ui.toast("Por favor preencha o Nome do Cliente e a Descrição da Carga.", "error");
+    }
+
+    const payload = {
+        exchange_rate: rate,
+        terms: terms
+    };
+
+    if (type === 'TRANSPORTE' || type === 'GLOBAL') {
+        payload.origin = document.getElementById('input-trans-origin').value.trim();
+        payload.destination = document.getElementById('input-trans-dest').value.trim();
+        payload.cbm = parseFloat(document.getElementById('input-trans-cbm').value) || 0;
+        payload.weight = parseFloat(document.getElementById('input-trans-weight').value) || 0;
+        payload.container_type = document.getElementById('input-trans-container').value.trim();
+        payload.freight_cost = parseFloat(document.getElementById('input-trans-freight-cost').value) || 0;
+        payload.origin_fees = parseFloat(document.getElementById('input-trans-origin-fees').value) || 0;
+        payload.local_fees = parseFloat(document.getElementById('input-trans-local-fees').value) || 0;
+        payload.agent_fees = parseFloat(document.getElementById('input-trans-agent-fees').value) || 0;
+        payload.margin_pct = parseFloat(document.getElementById('input-trans-margin').value) || 0;
+    }
+
+    if (type === 'IMPORTACAO' || type === 'GLOBAL') {
+        payload.cif_cost = parseFloat(document.getElementById('input-imp-cif').value) || 0;
+        payload.duties_pct = parseFloat(document.getElementById('input-imp-duties-pct').value) || 0;
+        payload.iva_pct = parseFloat(document.getElementById('input-imp-iva-pct').value) || 0;
+        payload.tsp_fees = parseFloat(document.getElementById('input-imp-tsp-fees').value) || 0;
+        payload.clearing_fees = parseFloat(document.getElementById('input-imp-clearing-fees').value) || 0;
+        payload.port_fees = parseFloat(document.getElementById('input-imp-port-fees').value) || 0;
+        payload.import_margin_pct = parseFloat(document.getElementById('input-imp-margin').value) || 0;
+    }
+
+    const computedTotal = parseFloat(document.getElementById('view-quote-form').dataset.computedTotal) || 0;
+
+    const quoteData = {
+        client_name: client,
+        cargo_description: cargo,
+        type: type,
+        status: status,
+        quote_number: number,
+        total_amount: computedTotal,
+        payload: payload
+    };
+
+    if (id) {
+        quoteData.id = id;
+    }
+
+    const btn = document.getElementById('btn-save-quote');
+    ui.setBtnLoading(btn, true, "A gravar...");
+    ui.setLoader(true, "A gravar cotação...");
+
+    try {
+        await api.saveQuote(quoteData);
+        ui.toast("Cotação gravada com sucesso!", "success");
+        await showQuoteDashboard();
+    } catch (err) {
+        console.error(err);
+        ui.toast("Erro ao gravar cotação: " + err.message, "error");
+    } finally {
+        ui.setLoader(false);
+        ui.setBtnLoading(btn, false);
+    }
+}
+
+async function handleDeleteQuote(id) {
+    if (!confirm("Tem a certeza que deseja eliminar esta cotação permanentemente?")) return;
+    ui.setLoader(true, "A eliminar cotação...");
+    try {
+        await api.deleteQuote(id);
+        ui.toast("Cotação eliminada.", "success");
+        ui.renderQuoteDashboard();
+    } catch (err) {
+        console.error(err);
+        ui.toast("Erro ao eliminar cotação.", "error");
+    } finally {
+        ui.setLoader(false);
+    }
+}
+
+function handlePrintQuote() {
+    const number = document.getElementById('input-quote-number')?.value || 'cotacao';
+    utils.downloadElementAsImage('quote-print-area', `cotacao-${number}`);
+}
+
+window.showQuoteDashboard = showQuoteDashboard;
+window.showQuoteForm = showQuoteForm;
+window.changeQuoteType = changeQuoteType;
+window.handleQuoteFieldChange = handleQuoteFieldChange;
+window.handleQuoteSearch = handleQuoteSearch;
+window.handleSaveQuote = handleSaveQuote;
+window.handleDeleteQuote = handleDeleteQuote;
+window.handlePrintQuote = handlePrintQuote;
+
 

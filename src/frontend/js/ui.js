@@ -101,7 +101,7 @@ export function setBtnLoading(btn, isLoading, originalText = null) {
  * Utilitário para ocultar todas as visões principais
  */
 function hideAllViews() {
-    ['view-login', 'view-hub', 'view-dashboard', 'view-table', 'view-finance', 'view-team-dashboard', 'view-team-table', 'view-term-dashboard', 'view-term-table', 'view-confirm-dashboard', 'view-confirm-table', 'view-confirm-client-detail', 'view-bank-dashboard', 'view-settings'].forEach(id => {
+    ['view-login', 'view-hub', 'view-dashboard', 'view-table', 'view-finance', 'view-team-dashboard', 'view-team-table', 'view-term-dashboard', 'view-term-table', 'view-confirm-dashboard', 'view-confirm-table', 'view-confirm-client-detail', 'view-bank-dashboard', 'view-settings', 'view-quote-dashboard', 'view-quote-form'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
@@ -4165,4 +4165,346 @@ export function closeUserModal() {
     setTimeout(() => {
         modal.classList.add('hidden');
     }, 300);
+}
+
+// --- MÓDULO DE COTAÇÕES (QUOTE) RENDERING ---
+
+export function renderQuoteDashboard() {
+    const list = document.getElementById('quotes-list');
+    if (!list) return;
+
+    list.innerHTML = '';
+
+    // Status de Sincronização
+    const syncStatusEl = document.getElementById('quote-sync-status');
+    if (syncStatusEl) {
+        if (state.quotesSource === 'pocketbase') {
+            syncStatusEl.innerHTML = `<span class="text-emerald-600 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">● Sincronizado na Nuvem</span>`;
+        } else {
+            syncStatusEl.innerHTML = `<span class="text-amber-600 font-bold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200" title="Crie uma tabela 'quotes' no PocketBase para ativar sincronização em nuvem.">⚠️ Modo Local (Navegador)</span>`;
+        }
+    }
+
+    const searchQuery = (document.getElementById('input-quote-search')?.value || '').toUpperCase().trim();
+    const typeFilter = document.getElementById('select-quote-type-filter')?.value || '';
+    const statusFilter = document.getElementById('select-quote-status-filter')?.value || '';
+
+    // Filtrar cotações
+    const filtered = (state.quotes || []).filter(q => {
+        const matchesSearch = !searchQuery || 
+            q.client_name.toUpperCase().includes(searchQuery) || 
+            q.quote_number.toUpperCase().includes(searchQuery) ||
+            (q.cargo_description && q.cargo_description.toUpperCase().includes(searchQuery));
+            
+        const matchesType = !typeFilter || q.type === typeFilter;
+        const matchesStatus = !statusFilter || q.status === statusFilter;
+
+        return matchesSearch && matchesType && matchesStatus;
+    });
+
+    if (filtered.length === 0) {
+        list.innerHTML = `<div class="col-span-full text-center py-20 bg-gray-50 border-2 border-dashed border-gray-200 rounded-3xl">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-gray-300 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">Nenhuma cotação encontrada.</p>
+        </div>`;
+        return;
+    }
+
+    filtered.forEach(q => {
+        // Badges cores
+        let statusClass = "bg-gray-100 text-gray-800";
+        if (q.status === 'ENVIADO') statusClass = "bg-blue-100 text-blue-800";
+        else if (q.status === 'APROVADO') statusClass = "bg-emerald-100 text-emerald-800";
+        else if (q.status === 'REJEITADO') statusClass = "bg-rose-100 text-rose-800";
+
+        let typeClass = "bg-indigo-50 text-indigo-700 border-indigo-200";
+        if (q.type === 'IMPORTACAO') typeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+        else if (q.type === 'GLOBAL') typeClass = "bg-purple-50 text-purple-700 border-purple-200";
+
+        const card = document.createElement('div');
+        card.className = "group bg-white p-6 rounded-3xl border-2 border-gray-200 hover:border-black hover:translate-y-[-2px] transition-all cursor-pointer relative flex flex-col justify-between min-h-[180px] shadow-sm";
+        card.setAttribute('onclick', `window.showQuoteForm('${q.id}')`);
+
+        card.innerHTML = `
+            <div>
+                <div class="flex justify-between items-start gap-2 mb-3">
+                    <span class="text-[10px] font-black text-gray-400 uppercase tracking-wider">${q.quote_number || 'Sem Número'}</span>
+                    <button onclick="event.stopPropagation(); window.handleDeleteQuote('${q.id}')" class="text-gray-300 hover:text-red-600 transition-colors" title="Eliminar cotação">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="3 6 5 6 21 6"></polyline>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
+                    </button>
+                </div>
+                <h4 class="font-black text-base text-gray-900 leading-tight mb-1 group-hover:text-indigo-600 transition-colors">${q.client_name}</h4>
+                <p class="text-xs text-gray-500 font-medium mb-4 line-clamp-2">${q.cargo_description || 'Sem descrição da mercadoria'}</p>
+            </div>
+            <div>
+                <div class="flex gap-1.5 flex-wrap mb-4">
+                    <span class="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider border ${typeClass}">${q.type}</span>
+                    <span class="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${statusClass}">${q.status}</span>
+                </div>
+                <div class="flex justify-between items-end border-t border-gray-100 pt-3">
+                    <span class="text-[8px] font-black text-gray-400 uppercase">Total Geral</span>
+                    <span class="font-black text-sm text-gray-900">${formatMZN(q.total_amount)}</span>
+                </div>
+            </div>
+        `;
+        list.appendChild(card);
+    });
+}
+
+export function renderQuoteForm(quoteId) {
+    const titleEl = document.getElementById('quote-form-title');
+    const idInput = document.getElementById('input-quote-id');
+    const clientInput = document.getElementById('input-quote-client');
+    const cargoInput = document.getElementById('input-quote-cargo');
+    const typeSelect = document.getElementById('input-quote-type');
+    const statusSelect = document.getElementById('input-quote-status');
+    const numberInput = document.getElementById('input-quote-number');
+    const rateInput = document.getElementById('input-quote-rate');
+    const termsInput = document.getElementById('input-quote-terms');
+
+    // Transporte inputs
+    const originInput = document.getElementById('input-trans-origin');
+    const destInput = document.getElementById('input-trans-dest');
+    const cbmInput = document.getElementById('input-trans-cbm');
+    const weightInput = document.getElementById('input-trans-weight');
+    const containerInput = document.getElementById('input-trans-container');
+    const freightCostInput = document.getElementById('input-trans-freight-cost');
+    const originFeesInput = document.getElementById('input-trans-origin-fees');
+    const localFeesInput = document.getElementById('input-trans-local-fees');
+    const agentFeesInput = document.getElementById('input-trans-agent-fees');
+    const transMarginInput = document.getElementById('input-trans-margin');
+
+    // Importação inputs
+    const cifInput = document.getElementById('input-imp-cif');
+    const dutiesPctInput = document.getElementById('input-imp-duties-pct');
+    const ivaPctInput = document.getElementById('input-imp-iva-pct');
+    const tspFeesInput = document.getElementById('input-imp-tsp-fees');
+    const clearingFeesInput = document.getElementById('input-imp-clearing-fees');
+    const portFeesInput = document.getElementById('input-imp-port-fees');
+    const impMarginInput = document.getElementById('input-imp-margin');
+
+    if (quoteId) {
+        // Edit Mode
+        const quote = (state.quotes || []).find(q => q.id === quoteId);
+        if (!quote) return;
+
+        titleEl.innerText = "Editar Cotação";
+        idInput.value = quote.id;
+        clientInput.value = quote.client_name;
+        cargoInput.value = quote.cargo_description || '';
+        typeSelect.value = quote.type;
+        statusSelect.value = quote.status;
+        numberInput.value = quote.quote_number || '';
+        rateInput.value = quote.payload.exchange_rate || '63.90';
+        termsInput.value = quote.payload.terms || '';
+
+        // Transporte
+        originInput.value = quote.payload.origin || '';
+        destInput.value = quote.payload.destination || '';
+        cbmInput.value = quote.payload.cbm || '';
+        weightInput.value = quote.payload.weight || '';
+        containerInput.value = quote.payload.container_type || '';
+        freightCostInput.value = quote.payload.freight_cost || '';
+        originFeesInput.value = quote.payload.origin_fees || '';
+        localFeesInput.value = quote.payload.local_fees || '';
+        agentFeesInput.value = quote.payload.agent_fees || '';
+        transMarginInput.value = quote.payload.margin_pct || '20';
+
+        // Importação
+        cifInput.value = quote.payload.cif_cost || '';
+        dutiesPctInput.value = quote.payload.duties_pct || '20';
+        ivaPctInput.value = quote.payload.iva_pct || '16';
+        tspFeesInput.value = quote.payload.tsp_fees || '';
+        clearingFeesInput.value = quote.payload.clearing_fees || '';
+        portFeesInput.value = quote.payload.port_fees || '';
+        impMarginInput.value = quote.payload.import_margin_pct || '15';
+    } else {
+        // Create Mode
+        titleEl.innerText = "Nova Cotação";
+        idInput.value = '';
+        clientInput.value = '';
+        cargoInput.value = '';
+        typeSelect.value = 'TRANSPORTE';
+        statusSelect.value = 'RASCUNHO';
+        
+        // Auto gerar número de cotação
+        const yr = new Date().getFullYear();
+        const rand = Math.floor(1000 + Math.random() * 9000);
+        numberInput.value = `QT-${yr}-${rand}`;
+        
+        rateInput.value = '63.90';
+        termsInput.value = `1. Cotação válida por 7 dias.\n2. Sujeito a alterações nas tarifas de frete e taxas aduaneiras sem aviso prévio.\n3. Condições de pagamento: 100% no registo aduaneiro.`;
+
+        // Reset Transporte
+        originInput.value = '';
+        destInput.value = '';
+        cbmInput.value = '';
+        weightInput.value = '';
+        containerInput.value = '';
+        freightCostInput.value = '';
+        originFeesInput.value = '';
+        localFeesInput.value = '';
+        agentFeesInput.value = '';
+        transMarginInput.value = '20';
+
+        // Reset Importação
+        cifInput.value = '';
+        dutiesPctInput.value = '20';
+        ivaPctInput.value = '16';
+        tspFeesInput.value = '';
+        clearingFeesInput.value = '';
+        portFeesInput.value = '';
+        impMarginInput.value = '15';
+    }
+}
+
+export function updateQuotePreview() {
+    const type = document.getElementById('input-quote-type')?.value || 'TRANSPORTE';
+    const client = document.getElementById('input-quote-client')?.value || 'CLIENTE EXECUTIVO';
+    const cargo = document.getElementById('input-quote-cargo')?.value || 'Mercadoria Geral';
+    const number = document.getElementById('input-quote-number')?.value || 'QT-XXXX';
+    const status = document.getElementById('input-quote-status')?.value || 'RASCUNHO';
+    const rate = parseFloat(document.getElementById('input-quote-rate')?.value) || 63.90;
+    const terms = document.getElementById('input-quote-terms')?.value || '';
+
+    // Obter data formatada
+    const now = new Date();
+    const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth()+1).padStart(2, '0')}/${now.getFullYear()}`;
+
+    // Atualizar cabeçalhos de preview
+    const previewClient = document.getElementById('lbl-preview-client');
+    const previewCargo = document.getElementById('lbl-preview-cargo');
+    const previewNumber = document.getElementById('lbl-preview-number');
+    const previewDate = document.getElementById('lbl-preview-date');
+    const previewStatus = document.getElementById('lbl-preview-status');
+    const previewType = document.getElementById('lbl-preview-type');
+    const previewTerms = document.getElementById('lbl-preview-terms');
+
+    if (previewClient) previewClient.innerText = client.toUpperCase();
+    if (previewCargo) previewCargo.innerText = cargo;
+    if (previewNumber) previewNumber.innerText = `Nº ${number}`;
+    if (previewDate) previewDate.innerText = `Data: ${dateStr}`;
+    if (previewStatus) {
+        previewStatus.innerText = status;
+        previewStatus.className = `text-[9px] font-black uppercase px-3 py-1 rounded-full ${
+            status === 'APROVADO' ? 'bg-emerald-100 text-emerald-800' :
+            status === 'ENVIADO' ? 'bg-blue-100 text-blue-800' :
+            status === 'REJEITADO' ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-800'
+        }`;
+    }
+    if (previewType) previewType.innerText = `COTAÇÃO DE ${type}`;
+    if (previewTerms) previewTerms.innerText = terms;
+
+    // Calcular custos
+    const tbody = document.getElementById('preview-cost-table-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    let subFreightMzn = 0;
+    let subClearanceMzn = 0;
+
+    const formatCurr = (v) => new Intl.NumberFormat('pt-MZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
+    // 1. Transporte
+    if (type === 'TRANSPORTE' || type === 'GLOBAL') {
+        const transMargin = parseFloat(document.getElementById('input-trans-margin')?.value) || 0;
+        const freight = parseFloat(document.getElementById('input-trans-freight-cost')?.value) || 0;
+        const originFees = parseFloat(document.getElementById('input-trans-origin-fees')?.value) || 0;
+        const localFees = parseFloat(document.getElementById('input-trans-local-fees')?.value) || 0;
+        const agentFees = parseFloat(document.getElementById('input-trans-agent-fees')?.value) || 0;
+
+        const addRow = (desc, costUsd, costMzn, isMzn = false) => {
+            const baseCost = isMzn ? costMzn : costUsd * rate;
+            const finalCost = baseCost * (1 + transMargin / 100);
+            const marginValue = finalCost - baseCost;
+            subFreightMzn += finalCost;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td class="py-2 px-3 font-semibold text-gray-800">${desc}</td>
+                    <td class="py-2 px-3 text-right text-gray-500">${isMzn ? `MZN ${formatCurr(costMzn)}` : `USD ${formatCurr(costUsd)}`}</td>
+                    <td class="py-2 px-3 text-right text-gray-500">MZN ${formatCurr(marginValue)}</td>
+                    <td class="py-2 px-3 text-right font-black text-gray-900">MZN ${formatCurr(finalCost)}</td>
+                </tr>
+            `;
+        };
+
+        if (freight > 0) addRow("Frete Internacional", freight, 0);
+        if (originFees > 0) addRow("Taxas de Origem / Porto", originFees, 0);
+        if (localFees > 0) addRow("Taxas Locais no Destino", 0, localFees, true);
+        if (agentFees > 0) addRow("Tarifa de Manuseamento/Agente", agentFees, 0);
+    }
+
+    // 2. Importação
+    if (type === 'IMPORTACAO' || type === 'GLOBAL') {
+        const impMargin = parseFloat(document.getElementById('input-imp-margin')?.value) || 0;
+        const cifCost = parseFloat(document.getElementById('input-imp-cif')?.value) || 0;
+        const dutiesPct = parseFloat(document.getElementById('input-imp-duties-pct')?.value) || 0;
+        const ivaPct = parseFloat(document.getElementById('input-imp-iva-pct')?.value) || 0;
+        const tspFees = parseFloat(document.getElementById('input-imp-tsp-fees')?.value) || 0;
+        const clearingFees = parseFloat(document.getElementById('input-imp-clearing-fees')?.value) || 0;
+        const portFees = parseFloat(document.getElementById('input-imp-port-fees')?.value) || 0;
+
+        const cifMzn = cifCost * rate;
+        const duties = cifMzn * (dutiesPct / 100);
+        const iva = (cifMzn + duties) * (ivaPct / 100);
+
+        // Taxas do governo (sem margem de lucro)
+        const addTaxRow = (desc, cost) => {
+            subClearanceMzn += cost;
+            tbody.innerHTML += `
+                <tr>
+                    <td class="py-2 px-3 font-semibold text-gray-800">${desc} <span class="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-1 py-0.5 rounded uppercase ml-1">Estado</span></td>
+                    <td class="py-2 px-3 text-right text-gray-500">MZN ${formatCurr(cost)}</td>
+                    <td class="py-2 px-3 text-right text-gray-500">MZN 0,00</td>
+                    <td class="py-2 px-3 text-right font-black text-gray-900">MZN ${formatCurr(cost)}</td>
+                </tr>
+            `;
+        };
+
+        // Serviços (com margem de lucro)
+        const addServiceRow = (desc, cost) => {
+            const finalCost = cost * (1 + impMargin / 100);
+            const marginValue = finalCost - cost;
+            subClearanceMzn += finalCost;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td class="py-2 px-3 font-semibold text-gray-800">${desc}</td>
+                    <td class="py-2 px-3 text-right text-gray-500">MZN ${formatCurr(cost)}</td>
+                    <td class="py-2 px-3 text-right text-gray-500">MZN ${formatCurr(marginValue)}</td>
+                    <td class="py-2 px-3 text-right font-black text-gray-900">MZN ${formatCurr(finalCost)}</td>
+                </tr>
+            `;
+        };
+
+        if (duties > 0) addTaxRow("Direitos Alfandegários", duties);
+        if (iva > 0) addTaxRow("Imposto sobre Valor Acrescentado (IVA)", iva);
+        if (tspFees > 0) addTaxRow("Emolumentos Alfandegários (TSP/Exame)", tspFees);
+        if (clearingFees > 0) addServiceRow("Honorários de Despacho", clearingFees);
+        if (portFees > 0) addServiceRow("Taxas de Porto / Terminal", portFees);
+    }
+
+    const grandTotal = subFreightMzn + subClearanceMzn;
+    const grandTotalUsd = grandTotal / rate;
+
+    // Atualizar resumos
+    const subFreightEl = document.getElementById('lbl-preview-sub-freight');
+    const subClearEl = document.getElementById('lbl-preview-sub-clear');
+    const grandTotalEl = document.getElementById('lbl-preview-grand-total');
+    const grandTotalUsdEl = document.getElementById('lbl-preview-grand-total-usd');
+
+    if (subFreightEl) subFreightEl.innerText = `MZN ${formatCurr(subFreightMzn)}`;
+    if (subClearEl) subClearEl.innerText = `MZN ${formatCurr(subClearanceMzn)}`;
+    if (grandTotalEl) grandTotalEl.innerText = `MZN ${formatCurr(grandTotal)}`;
+    if (grandTotalUsdEl) grandTotalUsdEl.innerText = `(USD ${formatCurr(grandTotalUsd)})`;
+
+    // Guardar total temporário no DOM para recuperação no Save
+    const formEl = document.getElementById('view-quote-form');
+    if (formEl) formEl.dataset.computedTotal = grandTotal.toString();
 }

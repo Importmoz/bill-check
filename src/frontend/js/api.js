@@ -38,7 +38,9 @@ export const state = {
     },
     bank: {
         incomes: []
-    }
+    },
+    quotes: [],
+    quotesSource: 'local'
 };
 
 /**
@@ -1106,3 +1108,130 @@ export async function deleteSettingsUser(id) {
     if (pb.authStore.model?.role !== 'ADMIN') throw new Error("Acesso negado.");
     return await pb.collection('users').delete(id);
 }
+
+// --- MÓDULO DE COTAÇÕES (QUOTE) API ---
+
+export async function listQuotes() {
+    try {
+        // Tentar obter do PocketBase
+        const records = await pb.collection('quotes').getFullList({
+            sort: '-created',
+            requestKey: null
+        });
+        
+        // Normalizar
+        const normalized = records.map(r => ({
+            id: r.id,
+            client_name: r.client_name,
+            cargo_description: r.cargo_description,
+            type: r.type,
+            status: r.status,
+            quote_number: r.quote_number,
+            date: r.date,
+            total_amount: r.total_amount,
+            payload: typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload,
+            created: r.created
+        }));
+        
+        state.quotes = normalized;
+        state.quotesSource = 'pocketbase';
+        return normalized;
+    } catch (err) {
+        console.warn("[QUOTE API] Falha ao aceder ao PocketBase, usando localStorage:", err);
+        // Fallback para localStorage
+        const localData = localStorage.getItem('quotes');
+        const parsed = localData ? JSON.parse(localData) : [];
+        state.quotes = parsed;
+        state.quotesSource = 'local';
+        return parsed;
+    }
+}
+
+export async function saveQuote(quoteData) {
+    // Garantir ID e número de cotação se novos
+    const isNew = !quoteData.id;
+    const now = new Date();
+    
+    if (isNew) {
+        quoteData.id = 'local_' + Math.random().toString(36).substr(2, 9);
+        quoteData.created = now.toISOString();
+    }
+    
+    // Preparar objeto
+    const normalizedQuote = {
+        id: quoteData.id,
+        client_name: quoteData.client_name || '',
+        cargo_description: quoteData.cargo_description || '',
+        type: quoteData.type || 'TRANSPORTE',
+        status: quoteData.status || 'RASCUNHO',
+        quote_number: quoteData.quote_number || '',
+        date: quoteData.date || now.toISOString().split('T')[0],
+        total_amount: Number(quoteData.total_amount) || 0,
+        payload: quoteData.payload || {},
+        created: quoteData.created
+    };
+
+    try {
+        // Tentar gravar no PocketBase
+        let savedRecord;
+        const pbPayload = {
+            client_name: normalizedQuote.client_name,
+            cargo_description: normalizedQuote.cargo_description,
+            type: normalizedQuote.type,
+            status: normalizedQuote.status,
+            quote_number: normalizedQuote.quote_number,
+            date: normalizedQuote.date,
+            total_amount: normalizedQuote.total_amount,
+            payload: JSON.stringify(normalizedQuote.payload)
+        };
+
+        if (isNew || normalizedQuote.id.startsWith('local_')) {
+            savedRecord = await pb.collection('quotes').create(pbPayload);
+        } else {
+            savedRecord = await pb.collection('quotes').update(normalizedQuote.id, pbPayload);
+        }
+        
+        normalizedQuote.id = savedRecord.id;
+        normalizedQuote.created = savedRecord.created;
+        
+        updateLocalQuotesCache(normalizedQuote);
+        return normalizedQuote;
+    } catch (err) {
+        console.warn("[QUOTE API] Falha ao gravar no PocketBase, gravando localmente:", err);
+        updateLocalQuotesCache(normalizedQuote);
+        return normalizedQuote;
+    }
+}
+
+function updateLocalQuotesCache(quote) {
+    const localData = localStorage.getItem('quotes');
+    let list = localData ? JSON.parse(localData) : [];
+    
+    const idx = list.findIndex(q => q.id === quote.id);
+    if (idx !== -1) {
+        list[idx] = quote;
+    } else {
+        list.unshift(quote);
+    }
+    localStorage.setItem('quotes', JSON.stringify(list));
+}
+
+export async function deleteQuote(id) {
+    if (id && !id.startsWith('local_')) {
+        try {
+            await pb.collection('quotes').delete(id);
+        } catch (err) {
+            console.warn("[QUOTE API] Erro ao apagar no PocketBase:", err);
+        }
+    }
+    
+    const localData = localStorage.getItem('quotes');
+    if (localData) {
+        let list = JSON.parse(localData);
+        list = list.filter(q => q.id !== id);
+        localStorage.setItem('quotes', JSON.stringify(list));
+    }
+    
+    state.quotes = state.quotes.filter(q => q.id !== id);
+}
+
