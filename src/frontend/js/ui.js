@@ -3811,7 +3811,6 @@ export async function confirmPaymentSelection() {
                     }
                     return colLetter;
                 };
-
                 let sheetName = '';
                 if (state.confirm.range && state.confirm.range.includes('!')) {
                     sheetName = state.confirm.range.split('!')[0];
@@ -3825,11 +3824,19 @@ export async function confirmPaymentSelection() {
                 let allocatedAmountRemaining = allocatedAmount;
                 const filterStatus = document.getElementById('mini-filter-status')?.value || 'CONFIRMADO';
 
-                // Criar rastreadores de contribuição para cada pagamento usado
-                const payTrackers = usedPayments.map(up => ({
-                    date: up.date,
-                    remaining: up.amount
-                }));
+                // Formatar as datas de todos os pagamentos selecionados para vínculo
+                const formattedDates = selectedPaymentsForLink.map(p => {
+                    if (!p.date) return '';
+                    const d = new Date(p.date);
+                    if (isNaN(d.getTime())) return p.date;
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const yyyy = d.getFullYear();
+                    // Usar YYYY-MM-DD para compatibilidade universal
+                    return `${yyyy}-${mm}-${dd}`;
+                });
+
+                console.log("[DEBUG-VINCULO] formattedDates dos pagamentos selecionados:", formattedDates);
 
                 const batchUpdates = [];
                 const localStateUpdates = [];
@@ -3875,56 +3882,15 @@ export async function confirmPaymentSelection() {
                             }
                         }
 
-                        // Determinar quais pagamentos contribuíram para esta linha
-                        let rowAllocatedRemaining = allocatedForThisRow;
-                        const rowPaymentDates = [];
-                        for (const pt of payTrackers) {
-                            if (rowAllocatedRemaining <= 0) break;
-                            const contribution = Math.min(rowAllocatedRemaining, pt.remaining);
-                            if (contribution > 0) {
-                                rowPaymentDates.push(pt.date);
-                                pt.remaining -= contribution;
-                                rowAllocatedRemaining -= contribution;
-                            }
-                        }
-
-                        // Formatar as datas
-                        const formattedDates = rowPaymentDates.map(dStr => {
-                            if (!dStr) return '';
-                            const d = new Date(dStr);
-                            if (isNaN(d.getTime())) return dStr;
-                            const dd = String(d.getDate()).padStart(2, '0');
-                            const mm = String(d.getMonth() + 1).padStart(2, '0');
-                            const yyyy = d.getFullYear();
-                            // Alterado de MM/DD/YYYY para YYYY-MM-DD para compatibilidade universal em qualquer locale
-                            return `${yyyy}-${mm}-${dd}`;
-                        });
-
-                        console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - rowPaymentDates:`, rowPaymentDates, "formattedDates:", formattedDates);
-
-                        // Encontrar as colunas PAG vazias e escrever as datas
+                        // Mapear as datas dos pagamentos selecionados diretamente nas colunas correspondentes (PAG 1, PAG 2, PAG 3)
                         const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
-                        let dateIdx = 0;
-                        
-                        console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Colunas PAG:`, pagIndices);
-
-                        for (const pIdx of pagIndices) {
-                            if (dateIdx >= formattedDates.length) break;
-                            const val = rowData[pIdx];
-                            console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Coluna index ${pIdx} val atual: "${val}"`);
-                            if (!val || String(val).trim() === '') {
-                                const formattedDateForSheet = formattedDates[dateIdx++];
-                                console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Gravando data na coluna ${pIdx}:`, formattedDateForSheet);
-                                rowData[pIdx] = formattedDateForSheet;
+                        for (let i = 0; i < pagIndices.length; i++) {
+                            const pIdx = pagIndices[i];
+                            const dateVal = formattedDates[i];
+                            if (dateVal !== undefined) {
+                                console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Coluna PAG ${i + 1} (index ${pIdx}) recebe data: "${dateVal}"`);
+                                rowData[pIdx] = dateVal;
                             }
-                        }
-
-                        // Se ainda sobrarem datas e não couberem em colunas vazias, sobrepõe a última
-                        if (dateIdx < formattedDates.length && pagIndices.length > 0) {
-                            const lastPagIdx = pagIndices[pagIndices.length - 1];
-                            const formattedDateForSheet = formattedDates[formattedDates.length - 1];
-                            console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Sobrepondo data na última coluna ${lastPagIdx}:`, formattedDateForSheet);
-                            rowData[lastPagIdx] = formattedDateForSheet;
                         }
                     }
 
