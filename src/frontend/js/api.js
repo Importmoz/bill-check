@@ -227,12 +227,13 @@ export async function markPaymentReconciled(id, combinedInfo, allocatedAmount = 
             reference: masterRef,
             amount: amountToUse,
             balance: original.balance, // Mantemos o mesmo balance do extrato para a assinatura
-            type: original.type,
-            bank: original.bank,
+            type: original.type || "",
+            bank: Array.isArray(original.bank) ? original.bank[0] : (original.bank || ""),
             reconciled: true,
             allocated_to: combinedInfo,
             account_owner: original.account_owner || "",
-            account_number: original.account_number || ""
+            account_number: original.account_number || "",
+            order_id: original.order_id || ""
         };
         
         // Gerar nova assinatura para o split
