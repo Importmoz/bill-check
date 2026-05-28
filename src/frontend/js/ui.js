@@ -4017,7 +4017,11 @@ export async function confirmPaymentSelection() {
 
     } catch (e) {
         console.error('Erro ao vincular pagamento:', e);
-        alert('Erro ao vincular pagamento: ' + e.message);
+        let detail = '';
+        if (e.data && typeof e.data === 'object') {
+            detail = '\nDetalhes: ' + JSON.stringify(e.data, null, 2);
+        }
+        alert('Erro ao vincular pagamento: ' + e.message + detail);
     } finally {
         setLoader(false);
         setBtnLoading(btn, false);

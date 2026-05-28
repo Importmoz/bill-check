@@ -237,7 +237,10 @@ export async function markPaymentReconciled(id, combinedInfo, allocatedAmount = 
         };
         
         // Gerar nova assinatura para o split
-        splitData.signature = await buildSignature(splitData);
+        const baseSig = await buildSignature(splitData);
+        // Garantir que a assinatura do split é absolutamente única anexando um sufixo aleatório.
+        // Isto evita colisões (erro 400 validation_not_unique) se o mesmo movimento for dividido múltiplas vezes.
+        splitData.signature = `${baseSig}_split_${Math.random().toString(36).substring(2, 11)}`;
         
         await pb.collection('bank_incomes').create(splitData);
 
