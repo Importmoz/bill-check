@@ -22,6 +22,9 @@ window.handleLogin = handleLogin;
     try {
         await initializeApp();
         
+        // Iniciar verificador de actualizações da versão do sistema
+        startSystemVersionChecker();
+        
         if (pb.authStore.isValid) {
             const userEl = document.getElementById('display-username');
             if (userEl) userEl.innerText = pb.authStore.model?.name || "Utilizador";
@@ -1972,6 +1975,71 @@ async function handleDeleteQuote(id) {
 function handlePrintQuote() {
     const number = document.getElementById('input-quote-number')?.value || 'cotacao';
     utils.downloadElementAsImage('quote-print-area', `cotacao-${number}`);
+}
+
+// --- CONTROLO DE VERSÃO E ATUALIZAÇÕES DO SISTEMA ---
+let loadedSystemVersion = null;
+
+async function checkSystemVersion() {
+    try {
+        const res = await fetch('/api/version');
+        if (res.ok) {
+            const data = await res.json();
+            const currentVersion = data.version;
+            
+            if (!loadedSystemVersion) {
+                // Primeira verificação na carga da página
+                loadedSystemVersion = currentVersion;
+                console.log(`[VERSÃO] Versão inicial do sistema carregada: ${loadedSystemVersion}`);
+            } else if (loadedSystemVersion !== currentVersion) {
+                // Versão mudou! Mostrar alerta de atualização
+                showSystemUpdateNotification(currentVersion);
+            }
+        }
+    } catch (err) {
+        console.warn("[VERSÃO] Falha ao verificar a versão do sistema:", err);
+    }
+}
+
+function startSystemVersionChecker() {
+    // Primeira verificação imediata
+    checkSystemVersion();
+    // Verificar a cada 2 minutos (120.000 ms)
+    setInterval(checkSystemVersion, 120000);
+}
+
+function showSystemUpdateNotification(newVersion) {
+    if (document.getElementById('system-update-banner')) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'system-update-banner';
+    // Estilo premium com gradiente de laranja a amber, z-index extremo e efeito glassmorphic blur
+    banner.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[9999] w-[90%] max-w-xl bg-gradient-to-r from-amber-500/95 to-orange-500/95 backdrop-blur-md text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border border-amber-400/50 transform transition-all duration-500 translate-y-[-100px] opacity-0';
+    
+    banner.innerHTML = `
+        <div class="flex items-center gap-3">
+            <div class="bg-white/20 p-2 rounded-xl animate-pulse shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3 3L22 4" />
+                </svg>
+            </div>
+            <div>
+                <h4 class="font-extrabold text-xs md:text-sm tracking-wide uppercase">Atualização do Sistema!</h4>
+                <p class="text-[10px] md:text-xs opacity-95 mt-0.5 font-medium">Uma nova versão foi publicada no servidor. Recarregue a página para ativar as novidades.</p>
+            </div>
+        </div>
+        <button onclick="window.location.reload(true)" class="bg-white text-amber-600 hover:bg-amber-50 text-[10px] font-black uppercase px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md shrink-0 active:scale-95 hover:shadow-lg">
+            Recarregar
+        </button>
+    `;
+
+    document.body.appendChild(banner);
+    
+    // Slide down smoothly
+    setTimeout(() => {
+        banner.classList.remove('translate-y-[-100px]', 'opacity-0');
+        banner.classList.add('translate-y-0', 'opacity-100');
+    }, 100);
 }
 
 window.showQuoteDashboard = showQuoteDashboard;

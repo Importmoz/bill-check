@@ -49,6 +49,22 @@ app.get('/config.js', (req, res) => {
   res.send(`window.POCKETBASE_CONFIG = ${JSON.stringify(config, null, 2)};`);
 });
 
+// Rota de Versão do Sistema para controlo de atualizações
+const fs = require('fs');
+let baseVersion = '1.0.0';
+try {
+  baseVersion = require('./package.json').version;
+} catch (e) {}
+
+app.get('/api/version', (req, res) => {
+  let mtime = '0';
+  try {
+    const stats = fs.statSync(path.join(__dirname, 'package.json'));
+    mtime = String(stats.mtimeMs);
+  } catch (e) {}
+  res.json({ version: `${baseVersion}-${mtime}` });
+});
+
 // Rotas da API
 app.use('/api/google', googleRoutes);
 app.use('/api/bank', bankRoutes);
