@@ -2372,18 +2372,7 @@ export async function saveConfirmOrderEdit(e) {
     if (balanceIdx !== -1) rowData[balanceIdx] = balance;
     if (bankDutyIdx !== -1) rowData[bankDutyIdx] = bankDuty;
 
-    // Atualizar o status automaticamente se aplicável
-    if (statusIdx !== -1) {
-        let currentStatus = String(rowData[statusIdx] || 'PENDENTE').trim();
-        if (currentStatus === '?') currentStatus = 'PENDENTE';
-        currentStatus = currentStatus.toUpperCase();
-        
-        if (currentStatus === 'CONFIRMADO' && balance > 1.0) {
-            rowData[statusIdx] = 'PARCIAL';
-        } else if ((currentStatus === 'PENDENTE' || currentStatus === 'PARCIAL') && balance <= 0 && paid > 0) {
-            rowData[statusIdx] = 'CONFIRMADO';
-        }
-    }
+
 
     try {
         const spreadsheetId = state.confirm.sheetId;
@@ -2438,12 +2427,7 @@ export async function saveConfirmOrderEdit(e) {
                 values: [[bankDuty]]
             });
         }
-        if (statusIdx !== -1) {
-            batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
-                values: [[rowData[statusIdx]]]
-            });
-        }
+
 
         if (batchUpdates.length > 0) {
             await updateGSheetBatch(spreadsheetId, batchUpdates);
