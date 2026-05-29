@@ -1996,6 +1996,41 @@ export function openConfirmEditModal(index) {
         selectEl.value = val;
     }
 
+    // Carregar o estado da confirmação como apenas leitura
+    const cols = state.confirm.columns || [];
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = cols.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = cols.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+    let rowStatus = 'PENDENTE';
+    if (statusIdx !== -1 && state.confirm.data && state.confirm.data[o.originalIndex]) {
+        rowStatus = String(state.confirm.data[o.originalIndex][statusIdx] || 'PENDENTE').trim();
+        if (rowStatus === '?') rowStatus = 'PENDENTE';
+        rowStatus = rowStatus.toUpperCase();
+        if (rowStatus === 'CONFIRMADO' && o.balance > 1.0) {
+            rowStatus = 'PARCIAL';
+        }
+    }
+    const editStatusEl = document.getElementById('edit-status');
+    if (editStatusEl) {
+        editStatusEl.value = rowStatus;
+    }
+
     document.getElementById('confirm-edit-modal').classList.remove('hidden');
 }
 
