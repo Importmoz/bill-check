@@ -4142,6 +4142,8 @@ export async function confirmPaymentSelection() {
                     const updatedRowData = state.confirm.data[rowObj.originalIndex];
                     updateConfirmDetailRow(rowObj.originalIndex, updatedRowData);
                 });
+                // Re-renderizar o detalhe inteiro para exibir o card "Detalhes de Reconciliação" atualizado
+                await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
             }
         } else {
             showView('view-confirm-table');
