@@ -1,5 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
-body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e293b; }
+body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e293b; height: 100vh; width: 100vw; margin: 0; padding: 0; overflow: hidden; }
 .excel-table { border: 2px solid #6b7280; border-collapse: collapse; width: 100%; background-color: white; }
 .excel-table th, .excel-table td { border: 1px solid #6b7280; padding: 4px 8px; color: black; vertical-align: middle; line-height: 1.2; }
 .header-main { font-size: 1rem; font-weight: 700; text-align: center; text-transform: uppercase; letter-spacing: 1px; }

@@ -1,151 +1,160 @@
-<div id="view-hub" class="max-w-screen-2xl mx-auto hidden min-h-[60vh] flex flex-col justify-center py-12">
-        <div class="text-center mb-16">
-            <h1 class="text-4xl font-black text-gray-900 tracking-tighter uppercase mb-2">CTR Systems</h1>
-            <p class="text-gray-400 text-xs font-bold uppercase tracking-[0.3em]">Central de Operações Integradas</p>
-        </div>
+<div id="view-hub" class="max-w-6xl mx-auto hidden flex flex-col justify-center py-4 md:py-6 h-full w-full">
+    <div class="text-center mb-8">
+        <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase mb-1">CTR Systems</h1>
+        <p class="text-gray-400 text-[10px] font-bold uppercase tracking-[0.3em]">Central de Operações Integradas</p>
+    </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 px-4">
-            <!-- Módulo BILL -->
-            <div id="card-module-BILL" onclick="showDashboard()" class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
-                <div class="absolute top-0 right-0 bg-black text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
-                    Ativo</div>
-                <div class="bg-black text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 px-4 w-full">
+        <!-- Módulo BILL -->
+        <div id="card-module-BILL" onclick="showDashboard()" class="group bg-white border-2 border-gray-600 p-5 rounded-2xl shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer relative overflow-hidden w-full flex flex-col justify-between min-h-[190px]">
+            <div class="absolute top-0 right-0 bg-black text-white px-3 py-0.5 text-[7px] font-bold uppercase tracking-widest">
+                Ativo</div>
+            <div>
+                <div class="bg-black text-white w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow group-hover:scale-105 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
                         <line x1="2" y1="10" x2="22" y2="10"></line>
                     </svg>
                 </div>
-                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">BILL</h3>
-                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Gestão de Custos
-                    Duty &amp; Freight</p>
-                <div class="mt-6 flex items-center text-black font-bold text-[10px] uppercase tracking-wider gap-2">
-                    Aceder Módulo
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
+                <h3 class="text-base font-black uppercase tracking-tight mb-0.5 text-gray-900">BILL</h3>
+                <p class="text-gray-450 text-[9px] font-semibold leading-tight uppercase tracking-tighter">Gestão de Custos Duty &amp; Freight</p>
             </div>
+            <div class="mt-3 flex items-center text-black font-bold text-[8px] uppercase tracking-wider gap-1">
+                Aceder Módulo
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </div>
+        </div>
 
-            <!-- Módulo FINANCE -->
-            <div id="card-module-FINANCE" onclick="showFinance()" class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
-                <div class="absolute top-0 right-0 bg-blue-600 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest italic">
-                    Pendente</div>
-                <div class="bg-blue-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Módulo FINANCE -->
+        <div id="card-module-FINANCE" onclick="showFinance()" class="group bg-white border-2 border-gray-600 p-5 rounded-2xl shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer relative overflow-hidden w-full flex flex-col justify-between min-h-[190px]">
+            <div class="absolute top-0 right-0 bg-blue-600 text-white px-3 py-0.5 text-[7px] font-bold uppercase tracking-widest italic">
+                Pendente</div>
+            <div>
+                <div class="bg-blue-600 text-white w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow group-hover:scale-105 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
                         <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
                     </svg>
                 </div>
-                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">FINANCE</h3>
-                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Gestão
-                    Financeira e Fluxo de Caixa</p>
-                <div class="mt-6 flex items-center text-blue-600 font-bold text-[10px] uppercase tracking-wider gap-2">
-                    Configurar Módulo
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
+                <h3 class="text-base font-black uppercase tracking-tight mb-0.5 text-gray-900">FINANCE</h3>
+                <p class="text-gray-450 text-[9px] font-semibold leading-tight uppercase tracking-tighter">Gestão Financeira e Fluxo de Caixa</p>
             </div>
+            <div class="mt-3 flex items-center text-blue-600 font-bold text-[8px] uppercase tracking-wider gap-1">
+                Configurar Módulo
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </div>
+        </div>
 
-            <!-- Módulo TEAM -->
-            <div id="card-module-TEAM" onclick="showTeam()" class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
-                <div class="absolute top-0 right-0 bg-orange-500 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
-                    Novo</div>
-                <div class="bg-orange-500 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Módulo TEAM -->
+        <div id="card-module-TEAM" onclick="showTeam()" class="group bg-white border-2 border-gray-600 p-5 rounded-2xl shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer relative overflow-hidden w-full flex flex-col justify-between min-h-[190px]">
+            <div class="absolute top-0 right-0 bg-orange-500 text-white px-3 py-0.5 text-[7px] font-bold uppercase tracking-widest">
+                Novo</div>
+            <div>
+                <div class="bg-orange-500 text-white w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow group-hover:scale-105 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                         <circle cx="9" cy="7" r="4"></circle>
                         <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
                         <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                     </svg>
                 </div>
-                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">TEAM</h3>
-                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Relatórios e
-                    Controlo de Equipes</p>
-                <div class="mt-6 flex items-center text-orange-600 font-bold text-[10px] uppercase tracking-wider gap-2">
-                    Aceder Módulo
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
+                <h3 class="text-base font-black uppercase tracking-tight mb-0.5 text-gray-900">TEAM</h3>
+                <p class="text-gray-450 text-[9px] font-semibold leading-tight uppercase tracking-tighter">Relatórios e Controlo de Equipes</p>
             </div>
+            <div class="mt-3 flex items-center text-orange-600 font-bold text-[8px] uppercase tracking-wider gap-1">
+                Aceder Módulo
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </div>
+        </div>
 
-            <!-- Módulo TERM -->
-            <div id="card-module-TERM" onclick="showTerm()" class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
-                <div class="absolute top-0 right-0 bg-green-600 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
-                    Novo</div>
-                <div class="bg-green-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Módulo TERM -->
+        <div id="card-module-TERM" onclick="showTerm()" class="group bg-white border-2 border-gray-600 p-5 rounded-2xl shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer relative overflow-hidden w-full flex flex-col justify-between min-h-[190px]">
+            <div class="absolute top-0 right-0 bg-green-600 text-white px-3 py-0.5 text-[7px] font-bold uppercase tracking-widest">
+                Novo</div>
+            <div>
+                <div class="bg-green-600 text-white w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow group-hover:scale-105 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                         <line x1="16" y1="2" x2="16" y2="6"></line>
                         <line x1="8" y1="2" x2="8" y2="6"></line>
                         <line x1="3" y1="10" x2="21" y2="10"></line>
                     </svg>
                 </div>
-                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">TERM</h3>
-                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Controlo de
-                    Contentores e Prazos</p>
-                <div class="mt-6 flex items-center text-green-600 font-bold text-[10px] uppercase tracking-wider gap-2">
-                    Aceder Módulo
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
+                <h3 class="text-base font-black uppercase tracking-tight mb-0.5 text-gray-900">TERM</h3>
+                <p class="text-gray-450 text-[9px] font-semibold leading-tight uppercase tracking-tighter">Controlo de Contentores e Prazos</p>
             </div>
+            <div class="mt-3 flex items-center text-green-600 font-bold text-[8px] uppercase tracking-wider gap-1">
+                Aceder Módulo
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </div>
+        </div>
 
-            <!-- Módulo CONFIRM -->
-            <div id="card-module-CONFIRM" onclick="showConfirm()" class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
-                <div class="absolute top-0 right-0 bg-yellow-400 text-black px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
-                    Novo</div>
-                <div class="bg-yellow-400 text-black w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Módulo CONFIRM -->
+        <div id="card-module-CONFIRM" onclick="showConfirm()" class="group bg-white border-2 border-gray-600 p-5 rounded-2xl shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer relative overflow-hidden w-full flex flex-col justify-between min-h-[190px]">
+            <div class="absolute top-0 right-0 bg-yellow-400 text-black px-3 py-0.5 text-[7px] font-bold uppercase tracking-widest">
+                Novo</div>
+            <div>
+                <div class="bg-yellow-400 text-black w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow group-hover:scale-105 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                         <polyline points="22 4 12 14.01 9 11.01"></polyline>
                     </svg>
                 </div>
-                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">CONFIRM</h3>
-                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Confirmação GSheet &amp; Drive</p>
-                <div class="mt-6 flex items-center text-yellow-600 font-bold text-[10px] uppercase tracking-wider gap-2">
-                    Aceder Módulo
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
+                <h3 class="text-base font-black uppercase tracking-tight mb-0.5 text-gray-900">CONFIRM</h3>
+                <p class="text-gray-450 text-[9px] font-semibold leading-tight uppercase tracking-tighter">Confirmação GSheet &amp; Drive</p>
             </div>
+            <div class="mt-3 flex items-center text-yellow-600 font-bold text-[8px] uppercase tracking-wider gap-1">
+                Aceder Módulo
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </div>
+        </div>
 
-            <!-- Módulo EXTRACTOS -->
-            <div id="card-module-EXTRACTOS" onclick="showBank()" class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
-                <div class="absolute top-0 right-0 bg-purple-600 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
-                    BETA</div>
-                <div class="bg-purple-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Módulo EXTRACTOS -->
+        <div id="card-module-EXTRACTOS" onclick="showBank()" class="group bg-white border-2 border-gray-600 p-5 rounded-2xl shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer relative overflow-hidden w-full flex flex-col justify-between min-h-[190px]">
+            <div class="absolute top-0 right-0 bg-purple-600 text-white px-3 py-0.5 text-[7px] font-bold uppercase tracking-widest">
+                BETA</div>
+            <div>
+                <div class="bg-purple-600 text-white w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow group-hover:scale-105 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                         <polyline points="17 8 12 3 7 8"></polyline>
                         <line x1="12" y1="3" x2="12" y2="15"></line>
                     </svg>
                 </div>
-                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">EXTRACTOS</h3>
-                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Gestão e Reconciliação Bancária</p>
-                <div class="mt-6 flex items-center text-purple-600 font-bold text-[10px] uppercase tracking-wider gap-2">
-                    Aceder Módulo
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
+                <h3 class="text-base font-black uppercase tracking-tight mb-0.5 text-gray-900">EXTRACTOS</h3>
+                <p class="text-gray-450 text-[9px] font-semibold leading-tight uppercase tracking-tighter">Gestão e Reconciliação Bancária</p>
             </div>
-            
-            <!-- Módulo QUOTE (Cotações) -->
-            <div id="card-module-QUOTE" onclick="showQuoteDashboard()" class="group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
-                <div class="absolute top-0 right-0 bg-indigo-600 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
-                    Novo</div>
-                <div class="bg-indigo-600 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <div class="mt-3 flex items-center text-purple-600 font-bold text-[8px] uppercase tracking-wider gap-1">
+                Aceder Módulo
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </div>
+        </div>
+        
+        <!-- Módulo QUOTE (Cotações) -->
+        <div id="card-module-QUOTE" onclick="showQuoteDashboard()" class="group bg-white border-2 border-gray-600 p-5 rounded-2xl shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer relative overflow-hidden w-full flex flex-col justify-between min-h-[190px]">
+            <div class="absolute top-0 right-0 bg-indigo-600 text-white px-3 py-0.5 text-[7px] font-bold uppercase tracking-widest">
+                Novo</div>
+            <div>
+                <div class="bg-indigo-600 text-white w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow group-hover:scale-105 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                         <polyline points="14 2 14 8 20 8"></polyline>
                         <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -153,38 +162,40 @@
                         <polyline points="10 9 9 9 8 9"></polyline>
                     </svg>
                 </div>
-                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">QUOTE</h3>
-                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Cotações de Transporte &amp; Importação</p>
-                <div class="mt-6 flex items-center text-indigo-600 font-bold text-[10px] uppercase tracking-wider gap-2">
-                    Aceder Módulo
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
+                <h3 class="text-base font-black uppercase tracking-tight mb-0.5 text-gray-900">QUOTE</h3>
+                <p class="text-gray-450 text-[9px] font-semibold leading-tight uppercase tracking-tighter">Cotações de Transporte &amp; Importação</p>
             </div>
-
-            <!-- Módulo DEFINIÇÕES -->
-            <div id="card-module-SETTINGS" onclick="showSettings()" class="hidden group bg-white border-2 border-gray-600 p-8 rounded-3xl shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-1 hover:translate-y-1 transition-all cursor-pointer relative overflow-hidden w-full max-w-[320px]">
-                <div class="absolute top-0 right-0 bg-gray-800 text-white px-4 py-1 text-[8px] font-bold uppercase tracking-widest">
-                    ADMIN</div>
-                <div class="bg-gray-800 text-white w-14 h-14 rounded-2xl flex items-center justify-center mb-6 shadow-lg group-hover:scale-110 transition-transform">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                </div>
-                <h3 class="text-2xl font-black uppercase tracking-tight mb-2">DEFINIÇÕES</h3>
-                <p class="text-gray-500 text-xs font-medium leading-relaxed uppercase tracking-tighter">Gestão de Utilizadores e Acessos</p>
-                <div class="mt-6 flex items-center text-gray-800 font-bold text-[10px] uppercase tracking-wider gap-2">
-                    Aceder Módulo
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                        <polyline points="12 5 19 12 12 19"></polyline>
-                    </svg>
-                </div>
+            <div class="mt-3 flex items-center text-indigo-600 font-bold text-[8px] uppercase tracking-wider gap-1">
+                Aceder Módulo
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
             </div>
         </div>
 
-        <div class="mt-20 text-center">
-            <button onclick="handleLogout()" class="text-gray-400 hover:text-red-600 font-bold text-xs uppercase tracking-widest transition-all">Sair
-                do Sistema</button>
+        <!-- Módulo DEFINIÇÕES -->
+        <div id="card-module-SETTINGS" onclick="showSettings()" class="hidden group bg-white border-2 border-gray-600 p-5 rounded-2xl shadow-[5px_5px_0px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-0.5 hover:translate-y-0.5 transition-all cursor-pointer relative overflow-hidden w-full flex flex-col justify-between min-h-[190px]">
+            <div class="absolute top-0 right-0 bg-gray-800 text-white px-3 py-0.5 text-[7px] font-bold uppercase tracking-widest">
+                ADMIN</div>
+            <div>
+                <div class="bg-gray-800 text-white w-10 h-10 rounded-xl flex items-center justify-center mb-3 shadow group-hover:scale-105 transition-transform">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </div>
+                <h3 class="text-base font-black uppercase tracking-tight mb-0.5 text-gray-900">DEFINIÇÕES</h3>
+                <p class="text-gray-450 text-[9px] font-semibold leading-tight uppercase tracking-tighter">Gestão de Utilizadores e Acessos</p>
+            </div>
+            <div class="mt-3 flex items-center text-gray-800 font-bold text-[8px] uppercase tracking-wider gap-1">
+                Aceder Módulo
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                    <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+            </div>
         </div>
     </div>
+
+    <div class="mt-8 text-center">
+        <button onclick="handleLogout()" class="text-gray-400 hover:text-red-600 font-bold text-[10px] uppercase tracking-widest transition-all">Sair do Sistema</button>
+    </div>
+</div>
