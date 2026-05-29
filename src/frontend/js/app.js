@@ -1654,9 +1654,51 @@ async function saveConfirmToSheet() {
             rawSheetName = api.state.confirm.range.split('!')[0];
         }
         const cleanSheetName = rawSheetName.replace(/'/g, '');
-        const targetRange = `${cleanSheetName}!A${currentConfirmRow.index + 1}`;
+        const targetRowIndex = currentConfirmRow.index;
+        const rowNum = targetRowIndex + 1;
 
-        await api.updateGSheet(spreadsheetId, targetRange, [updatedRow]);
+        // Criar lote para atualizar apenas as células modificadas
+        const getColLetter = (idx) => {
+            let colLetter = '';
+            while (idx >= 0) {
+                colLetter = String.fromCharCode(65 + (idx % 26)) + colLetter;
+                idx = Math.floor(idx / 26) - 1;
+            }
+            return colLetter;
+        };
+
+        const batchUpdates = [];
+        if (paidIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
+                values: [[updatedRow[paidIdx]]]
+            });
+        }
+        if (balanceIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+                values: [[updatedRow[balanceIdx]]]
+            });
+        }
+        if (statusIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
+                values: [[updatedRow[statusIdx]]]
+            });
+        }
+
+        // PAG 1, PAG 2, PAG 3
+        ['PAG 1', 'PAG 2', 'PAG 3'].forEach(label => {
+            const idx = findCol([label]);
+            if (idx !== -1) {
+                batchUpdates.push({
+                    range: `${cleanSheetName}!${getColLetter(idx)}${rowNum}`,
+                    values: [[updatedRow[idx]]]
+                });
+            }
+        });
+
+        await api.updateGSheetBatch(spreadsheetId, batchUpdates);
 
         // 3. Gerir Comentário e Cor nativamente
         const comment = document.getElementById('input-confirm-comment')?.value || '';

@@ -22,6 +22,18 @@ export function setLoader(show, message = 'A Processar') {
 }
 
 /**
+ * Retorna a letra da coluna correspondente ao índice (0 = A, 1 = B, etc.)
+ */
+export function getColLetter(idx) {
+    let colLetter = '';
+    while (idx >= 0) {
+        colLetter = String.fromCharCode(65 + (idx % 26)) + colLetter;
+        idx = Math.floor(idx / 26) - 1;
+    }
+    return colLetter;
+}
+
+/**
  * Mostra uma notificação toast premium
  */
 export function toast(message, type = 'info') {
@@ -2380,9 +2392,62 @@ export async function saveConfirmOrderEdit(e) {
             sheetName = state.confirm.range.split('!')[0];
         }
         const rowNum = o.originalIndex + 1;
-        const range = `${sheetName}!A${rowNum}:Z${rowNum}`;
+        const cleanSheetName = sheetName.replace(/'/g, '');
 
-        await updateGSheet(spreadsheetId, range, [rowData]);
+        // Criar lote para atualizar apenas as células modificadas
+        const batchUpdates = [];
+        if (cbmIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(cbmIdx)}${rowNum}`,
+                values: [[cbm]]
+            });
+        }
+        if (unitDutyIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(unitDutyIdx)}${rowNum}`,
+                values: [[unitDuty]]
+            });
+        }
+        if (dutyPrepaidIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(dutyPrepaidIdx)}${rowNum}`,
+                values: [[dutyPrepaid]]
+            });
+        }
+        if (amountDutyIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(amountDutyIdx)}${rowNum}`,
+                values: [[amountDuty]]
+            });
+        }
+        if (paidIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
+                values: [[paid]]
+            });
+        }
+        if (balanceIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+                values: [[balance]]
+            });
+        }
+        if (bankDutyIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(bankDutyIdx)}${rowNum}`,
+                values: [[bankDuty]]
+            });
+        }
+        if (statusIdx !== -1) {
+            batchUpdates.push({
+                range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
+                values: [[rowData[statusIdx]]]
+            });
+        }
+
+        if (batchUpdates.length > 0) {
+            await updateGSheetBatch(spreadsheetId, batchUpdates);
+        }
         
         // Atualizar estado local
         state.confirm.data[o.originalIndex] = rowData;
@@ -2453,9 +2518,11 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
             sheetName = state.confirm.range.split('!')[0];
         }
         const rowNum = originalRowIndex + 1;
-        const range = `${sheetName}!A${rowNum}:Z${rowNum}`;
+        const cleanSheetName = sheetName.replace(/'/g, '');
+        const colLetter = getColLetter(bankDutyIdx);
+        const cellRange = `${cleanSheetName}!${colLetter}${rowNum}`;
 
-        await updateGSheet(spreadsheetId, range, [rowData]);
+        await updateGSheet(spreadsheetId, cellRange, [[newBankValue === '?' ? '' : newBankValue]]);
         
         // 2. Atualizar estado local
         state.confirm.data[originalRowIndex] = rowData;
@@ -2602,13 +2669,34 @@ export async function applyBulkUpdate() {
                 // Emitir LOCK temporário para o real-time
                 emitConfirmEvent(spreadsheetId, originalIndex, 'LOCK', { name: pb.authStore.model?.name || 'Utilizador' });
 
-                // Acumular a gravação no Google Sheets
+                // Acumular apenas as células modificadas no Google Sheets
                 const rowNum = originalIndex + 1;
-                const range = `${cleanSheetName}!A${rowNum}:Z${rowNum}`;
-                batchUpdates.push({
-                    range,
-                    values: [rowData]
-                });
+                if (selectedBank && bankDutyIdx !== -1) {
+                    batchUpdates.push({
+                        range: `${cleanSheetName}!${getColLetter(bankDutyIdx)}${rowNum}`,
+                        values: [[rowData[bankDutyIdx]]]
+                    });
+                }
+                if (selectedStatus) {
+                    if (statusIdx !== -1) {
+                        batchUpdates.push({
+                            range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
+                            values: [[rowData[statusIdx]]]
+                        });
+                    }
+                    if (paidIdx !== -1) {
+                        batchUpdates.push({
+                            range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
+                            values: [[rowData[paidIdx]]]
+                        });
+                    }
+                    if (balanceIdx !== -1) {
+                        batchUpdates.push({
+                            range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+                            values: [[rowData[balanceIdx]]]
+                        });
+                    }
+                }
 
                 localUpdates.push({
                     originalIndex,
@@ -3803,14 +3891,6 @@ export async function confirmPaymentSelection() {
             const amountDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
 
             if (state.confirm.sheetId) {
-                const getColLetter = (idx) => {
-                    let colLetter = '';
-                    while (idx >= 0) {
-                        colLetter = String.fromCharCode(65 + (idx % 26)) + colLetter;
-                        idx = Math.floor(idx / 26) - 1;
-                    }
-                    return colLetter;
-                };
                 let sheetName = '';
                 if (state.confirm.range && state.confirm.range.includes('!')) {
                     sheetName = state.confirm.range.split('!')[0];
@@ -3906,13 +3986,46 @@ export async function confirmPaymentSelection() {
                         }
                     }
 
-                    // Acumular para o lote do Google Sheets
-                    const lastColLetter = getColLetter(rowData.length - 1);
-                    const rangeToUpdate = `${prefix}A${sheetRowNumber}:${lastColLetter}${sheetRowNumber}`;
-                    batchUpdates.push({
-                        range: rangeToUpdate,
-                        values: [rowData]
-                    });
+                    // Acumular apenas as células modificadas para o Google Sheets
+                    const cleanSheetName = sheetName.replace(/'/g, '');
+                    const prefixClean = cleanSheetName ? `${cleanSheetName}!` : '';
+
+                    if (paidIdx !== -1) {
+                        batchUpdates.push({
+                            range: `${prefixClean}${getColLetter(paidIdx)}${sheetRowNumber}`,
+                            values: [[rowData[paidIdx]]]
+                        });
+                    }
+                    if (balanceIdx !== -1) {
+                        batchUpdates.push({
+                            range: `${prefixClean}${getColLetter(balanceIdx)}${sheetRowNumber}`,
+                            values: [[rowData[balanceIdx]]]
+                        });
+                    }
+                    if (statusIdx !== -1) {
+                        batchUpdates.push({
+                            range: `${prefixClean}${getColLetter(statusIdx)}${sheetRowNumber}`,
+                            values: [[rowData[statusIdx]]]
+                        });
+                    }
+                    
+                    // PAG 1, PAG 2, PAG 3
+                    const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
+                    for (let i = 0; i < pagIndices.length; i++) {
+                        const pIdx = pagIndices[i];
+                        const dateVal = formattedDates[i];
+                        if (newStatus === 'PENDENTE') {
+                            batchUpdates.push({
+                                range: `${prefixClean}${getColLetter(pIdx)}${sheetRowNumber}`,
+                                values: [['']]
+                            });
+                        } else if (dateVal !== undefined) {
+                            batchUpdates.push({
+                                range: `${prefixClean}${getColLetter(pIdx)}${sheetRowNumber}`,
+                                values: [[dateVal]]
+                            });
+                        }
+                    }
 
                     localStateUpdates.push({
                         originalIndex,
