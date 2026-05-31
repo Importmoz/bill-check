@@ -163,7 +163,10 @@ window.saveUser = async function(e) {
     const checkboxes = document.querySelectorAll('#user-permissions input[type="checkbox"]:checked');
     const permissions = Array.from(checkboxes).map(cb => cb.value);
     
-    const data = { name, email, role, permissions };
+    const data = { name, role, permissions };
+    if (!id) {
+        data.email = email;
+    }
     if (password) data.password = password;
     
     const btn = document.getElementById('btn-save-user');

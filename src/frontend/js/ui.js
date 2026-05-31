@@ -4246,7 +4246,7 @@ export async function loadSettingsUsers() {
             tr.className = 'border-b-2 border-gray-100 hover:bg-gray-50 transition-colors';
             tr.innerHTML = `
                 <td class="px-6 py-4 font-bold text-gray-900">${user.name || '---'}</td>
-                <td class="px-6 py-4 text-gray-600">${user.email}</td>
+                <td class="px-6 py-4 text-gray-600">${user.email || '<span class="text-gray-400 italic">Oculto</span>'}</td>
                 <td class="px-6 py-4">${roleBadge}</td>
                 <td class="px-6 py-4 flex flex-wrap gap-1">${permsHtml}</td>
                 <td class="px-6 py-4 text-right">
@@ -4293,6 +4293,8 @@ export function openUserModal(userId = null) {
         passInput.required = false;
         passHint.classList.remove('hidden');
         idInput.value = userId;
+        emailInput.disabled = true;
+        emailInput.classList.add('bg-gray-100', 'cursor-not-allowed');
         
         const user = (window.__SETTINGS_USERS__ || []).find(u => u.id === userId);
         if (user) {
@@ -4313,6 +4315,8 @@ export function openUserModal(userId = null) {
         passInput.required = true;
         passHint.classList.add('hidden');
         idInput.value = "";
+        emailInput.disabled = false;
+        emailInput.classList.remove('bg-gray-100', 'cursor-not-allowed');
     }
     
     modal.classList.remove('hidden');
