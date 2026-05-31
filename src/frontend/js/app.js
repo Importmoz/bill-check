@@ -1059,6 +1059,11 @@ async function showConfirm() {
 
 async function loadConfirmProjects() {
     try {
+        const role = api.pb.authStore.model?.role || 'USER';
+        const btnNewProject = document.querySelector('button[onclick="openConfirmProjectModal()"]');
+        if (btnNewProject) {
+            btnNewProject.style.display = role === 'ADMIN' ? 'flex' : 'none';
+        }
         const projects = await api.getConfirmProjects();
         ui.renderConfirmProjects(projects);
     } catch (err) {
@@ -1067,6 +1072,12 @@ async function loadConfirmProjects() {
 }
 
 async function openConfirmProjectModal(projectId = null) {
+    const role = api.pb.authStore.model?.role || 'USER';
+    if (role !== 'ADMIN') {
+        ui.toast("Acesso Negado: A criação/edição de projetos exige permissões de Administrador.", "error");
+        return;
+    }
+
     const title = document.getElementById('confirm-project-modal-title');
     const idInput = document.getElementById('input-project-id');
     const nameInput = document.getElementById('input-project-name');
@@ -1447,6 +1458,12 @@ function driveGoHome() {
 }
 
 function onConfirmRow(rowIndex, rowData) {
+    const role = api.pb.authStore.model?.role || 'USER';
+    if (role === 'USER' || role === 'USER_L1') {
+        ui.toast("Acesso Negado: A alteração manual de estado exige nível de permissão Nível 2 ou superior.", "error");
+        return;
+    }
+
     console.log("[DEBUG-ONCONFIRM] Called onConfirmRow for rowIndex=" + rowIndex);
     // Limpar locks expirados (mais de 5 minutos)
     const now = Date.now();

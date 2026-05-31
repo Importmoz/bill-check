@@ -2577,6 +2577,12 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
 }
 
 export async function applyBulkUpdate() {
+    const role = pb.authStore.model?.role || 'USER';
+    if (role === 'USER' || role === 'USER_L1') {
+        toast("Acesso Negado: A alteração em massa exige nível de permissão Nível 2 ou superior.", "error");
+        return;
+    }
+
     if (!window.currentActiveClient || !window.currentClientRows || window.currentClientRows.length === 0) {
         toast("Nenhuma ordem ativa para atualizar.", "error");
         return;
@@ -2924,6 +2930,8 @@ export function renderConfirmProjects(projects, isSearch = false) {
     const container = document.getElementById('confirm-projects-list');
     if (!container) return;
 
+    const isProjAdmin = (pb.authStore.model?.role || 'USER') === 'ADMIN';
+
     // Guardar no estado apenas se não for uma pesquisa (para manter a lista completa)
     if (!isSearch) {
         if (!state.confirm) state.confirm = {};
@@ -2936,7 +2944,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
         container.innerHTML = `
             <div class="col-span-full py-20 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
                 <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">Nenhum projeto gravado.</p>
-                <button onclick="openConfirmProjectModal()" class="mt-4 text-blue-600 font-bold uppercase text-[10px] hover:underline">+ Adicionar Primeiro Projeto</button>
+                ${isProjAdmin ? `<button onclick="openConfirmProjectModal()" class="mt-4 text-blue-600 font-bold uppercase text-[10px] hover:underline">+ Adicionar Primeiro Projeto</button>` : ''}
             </div>
         `;
         return;
@@ -3014,12 +3022,14 @@ export function renderConfirmProjects(projects, isSearch = false) {
                     </div>
                 </div>
                 
+                ${isProjAdmin ? `
                 <div class="flex items-center gap-2 shrink-0">
                     <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
                         class="w-8 h-8 bg-slate-50 text-slate-300 rounded-lg flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     </button>
                 </div>
+                ` : ''}
             `;
             container.appendChild(card);
         });
@@ -3042,12 +3052,14 @@ export function renderConfirmProjects(projects, isSearch = false) {
                     </div>
                 </div>
                 
+                ${isProjAdmin ? `
                 <div class="flex items-center gap-2 shrink-0">
                     <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
                         class="w-7 h-7 bg-slate-50 text-slate-300 rounded-lg flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     </button>
                 </div>
+                ` : ''}
             `;
             container.appendChild(card);
         });
@@ -3071,12 +3083,14 @@ export function renderConfirmProjects(projects, isSearch = false) {
                     </td>
                     <td class="p-3 text-slate-500 font-mono text-[10px] truncate max-w-[150px]">${p.sheetId}</td>
                     <td class="p-3 text-slate-500 font-mono text-[10px] truncate max-w-[150px]">${p.folderId || '—'}</td>
+                    ${isProjAdmin ? `
                     <td class="p-3 text-center">
                         <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
                             class="w-7 h-7 bg-slate-50 text-slate-400 rounded-lg inline-flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90 mx-auto">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
                     </td>
+                    ` : ''}
                 </tr>
             `;
         });
@@ -3088,7 +3102,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
                         <th class="p-3">Nome do Projeto</th>
                         <th class="p-3">ID da Planilha (Sheet ID)</th>
                         <th class="p-3">ID da Pasta (Folder ID)</th>
-                        <th class="p-3 text-center w-24">Ações</th>
+                        ${isProjAdmin ? '<th class="p-3 text-center w-24">Ações</th>' : ''}
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
@@ -3575,6 +3589,12 @@ export function setMiniFilterSearch(value) {
 }
 
 export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmount = '', defaultTerm = '', clientName = '', phoneNumber = '', notaDuty = '') {
+    const role = pb.authStore.model?.role || 'USER';
+    if (role === 'USER' || role === 'USER_L1') {
+        toast("Acesso Negado: A vinculação de pagamentos exige nível de permissão Nível 2 ou superior.", "error");
+        return;
+    }
+
     // 1. Emitir LOCK para todas as ordens (linhas) deste cliente
     if (window.currentActiveClient && window.currentActiveClient.rows && state.confirm && state.confirm.sheetId) {
         console.log(`[SSE-FASE-1][EMISSÃO-PAGAMENTO] Bloqueando todas as ordens do cliente '${clientName}' para pagamento concorrente.`);
@@ -4207,10 +4227,15 @@ export async function loadSettingsUsers() {
         }
         
         users.forEach(user => {
-            const role = user.role || 'USER';
-            const roleBadge = role === 'ADMIN' 
-                ? '<span class="px-2 py-1 bg-black text-white rounded-md text-[10px] font-black tracking-widest">ADMIN</span>'
-                : '<span class="px-2 py-1 bg-gray-200 text-gray-600 rounded-md text-[10px] font-black tracking-widest">USER</span>';
+            const role = user.role || 'USER_L1';
+            let roleBadge = '';
+            if (role === 'ADMIN') {
+                roleBadge = '<span class="px-2 py-1 bg-black text-white rounded-md text-[10px] font-black tracking-widest">ADMIN</span>';
+            } else if (role === 'USER_L2') {
+                roleBadge = '<span class="px-2 py-1 bg-indigo-600 text-white rounded-md text-[10px] font-black tracking-widest font-sans uppercase">NÍVEL 2</span>';
+            } else {
+                roleBadge = '<span class="px-2 py-1 bg-slate-200 text-slate-600 rounded-md text-[10px] font-black tracking-widest font-sans uppercase">NÍVEL 1</span>';
+            }
                 
             const perms = user.permissions || [];
             const permsHtml = perms.length > 0 
@@ -4273,7 +4298,9 @@ export function openUserModal(userId = null) {
         if (user) {
             nameInput.value = user.name || '';
             emailInput.value = user.email || '';
-            roleSelect.value = user.role || 'USER';
+            let rVal = user.role || 'USER_L1';
+            if (rVal === 'USER') rVal = 'USER_L1';
+            roleSelect.value = rVal;
             
             const perms = user.permissions || [];
             checkboxes.forEach(cb => {
