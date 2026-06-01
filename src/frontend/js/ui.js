@@ -1834,6 +1834,27 @@ export async function showConfirmDetail(client, clientIndex) {
 
     // Atualizar UI dos Locks
     updateLocksUI();
+
+    // Configurar e limpar seletores em massa
+    const role = pb.authStore.model?.role || 'USER';
+    const isL1 = role === 'USER' || role === 'USER_L1';
+    const bulkBankSelect = document.getElementById('bulk-bank');
+    const bulkStatusSelect = document.getElementById('bulk-status');
+    if (bulkBankSelect) {
+        bulkBankSelect.value = '';
+    }
+    if (bulkStatusSelect) {
+        bulkStatusSelect.value = '';
+        if (isL1) {
+            bulkStatusSelect.disabled = true;
+            bulkStatusSelect.classList.add('bg-slate-100', 'cursor-not-allowed', 'opacity-60');
+            bulkStatusSelect.classList.remove('bg-white', 'cursor-pointer');
+        } else {
+            bulkStatusSelect.disabled = false;
+            bulkStatusSelect.classList.remove('bg-slate-100', 'cursor-not-allowed', 'opacity-60');
+            bulkStatusSelect.classList.add('bg-white', 'cursor-pointer');
+        }
+    }
 }
 
 export async function updateConfirmDetailRow(rowIndex, rowData) {
@@ -2650,10 +2671,7 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
 
 export async function applyBulkUpdate() {
     const role = pb.authStore.model?.role || 'USER';
-    if (role === 'USER' || role === 'USER_L1') {
-        toast("Acesso Negado: A alteração em massa exige nível de permissão Nível 2 ou superior.", "error");
-        return;
-    }
+    const isL1 = role === 'USER' || role === 'USER_L1';
 
     if (!window.currentActiveClient || !window.currentClientRows || window.currentClientRows.length === 0) {
         toast("Nenhuma ordem ativa para atualizar.", "error");
@@ -2667,9 +2685,26 @@ export async function applyBulkUpdate() {
     const selectedBank = bulkBankSelect.value;
     const selectedStatus = bulkStatusSelect.value;
 
+    if (isL1 && selectedStatus) {
+        toast("Acesso Negado: A alteração de estado em massa exige nível de permissão Nível 2 ou superior.", "error");
+        return;
+    }
+
     if (!selectedBank && !selectedStatus) {
         toast("Por favor, selecione um Banco ou um Estado para aplicar.", "warning");
         return;
+    }
+
+    let applyConfirmAndPay = false;
+    if (selectedBank) {
+        const updateValues = confirm("Deseja também atualizar os valores destas ordens como pagos (Paid = Amount Duty)?");
+        if (updateValues) {
+            if (isL1) {
+                toast("Aviso: Apenas o banco será atualizado. Atualizar valores exige permissões de Nível 2 ou superior.", "warning");
+            } else {
+                applyConfirmAndPay = true;
+            }
+        }
     }
 
     let confirmMsg = "Tem a certeza que deseja aplicar esta alteração em massa a todas as ordens deste cliente?";
@@ -2744,18 +2779,29 @@ export async function applyBulkUpdate() {
                 }
             }
 
+            // Se o usuário optou por atualizar os valores como pagos
+            if (applyConfirmAndPay) {
+                const amountDutyVal = amtDutyIdx !== -1 ? (parseFloat(String(rowData[amtDutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
+                if (paidIdx !== -1) rowData[paidIdx] = amountDutyVal;
+                if (balanceIdx !== -1) rowData[balanceIdx] = 0;
+                modified = true;
+            }
+
+            // Determinar o status efetivo (apenas se selecionado no dropdown)
+            const effectiveStatus = selectedStatus;
+
             // Atualizar Status se selecionado
-            if (selectedStatus) {
+            if (effectiveStatus) {
                 if (statusIdx !== -1) {
-                    rowData[statusIdx] = selectedStatus;
+                    rowData[statusIdx] = effectiveStatus;
                     modified = true;
 
                     const amountDutyVal = amtDutyIdx !== -1 ? (parseFloat(String(rowData[amtDutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
 
-                    if (selectedStatus === 'CONFIRMADO') {
+                    if (effectiveStatus === 'CONFIRMADO') {
                         if (paidIdx !== -1) rowData[paidIdx] = amountDutyVal;
                         if (balanceIdx !== -1) rowData[balanceIdx] = 0;
-                    } else if (selectedStatus === 'PENDENTE') {
+                    } else if (effectiveStatus === 'PENDENTE') {
                         if (paidIdx !== -1) rowData[paidIdx] = '';
                         if (balanceIdx !== -1) rowData[balanceIdx] = amountDutyVal;
                     }
@@ -2774,13 +2820,9 @@ export async function applyBulkUpdate() {
                         values: [[rowData[bankDutyIdx]]]
                     });
                 }
-                if (selectedStatus) {
-                    if (statusIdx !== -1) {
-                        batchUpdates.push({
-                            range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
-                            values: [[rowData[statusIdx]]]
-                        });
-                    }
+                
+                let wrotePaidAndBalance = false;
+                if (applyConfirmAndPay) {
                     if (paidIdx !== -1) {
                         batchUpdates.push({
                             range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
@@ -2793,12 +2835,36 @@ export async function applyBulkUpdate() {
                             values: [[rowData[balanceIdx]]]
                         });
                     }
+                    wrotePaidAndBalance = true;
+                }
+
+                if (effectiveStatus) {
+                    if (statusIdx !== -1) {
+                        batchUpdates.push({
+                            range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
+                            values: [[rowData[statusIdx]]]
+                        });
+                    }
+                    if (!wrotePaidAndBalance) {
+                        if (paidIdx !== -1) {
+                            batchUpdates.push({
+                                range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
+                                values: [[rowData[paidIdx]]]
+                            });
+                        }
+                        if (balanceIdx !== -1) {
+                            batchUpdates.push({
+                                range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+                                values: [[rowData[balanceIdx]]]
+                            });
+                        }
+                    }
                 }
 
                 localUpdates.push({
                     originalIndex,
                     rowData,
-                    status: selectedStatus || rowData[statusIdx] || 'PENDENTE'
+                    status: effectiveStatus || rowData[statusIdx] || 'PENDENTE'
                 });
 
                 updatedCount++;
