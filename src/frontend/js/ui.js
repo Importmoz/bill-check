@@ -34,6 +34,31 @@ export function getColLetter(idx) {
 }
 
 /**
+ * Copia texto para a área de transferência com notificação toast
+ */
+window.copyToClipboard = async function(text, successMsg = "Copiado para a área de transferência!") {
+    try {
+        await navigator.clipboard.writeText(text);
+        toast(successMsg, "success");
+    } catch (err) {
+        console.error("Erro ao copiar para clipboard:", err);
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            toast(successMsg, "success");
+        } catch (e) {
+            toast("Erro ao copiar contacto.", "error");
+        }
+    }
+};
+
+/**
  * Mostra uma notificação toast premium
  */
 export function toast(message, type = 'info') {
@@ -1411,24 +1436,6 @@ export async function showConfirmDetail(client, clientIndex) {
     const breadcrumbEl = document.getElementById('confirm-breadcrumb');
     const body = document.getElementById('confirm-client-orders');
 
-    if (breadcrumbEl) {
-        const projectName = document.getElementById('confirm-project-active-name')?.textContent || 'PROJETO';
-        const separator = `<svg class="text-gray-300" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
-        const displayIndex = clientIndex !== undefined ? clientIndex : '---';
-
-        breadcrumbEl.innerHTML = `
-            <span class="hover:text-black cursor-pointer transition-colors" onclick="ui.showView('view-confirm-table')">${projectName}</span>
-            ${separator}
-            <span class="text-gray-600">${displayIndex}</span>
-            ${separator}
-            <span class="text-black font-black">${client.displayName || 'SEM NOME'}</span>
-        `;
-    }
-
-    if (nameEl) nameEl.innerText = client.displayName || 'Cliente Sem Nome';
-    if (idEl) idEl.innerText = `ID CODE: ${client.displayIdCode || '---'}`;
-    if (body) body.innerHTML = '';
-
     // Mapeamento de Colunas focado em DUTY (Refinado para evitar colisões)
     const columns = state.confirm.columns || [];
     const columnsUpper = columns.map(c => String(c || '').toUpperCase().trim());
@@ -1453,6 +1460,45 @@ export async function showConfirmDetail(client, clientIndex) {
         return -1;
     };
 
+    const getRaw = (row, idx) => idx !== -1 && row[idx] !== undefined && row[idx] !== null && row[idx] !== '' ? row[idx] : '—';
+    const phoneIdx = findCol(['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CONTACTO', 'CELULAR', 'PHONE_NUMBER']);
+
+    let clientPhone = '—';
+    if (client.rows && client.rows.length > 0) {
+        for (const rowObj of client.rows) {
+            const rawPhone = getRaw(rowObj.originalRow, phoneIdx);
+            if (rawPhone !== '—' && String(rawPhone).trim() !== '') {
+                clientPhone = String(rawPhone).trim();
+                break;
+            }
+        }
+    }
+
+    if (breadcrumbEl) {
+        const projectName = document.getElementById('confirm-project-active-name')?.textContent || 'PROJETO';
+        const separator = `<svg class="text-gray-300" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+        const displayIndex = clientIndex !== undefined ? clientIndex : '---';
+
+        const phoneHtml = (clientPhone && clientPhone !== '—') 
+            ? `<span onclick="window.copyToClipboard('${clientPhone.replace(/'/g, "\\'")}', 'Contacto copiado!')" class="ml-2 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-black rounded-full font-bold text-[10px] tracking-normal cursor-pointer transition-all inline-flex items-center gap-1 normal-case select-all" title="Clique para copiar contacto">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="inline-block"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                ${clientPhone}
+               </span>`
+            : '';
+
+        breadcrumbEl.innerHTML = `
+            <span class="hover:text-black cursor-pointer transition-colors" onclick="ui.showView('view-confirm-table')">${projectName}</span>
+            ${separator}
+            <span class="text-gray-600">${displayIndex}</span>
+            ${separator}
+            <span class="text-black font-black inline-flex items-center">${client.displayName || 'SEM NOME'}${phoneHtml}</span>
+        `;
+    }
+
+    if (nameEl) nameEl.innerText = client.displayName || 'Cliente Sem Nome';
+    if (idEl) idEl.innerText = `ID CODE: ${client.displayIdCode || '---'}`;
+    if (body) body.innerHTML = '';
+
     const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
     const cbmIdx = findCol(['CBM', 'M3', 'VOLUME', 'VOL']);
     const unitDutyIdx = findCol(['UNIT CBM DUTY', 'UNIT DUTY', 'CBM DUTY', 'UNIT']);
@@ -1467,11 +1513,8 @@ export async function showConfirmDetail(client, clientIndex) {
     const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
     const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
     const statusIdx = findCol(['CONFIRMATION', 'STATUS']);
-    const phoneIdx = findCol(['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CONTACTO', 'CELULAR', 'PHONE_NUMBER']);
     const notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
-
     const getNum = (row, idx) => idx !== -1 ? (parseFloat(String(row[idx]).replace(/[^0-9.-]+/g, '')) || 0) : 0;
-    const getRaw = (row, idx) => idx !== -1 && row[idx] !== undefined && row[idx] !== null && row[idx] !== '' ? row[idx] : '—';
 
     // Formatação Numérica (pt-BR para 2 casas decimais)
     const formatValue = (val) => new Intl.NumberFormat('pt-BR', {
@@ -1578,7 +1621,6 @@ export async function showConfirmDetail(client, clientIndex) {
 
         let bankValue = '';
         let accountTerm = '';
-        let clientPhone = '—';
         let clientNotaDuty = '—';
 
         if (client.rows && client.rows.length > 0) {
@@ -1587,15 +1629,6 @@ export async function showConfirmDetail(client, clientIndex) {
                 let parts = String(rawBank).toUpperCase().replace('BOSS', 'FILIPE').trim().split(/\s+/);
                 bankValue = parts[0];
                 if (parts.length > 1) accountTerm = parts.slice(1).join(' ');
-            }
-
-            // Puxar telefone
-            for (const rowObj of client.rows) {
-                const rawPhone = getRaw(rowObj.originalRow, phoneIdx);
-                if (rawPhone !== '—' && String(rawPhone).trim() !== '') {
-                    clientPhone = String(rawPhone).trim();
-                    break;
-                }
             }
 
             // Puxar nota de duty
