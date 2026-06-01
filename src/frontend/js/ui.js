@@ -1680,11 +1680,12 @@ export async function showConfirmDetail(client, clientIndex) {
             }
         }
 
-        let targetAmount = totalAmountDuty; // Baseamos o alvo no total do dever (Duty)
-        if (totalDutyPrepaid > 0) {
-            targetAmount = totalDutyPrepaid; // Se for prepaid, o alvo é o prepaid
-        } else if (totalPaid > totalAmountDuty) {
-            targetAmount = totalPaid; // Se houver overpayment, usamos o pago
+        const isFullyPrepaid = totalAmountDuty > 0 && Math.abs(totalAmountDuty - totalDutyPrepaid) < 0.01;
+        let targetAmount = totalAmountDuty - totalDutyPrepaid;
+        if (isFullyPrepaid) {
+            targetAmount = totalDutyPrepaid; // Se for totalmente prepaid, o alvo é o prepaid
+        } else if (totalPaid > targetAmount) {
+            targetAmount = totalPaid; // Se houver overpayment local
         }
 
         // Buscar todos os pagamentos já alocados a este cliente
@@ -1764,7 +1765,7 @@ export async function showConfirmDetail(client, clientIndex) {
         let remainingToPay = targetAmount - totalAllocated;
         if (remainingToPay < 0) remainingToPay = 0;
 
-        let trueRemaining = totalAmountDuty - totalAllocated;
+        let trueRemaining = (totalAmountDuty - totalDutyPrepaid) - totalAllocated;
         if (trueRemaining < 0) trueRemaining = 0;
 
         window.currentActiveClientState = {
@@ -1780,7 +1781,8 @@ export async function showConfirmDetail(client, clientIndex) {
             payments,
             totalGSheetBalance,
             allConfirmed,
-            totalPaid
+            totalPaid,
+            isFullyPrepaid
         };
 
         const cardHtml = getPaymentCardHtml(client, window.currentActiveClientState);
@@ -1977,10 +1979,11 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
 
     // Atualizar no estado global do cliente ativo para o card de pagamento
     if (window.currentActiveClientState) {
-        let targetAmount = totalAmountDuty;
-        if (totalDutyPrepaid > 0) {
+        const isFullyPrepaid = totalAmountDuty > 0 && Math.abs(totalAmountDuty - totalDutyPrepaid) < 0.01;
+        let targetAmount = totalAmountDuty - totalDutyPrepaid;
+        if (isFullyPrepaid) {
             targetAmount = totalDutyPrepaid;
-        } else if (totalPaid > totalAmountDuty) {
+        } else if (totalPaid > targetAmount) {
             targetAmount = totalPaid;
         }
 
@@ -1991,7 +1994,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         let remainingToPay = targetAmount - totalAllocated;
         if (remainingToPay < 0) remainingToPay = 0;
 
-        let trueRemaining = totalAmountDuty - totalAllocated;
+        let trueRemaining = (totalAmountDuty - totalDutyPrepaid) - totalAllocated;
         if (trueRemaining < 0) trueRemaining = 0;
 
         window.currentActiveClientState.targetAmount = targetAmount;
@@ -2001,6 +2004,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         window.currentActiveClientState.totalGSheetBalance = totalGSheetBalance;
         window.currentActiveClientState.allConfirmed = allConfirmed;
         window.currentActiveClientState.totalPaid = totalPaid;
+        window.currentActiveClientState.isFullyPrepaid = isFullyPrepaid;
 
         // Atualiza a UI do card de pagamento sem destruir nada além do card
         updatePaymentCardUI();
@@ -2287,7 +2291,8 @@ export function getPaymentCardHtml(client, stateObj) {
         payments,
         totalGSheetBalance,
         allConfirmed,
-        totalPaid
+        totalPaid,
+        isFullyPrepaid
     } = stateObj;
 
     // Lógica do utilizador adaptada para pagamentos parciais:
@@ -2318,7 +2323,7 @@ export function getPaymentCardHtml(client, stateObj) {
     let textColor = "text-green-600";
     let titleLabel = "Somatório Total (PAID)";
 
-    if (totalDutyPrepaid > 0) {
+    if (isFullyPrepaid) {
         cardBorder = "border-gray-200 bg-gray-50";
         textColor = "text-gray-400";
         titleLabel = "Duty Prepaid";
@@ -2341,7 +2346,7 @@ export function getPaymentCardHtml(client, stateObj) {
         textColor = "text-red-600";
         titleLabel = `Bloqueado: Editado por ${lockingUser || 'Outro'}`;
         displayValueHtml = `<span class="flex items-center justify-center gap-2">🔒 ${formatValue(targetAmount)}</span>`;
-    } else if (totalDutyPrepaid > 0) {
+    } else if (isFullyPrepaid) {
         cardClick = "";
         cardCursor = "cursor-default opacity-60";
         displayValueHtml = formatValue(targetAmount);
