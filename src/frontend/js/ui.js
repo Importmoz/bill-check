@@ -2121,9 +2121,10 @@ export function calculateConfirmDuty() {
     const cbm = parseFloat(document.getElementById('edit-cbm').value) || 0;
     const unitDuty = parseFloat(document.getElementById('edit-unitDuty').value) || 0;
     const paid = parseFloat(document.getElementById('edit-paid').value) || 0;
+    const dutyPrepaid = parseFloat(document.getElementById('edit-dutyPrepaid').value) || 0;
 
     const amount = cbm * unitDuty;
-    const bal = amount - paid;
+    const bal = amount - paid - dutyPrepaid;
 
     document.getElementById('edit-amountDuty').value = amount.toFixed(2);
     document.getElementById('edit-balance').value = bal.toFixed(2);

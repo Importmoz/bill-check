@@ -615,7 +615,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Duty Prepaid</label>
-                        <input type="number" id="edit-dutyPrepaid" step="0.01" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all">
+                        <input type="number" id="edit-dutyPrepaid" step="0.01" oninput="ui.calculateConfirmDuty()" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all">
                     </div>
                     <div>
                         <label class="block text-[10px] font-black uppercase text-slate-500 mb-1 flex items-center gap-1">
