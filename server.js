@@ -57,12 +57,38 @@ try {
 } catch (e) {}
 
 app.get('/api/version', (req, res) => {
-  let mtime = '0';
+  let gitVersion = '';
   try {
-    const stats = fs.statSync(path.join(__dirname, 'package.json'));
-    mtime = String(stats.mtimeMs);
-  } catch (e) {}
-  res.json({ version: `${baseVersion}-${mtime}` });
+    const headContent = fs.readFileSync(path.join(__dirname, '.git', 'HEAD'), 'utf8').trim();
+    if (headContent.startsWith('ref:')) {
+      const refPath = headContent.replace('ref:', '').trim();
+      const commitHash = fs.readFileSync(path.join(__dirname, '.git', refPath), 'utf8').trim();
+      gitVersion = commitHash.substring(0, 7);
+    } else {
+      gitVersion = headContent.substring(0, 7);
+    }
+  } catch (e) {
+    // Fallback silencioso se não estiver em ambiente git
+  }
+
+  // Monitorar também a mtime dos ficheiros cruciais do frontend e backend
+  let mtimes = [];
+  const filesToTrack = [
+    'package.json',
+    'server.js',
+    'src/frontend/js/ui.js',
+    'src/frontend/js/app.js',
+    'src/frontend/js/api.js'
+  ];
+  filesToTrack.forEach(f => {
+    try {
+      const stats = fs.statSync(path.join(__dirname, f));
+      mtimes.push(stats.mtimeMs);
+    } catch (e) {}
+  });
+
+  const mtimeHash = mtimes.length > 0 ? Math.max(...mtimes) : '0';
+  res.json({ version: `${baseVersion}-${gitVersion || 'no-git'}-${mtimeHash}` });
 });
 
 // Rotas da API
