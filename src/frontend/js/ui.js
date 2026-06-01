@@ -1479,17 +1479,50 @@ export async function showConfirmDetail(client, clientIndex) {
         const separator = `<svg class="text-gray-300" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
         const displayIndex = clientIndex !== undefined ? clientIndex : '---';
 
-        const phoneHtml = (clientPhone && clientPhone !== '—') 
-            ? `<span onclick="window.copyToClipboard('${clientPhone.replace(/'/g, "\\'")}', 'Contacto copiado!')" class="ml-2 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-black rounded-full font-bold text-[10px] tracking-normal cursor-pointer transition-all inline-flex items-center gap-1 normal-case select-all" title="Clique para copiar contacto">
-                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="inline-block"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-                ${clientPhone}
-               </span>`
-            : '';
+        let clientNoHtml = '';
+        if (displayIndex && displayIndex !== '---') {
+            const noParts = String(displayIndex).split(/(?:[\s,;/|]+)|(?:\s+e\s+)/i).map(p => p.trim()).filter(p => p.length > 0);
+            if (noParts.length > 0) {
+                clientNoHtml = `<span class="inline-flex items-center gap-1">`;
+                noParts.forEach((part, pIdx) => {
+                    if (pIdx > 0) {
+                        clientNoHtml += `<span class="text-gray-300 font-bold mx-0.5">/</span>`;
+                    }
+                    clientNoHtml += `
+                        <span onclick="window.copyToClipboard('${part.replace(/'/g, "\\'")}', 'Nº de Cliente ${part} copiado!')" class="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-black rounded-md font-bold text-[10px] tracking-normal cursor-pointer transition-all inline-flex items-center gap-1 select-all" title="Clique para copiar Nº ${part}">
+                            ${part}
+                        </span>
+                    `;
+                });
+                clientNoHtml += `</span>`;
+            } else {
+                clientNoHtml = `<span class="text-gray-600 font-bold">${displayIndex}</span>`;
+            }
+        } else {
+            clientNoHtml = `<span class="text-gray-600 font-bold">${displayIndex}</span>`;
+        }
+
+        let phoneHtml = '';
+        if (clientPhone && clientPhone !== '—') {
+            const parts = clientPhone.split(/(?:[\s,;/|]+)|(?:\s+e\s+)/i).map(p => p.trim()).filter(p => p.length > 0);
+            if (parts.length > 0) {
+                phoneHtml = `<span class="ml-2 inline-flex items-center gap-1.5">`;
+                parts.forEach(part => {
+                    phoneHtml += `
+                        <span onclick="window.copyToClipboard('${part.replace(/'/g, "\\'")}', 'Contacto ${part} copiado!')" class="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-600 hover:text-black rounded-full font-bold text-[10px] tracking-normal cursor-pointer transition-all inline-flex items-center gap-1 normal-case select-all" title="Clique para copiar ${part}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="inline-block"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                            ${part}
+                        </span>
+                    `;
+                });
+                phoneHtml += `</span>`;
+            }
+        }
 
         breadcrumbEl.innerHTML = `
             <span class="hover:text-black cursor-pointer transition-colors" onclick="ui.showView('view-confirm-table')">${projectName}</span>
             ${separator}
-            <span class="text-gray-600">${displayIndex}</span>
+            ${clientNoHtml}
             ${separator}
             <span class="text-black font-black inline-flex items-center">${client.displayName || 'SEM NOME'}${phoneHtml}</span>
         `;
@@ -3660,7 +3693,7 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
                 if (parts.length > 0) {
                     let html = '';
                     parts.forEach(part => {
-                        html += `<span onclick="ui.setMiniFilterSearch('${part.replace(/'/g, "\\'")}')" class="cursor-pointer text-blue-600 hover:text-blue-800 hover:bg-blue-100 transition-all font-black bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 text-[10px] inline-block mr-1 my-0.5">${part}</span>`;
+                        html += `<span onclick="window.copyToClipboard('${part.replace(/'/g, "\\'")}', 'Contacto ${part} copiado!'); ui.setMiniFilterSearch('${part.replace(/'/g, "\\'")}')" class="cursor-pointer text-blue-600 hover:text-blue-800 hover:bg-blue-100 transition-all font-black bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 text-[10px] inline-block mr-1 my-0.5" title="Clique para copiar e filtrar ${part}">${part}</span>`;
                     });
                     phoneEl.innerHTML = html;
                 } else {
