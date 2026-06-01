@@ -2048,6 +2048,7 @@ async function checkSystemVersion() {
         if (res.ok) {
             const data = await res.json();
             const currentVersion = data.version;
+            const updates = data.updates || [];
             
             if (!loadedSystemVersion) {
                 // Primeira verificação na carga da página
@@ -2055,7 +2056,7 @@ async function checkSystemVersion() {
                 console.log(`[VERSÃO] Versão inicial do sistema carregada: ${loadedSystemVersion}`);
             } else if (loadedSystemVersion !== currentVersion) {
                 // Versão mudou! Mostrar alerta de atualização
-                showSystemUpdateNotification(currentVersion);
+                showSystemUpdateNotification(currentVersion, updates);
             }
         }
     } catch (err) {
@@ -2070,29 +2071,48 @@ function startSystemVersionChecker() {
     setInterval(checkSystemVersion, 120000);
 }
 
-function showSystemUpdateNotification(newVersion) {
+function showSystemUpdateNotification(newVersion, updates) {
     if (document.getElementById('system-update-banner')) return;
 
     const banner = document.createElement('div');
     banner.id = 'system-update-banner';
-    // Estilo premium com gradiente de laranja a amber, z-index extremo e efeito glassmorphic blur
-    banner.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[9999] w-[90%] max-w-xl bg-gradient-to-r from-amber-500/95 to-orange-500/95 backdrop-blur-md text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border border-amber-400/50 transform transition-all duration-500 translate-y-[-100px] opacity-0';
+    // Estilo premium com gradiente de laranja a amber, z-index extremo e efeito glassmorphic blur (com flex-col para acomodar a lista de alterações)
+    banner.className = 'fixed top-4 left-1/2 -translate-x-1/2 z-[9999] w-[90%] max-w-xl bg-gradient-to-r from-amber-500/95 to-orange-500/95 backdrop-blur-md text-white px-5 py-4 rounded-2xl shadow-2xl flex flex-col gap-3 border border-amber-400/50 transform transition-all duration-500 translate-y-[-100px] opacity-0';
     
+    let updatesHtml = '';
+    if (updates && updates.length > 0) {
+        updatesHtml = `
+            <div class="mt-1.5 border-t border-white/20 pt-2">
+                <p class="text-[9px] font-black uppercase tracking-wider opacity-85 mb-1">Novidades desta versão:</p>
+                <ul class="space-y-0.5 text-[10px] opacity-90 font-bold list-disc pl-4 leading-normal">
+        `;
+        updates.forEach(upd => {
+            updatesHtml += `<li>${upd}</li>`;
+        });
+        updatesHtml += `
+                </ul>
+            </div>
+        `;
+    }
+
     banner.innerHTML = `
-        <div class="flex items-center gap-3">
-            <div class="bg-white/20 p-2 rounded-xl animate-pulse shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3 3L22 4" />
-                </svg>
+        <div class="flex items-center justify-between w-full gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-white/20 p-2 rounded-xl animate-pulse shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M9 11l3 3L22 4" />
+                    </svg>
+                </div>
+                <div>
+                    <h4 class="font-extrabold text-xs md:text-sm tracking-wide uppercase leading-none">Atualização do Sistema!</h4>
+                    <p class="text-[9px] md:text-[10px] opacity-95 mt-1 font-medium leading-tight">Uma nova versão foi publicada. Recarregue a página para ativar.</p>
+                </div>
             </div>
-            <div>
-                <h4 class="font-extrabold text-xs md:text-sm tracking-wide uppercase">Atualização do Sistema!</h4>
-                <p class="text-[10px] md:text-xs opacity-95 mt-0.5 font-medium">Uma nova versão foi publicada no servidor. Recarregue a página para ativar as novidades.</p>
-            </div>
+            <button onclick="window.location.reload(true)" class="bg-white text-amber-600 hover:bg-amber-50 text-[10px] font-black uppercase px-4 py-2 rounded-xl transition-all cursor-pointer shadow-md shrink-0 active:scale-95 hover:shadow-lg">
+                Recarregar
+            </button>
         </div>
-        <button onclick="window.location.reload(true)" class="bg-white text-amber-600 hover:bg-amber-50 text-[10px] font-black uppercase px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-md shrink-0 active:scale-95 hover:shadow-lg">
-            Recarregar
-        </button>
+        ${updatesHtml}
     `;
 
     document.body.appendChild(banner);

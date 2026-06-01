@@ -51,6 +51,7 @@ app.get('/config.js', (req, res) => {
 
 // Rota de Versão do Sistema para controlo de atualizações
 const fs = require('fs');
+const { execSync } = require('child_process');
 let baseVersion = '1.0.0';
 try {
   baseVersion = require('./package.json').version;
@@ -58,6 +59,7 @@ try {
 
 app.get('/api/version', (req, res) => {
   let gitVersion = '';
+  let updates = [];
   try {
     const headContent = fs.readFileSync(path.join(__dirname, '.git', 'HEAD'), 'utf8').trim();
     if (headContent.startsWith('ref:')) {
@@ -69,6 +71,13 @@ app.get('/api/version', (req, res) => {
     }
   } catch (e) {
     // Fallback silencioso se não estiver em ambiente git
+  }
+
+  try {
+    const gitLog = execSync('git log -n 5 --pretty=format:"%s"', { encoding: 'utf8' }).trim();
+    updates = gitLog.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  } catch (e) {
+    // Fallback silencioso se não for git
   }
 
   // Monitorar também a mtime dos ficheiros cruciais do frontend e backend
@@ -88,7 +97,10 @@ app.get('/api/version', (req, res) => {
   });
 
   const mtimeHash = mtimes.length > 0 ? Math.max(...mtimes) : '0';
-  res.json({ version: `${baseVersion}-${gitVersion || 'no-git'}-${mtimeHash}` });
+  res.json({
+    version: `${baseVersion}-${gitVersion || 'no-git'}-${mtimeHash}`,
+    updates
+  });
 });
 
 // Rotas da API
