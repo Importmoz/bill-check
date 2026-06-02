@@ -1793,6 +1793,57 @@ export async function showConfirmDetail(client, clientIndex) {
             </div>
         `;
 
+        // Determinar status agrupado do cliente para exibição de notas
+        const cleanStatuses = client.statuses ? client.statuses.map(s => 
+            String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim()
+        ) : [];
+
+        let clientStatus = 'PENDENTE';
+        if (cleanStatuses.some(s => s.includes('COMPROVATIVO ERRADO') || s.includes('ERRADO'))) {
+            clientStatus = 'ERRADO';
+        } else if (cleanStatuses.some(s => s.includes('SEM COMPROVATIVO') || s.includes('SEM COMP'))) {
+            clientStatus = 'SEM COMP.';
+        } else if (cleanStatuses.some(s => s.includes('RE-VERIFICANDO') || s.includes('RE-VERIF'))) {
+            clientStatus = 'RE-VERIF.';
+        } else if (cleanStatuses.every(s => s.includes('CONFIRMADO'))) {
+            clientStatus = 'CONFIRMADO';
+        } else if (cleanStatuses.some(s => s.includes('PARCIAL')) || (cleanStatuses.some(s => s.includes('CONFIRMADO')) && cleanStatuses.some(s => s.includes('PENDENTE') || s.includes('AGUARDA')))) {
+            clientStatus = 'PARCIAL';
+        } else if (cleanStatuses.some(s => s.includes('PENDENTE'))) {
+            clientStatus = 'PENDENTE';
+        } else {
+            clientStatus = 'AGUARDA PAG.';
+        }
+
+        const isExcluded = ['PENDENTE', 'CONFIRMADO', 'AGUARDA PAG.', 'AGUARDA PAGAMENTO'].includes(clientStatus.toUpperCase().trim());
+
+        const confirmationNotes = [];
+        if (client.rows) {
+            client.rows.forEach(rowObj => {
+                if (rowObj.confirmNote && rowObj.confirmNote.trim() !== '') {
+                    const note = rowObj.confirmNote.trim();
+                    if (!confirmationNotes.includes(note)) {
+                        confirmationNotes.push(note);
+                    }
+                }
+            });
+        }
+
+        let confirmationNotesHtml = '';
+        if (!isExcluded && confirmationNotes.length > 0) {
+            confirmationNotesHtml = `
+                <div class="mt-4 mb-4 p-4 bg-amber-50/70 border border-amber-200 rounded-2xl shadow-sm mr-4 ml-4">
+                    <div class="flex items-center gap-2 mb-2 text-amber-800">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                        <span class="text-[10px] font-black uppercase tracking-wider">Notas de Confirmação (Motivo do Estado):</span>
+                    </div>
+                    <ul class="list-disc pl-5 space-y-1 text-xs text-slate-700 font-bold">
+                        ${confirmationNotes.map(note => `<li>${note}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
         // Estrutura HTML baseada no template do utilizador
         body.innerHTML = `
             <div id="payment-info-container">${pbHtml}</div>
@@ -1815,6 +1866,8 @@ export async function showConfirmDetail(client, clientIndex) {
                     </tbody>
                 </table>
             </div>
+            
+            ${confirmationNotesHtml}
             
             ${summaryCardHtml}
 
