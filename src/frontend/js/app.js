@@ -219,7 +219,9 @@ async function handleLogin() {
 
 function handleLogout() {
     api.logout();
-    location.reload();
+    const btn = document.getElementById('btn-global-news');
+    if (btn) btn.remove();
+    ui.showView('view-login');
 }
 
 function checkModulePermission(moduleName) {
@@ -264,6 +266,9 @@ async function showHub() {
                     settingsCard.classList.add('hidden');
                 }
             }
+        }
+        if (window.__SYSTEM_VERSION__) {
+            ui.checkAndShowNewsIcon(window.__SYSTEM_VERSION__);
         }
     } catch (err) {
         console.error(err);

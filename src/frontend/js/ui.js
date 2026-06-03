@@ -6153,3 +6153,106 @@ export function printDeliveryNote() {
     printWindow.document.close();
 }
 
+export function checkAndShowNewsIcon(version) {
+    if (!pb.authStore.isValid) return;
+    if (localStorage.getItem('viewed-version-' + version) === 'true') return;
+    
+    // Se o botão já existir, não criar duplicado
+    if (document.getElementById('btn-global-news')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'btn-global-news';
+    btn.className = 'fixed top-3.5 right-16 z-[9990] bg-indigo-600 text-white p-2 rounded-full shadow-lg hover:shadow-indigo-500/20 active:scale-95 transition-all animate-bounce cursor-pointer flex items-center justify-center border border-indigo-400';
+    btn.title = 'Novidades da Versão (V1.1.0)';
+    btn.onclick = () => showChangelogModal();
+    btn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1M19 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-5" />
+        </svg>
+        <span class="absolute top-0 right-0 flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+        </span>
+    `;
+    document.body.appendChild(btn);
+}
+
+export function showChangelogModal() {
+    if (document.getElementById('modal-changelog')) return;
+
+    const modal = document.createElement('div');
+    modal.id = 'modal-changelog';
+    modal.className = 'modal-bg fixed inset-0 z-[99999] flex items-center justify-center p-4 backdrop-blur-md';
+    modal.innerHTML = `
+        <div class="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-slate-200 text-black flex flex-col overflow-hidden scale-in">
+            <!-- Header -->
+            <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="bg-indigo-600 text-white p-2 rounded-xl shadow-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1M19 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-5" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-base md:text-lg font-black uppercase tracking-tight text-slate-800">Notas de Atualização</h3>
+                        <p class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">O que há de novo nesta versão do sistema</p>
+                    </div>
+                </div>
+                <button onclick="ui.closeChangelogModal()" class="bg-white border border-gray-200 p-2 rounded-xl font-bold hover:bg-red-50 hover:text-red-600 transition-all text-slate-500">✕</button>
+            </div>
+            
+            <!-- Body -->
+            <div class="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar bg-slate-50/30">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-semibold text-slate-650 leading-relaxed">
+                    <!-- Coluna 1 -->
+                    <div class="space-y-3">
+                        <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
+                            <span class="text-[8px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Confirm</span>
+                            <p class="font-bold text-[10px] text-slate-800">💬 Respostas e Badges Unificados:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Os operadores já podem responder diretamente às observações dos estados. O badge animado <code>💬 RESPONDIDO</code> foi otimizado nos cards em grelha, alinhando-se com o status (ex: <code>ERRADO</code>) sem espaços ou cantos individuais arredondados.</p>
+                        </div>
+                        <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
+                            <span class="text-[8px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Reconciliação</span>
+                            <p class="font-bold text-[10px] text-slate-800">🧹 Limpeza de Respostas Antigas:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Ao vincular pagamento ou alterar status para valores diferentes de <code>CONFIRMADO</code> no ecrã de reconciliação, a resposta anterior do operador em <code>NOTA DUTY</code> é apagada automaticamente para que o operador possa responder à nova questão.</p>
+                        </div>
+                    </div>
+                    <!-- Coluna 2 -->
+                    <div class="space-y-3">
+                        <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
+                            <span class="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Armazém</span>
+                            <p class="font-bold text-[10px] text-slate-800">📅 Calendário Nativo & Permissões:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Substituído o campo manual de data por um calendário nativo (datepicker) que salva no GSheet em formato standard. Para segurança operacional, após a gravação, os inputs são bloqueados para operadores normais e editáveis apenas por <code>ADMIN</code>.</p>
+                        </div>
+                        <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
+                            <span class="text-[8px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Armazém</span>
+                            <p class="font-bold text-[10px] text-slate-800">📦 Botões Inteligentes e Sem Duplicados:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Se gravado, operadores normais vêm apenas <code>Emitir Guia</code>. Utilizadores <code>ADMIN</code> vêm os botões <code>Actualizar</code> e <code>Emitir Guia</code> lado a lado. O botão redundante que era exibido no banner de autorização superior foi removido.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Footer -->
+            <div class="p-6 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+                <button onclick="ui.closeChangelogModal(true)" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
+                    Entendido, obrigado!
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+export function closeChangelogModal(markAsViewed = false) {
+    const modal = document.getElementById('modal-changelog');
+    if (modal) modal.remove();
+
+    if (markAsViewed) {
+        const version = window.__SYSTEM_VERSION__ || 'v1.1.0';
+        localStorage.setItem('viewed-version-' + version, 'true');
+        const btn = document.getElementById('btn-global-news');
+        if (btn) btn.remove();
+    }
+}
+
