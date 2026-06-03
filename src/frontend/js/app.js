@@ -2055,10 +2055,18 @@ async function checkSystemVersion() {
             const currentVersion = data.version;
             const updates = data.updates || [];
             
+            // Definir globalmente para uso posterior
+            window.__SYSTEM_VERSION__ = currentVersion;
+            
             if (!loadedSystemVersion) {
                 // Primeira verificação na carga da página
                 loadedSystemVersion = currentVersion;
                 console.log(`[VERSÃO] Versão inicial do sistema carregada: ${loadedSystemVersion}`);
+                
+                // Mostrar ícone de novidades se já estiver logado
+                if (api.pb && api.pb.authStore && api.pb.authStore.isValid) {
+                    ui.checkAndShowNewsIcon(currentVersion);
+                }
             } else if (loadedSystemVersion !== currentVersion) {
                 // Versão mudou! Mostrar alerta de atualização
                 showSystemUpdateNotification(currentVersion, updates);
