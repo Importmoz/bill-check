@@ -264,10 +264,10 @@ router.post('/sheet/read', async (req, res) => {
     const sheets = google.sheets({ version: 'v4', auth });
 
     try {
-      console.log(`[BACKEND] Tentando ler planilha com includeGridData para obter notas (otimizado via fields). Range: ${range || 'A1:Z1000'}`);
+      console.log(`[BACKEND] Tentando ler planilha com includeGridData para obter notas (otimizado via fields). Range: ${range || 'A1:AZ1000'}`);
       const response = await sheets.spreadsheets.get({
         spreadsheetId,
-        ranges: [range || 'A1:Z1000'],
+        ranges: [range || 'A1:AZ1000'],
         includeGridData: true,
         fields: 'sheets(properties(title),data(rowData(values(note,formattedValue))))'
       });
@@ -315,7 +315,7 @@ router.post('/sheet/read', async (req, res) => {
       const nonEnumNotesCount = notes.flat().filter(n => n && n.trim() !== '').length;
       console.log(`[BACKEND] Leitura com includeGridData concluída. Linhas lidas: ${values.length}, Notas preenchidas encontradas: ${nonEnumNotesCount}`);
       
-      let finalRange = range || 'A1:Z1000';
+      let finalRange = range || 'A1:AZ1000';
       const sheetTitle = sheet?.properties?.title;
       if (sheetTitle && !finalRange.includes('!')) {
         const formattedTitle = (sheetTitle.includes(' ') || sheetTitle.includes('-') || /\W/.test(sheetTitle))
@@ -331,7 +331,7 @@ router.post('/sheet/read', async (req, res) => {
       });
     } catch (getErr) {
       console.warn('[BACKEND] Falha ao ler com includeGridData. Usando fallback values.get. Erro:', getErr.message, getErr.response?.data || getErr);
-      const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: range || 'A1:Z1000' });
+      const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: range || 'A1:AZ1000' });
       return res.json({
         values: response.data.values || [],
         notes: [],

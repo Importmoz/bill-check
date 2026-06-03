@@ -299,7 +299,7 @@ export function logout() {
 
 /** --- MÓDULO CONFIRM (GOOGLE API) --- **/
 
-export async function readGSheet(spreadsheetId, range = 'A1:Z1000', skipModifiedTimeCheck = false) {
+export async function readGSheet(spreadsheetId, range = 'A1:AZ1000', skipModifiedTimeCheck = false) {
     const res = await fetch('/api/google/sheet/read', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -313,7 +313,7 @@ export async function readGSheet(spreadsheetId, range = 'A1:Z1000', skipModified
     state.confirm.sheetId = spreadsheetId; // <-- CORREÇÃO CRÍTICA: Guardar o ID real do projeto
     state.confirm.data = data.values || data; // Retrocompatibilidade se falhar
     state.confirm.notes = data.notes || []; // Guardar as notas nativas das células
-    state.confirm.range = data.range || 'Folha1!A1:Z1000'; // Guardar a aba real
+    state.confirm.range = data.range || 'Folha1!A1:AZ1000'; // Guardar a aba real
     if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
 
     // Buscar data de modificação inicial da planilha

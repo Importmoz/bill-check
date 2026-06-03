@@ -1827,7 +1827,7 @@ function startGSheetPolling(spreadsheetId) {
                     // Sincronizar o lastModifiedTime local de imediato para evitar que a próxima iteração use a data antiga
                     api.state.confirm.lastModifiedTime = checkData.modifiedTime;
                     
-                    const freshData = await api.readGSheet(spreadsheetId, 'A1:Z1000', true);
+                    const freshData = await api.readGSheet(spreadsheetId, 'A1:AZ1000', true);
                     
                     // Atualiza a tabela principal se activa
                     if (isConfirmTableVisible) {

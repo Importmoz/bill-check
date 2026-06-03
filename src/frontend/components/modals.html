@@ -671,3 +671,68 @@
         </form>
     </div>
 </div>
+
+<!-- Modal Atualizar Frete -->
+<div id="modal-freight-update" class="fixed inset-0 bg-slate-950/60 backdrop-blur-md hidden flex items-center justify-center p-4 z-[9999] transition-all duration-300 animate-fade-in">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-100 scale-in">
+        <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+            <h2 class="text-base font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                <span>Atualizar Frete</span>
+            </h2>
+            <button onclick="ui.closeFreightModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+        
+        <div class="p-6 space-y-5">
+            <!-- Total do Frete -->
+            <div class="bg-rose-50 border border-rose-100 rounded-2xl p-4 flex justify-between items-center">
+                <span class="text-[10px] font-black uppercase text-rose-500 tracking-widest">Total a Pagar</span>
+                <span id="modal-freight-total-value" class="text-2xl font-black text-rose-700 tracking-tighter">0.00</span>
+            </div>
+
+            <!-- Origem do Pagamento -->
+            <div>
+                <label class="block text-[10px] font-black uppercase text-slate-500 mb-2">Origem do Pagamento</label>
+                <div class="flex bg-slate-100 p-1 rounded-xl">
+                    <button id="btn-freight-origin-china" onclick="ui.setFreightOrigin('china')" class="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all text-slate-500 hover:text-slate-700">NA CHINA</button>
+                    <button id="btn-freight-origin-local" onclick="ui.setFreightOrigin('local')" class="flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all bg-white text-slate-800 shadow-sm">LOCALMENTE</button>
+                </div>
+            </div>
+
+            <!-- Campos (Apenas para Local) -->
+            <div id="freight-local-fields" class="space-y-5">
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Banco de Destino</label>
+                    <select id="select-freight-bank" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all cursor-pointer">
+                        <option value="">Selecionar Banco...</option>
+                        <option value="BCI BOSS">BCI BOSS</option>
+                        <option value="BIM BOSS">BIM BOSS</option>
+                        <option value="BCI JUPITER">BCI JUPITER</option>
+                        <option value="BIM JUPITER">BIM JUPITER</option>
+                        <option value="STB JUPITER">STB JUPITER</option>
+                        <option value="NED JUPITER">NED JUPITER</option>
+                        <option value="EMOLA BOSS">EMOLA BOSS</option>
+                    </select>
+                </div>
+                <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 flex items-start gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500 shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                    <p class="text-[9px] font-medium text-blue-800 leading-relaxed uppercase tracking-wider">A nota será gravada automaticamente como <span class="font-black">PAID TO JUPITER</span>.</p>
+                </div>
+            </div>
+
+            <!-- Botões de Ação -->
+            <div class="pt-2 flex flex-col gap-3">
+                <button type="button" id="btn-freight-vincular" onclick="ui.vincularPagamentoFrete()" class="w-full bg-blue-600 text-white hover:bg-blue-700 hover:shadow-blue-500/20 py-3.5 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                    VINCULAR PAGAMENTO BANCÁRIO
+                </button>
+                <div class="flex gap-3">
+                    <button type="button" onclick="ui.closeFreightModal()" class="flex-1 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-sm transition-all active:scale-95">CANCELAR</button>
+                    <button type="button" id="btn-freight-salvar" onclick="ui.saveFreightModal()" class="flex-1 bg-slate-800 text-white hover:bg-slate-900 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md transition-all active:scale-95">GRAVAR MANUAL</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

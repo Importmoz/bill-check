@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, updateGSheet, updateGSheetBatch, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
 
 /**
  * Controla o indicador de carregamento
@@ -974,6 +974,27 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     if (!state.confirm) state.confirm = {};
     state.confirm.columns = columns;
 
+    // Verificar e criar colunas de Armazém em falta
+    const requiredCols = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO'];
+    const hasAllCols = requiredCols.every(req => {
+        const idx = columns.findIndex(c => {
+            const clean = String(c || '').toUpperCase().trim();
+            if (req === 'CONTACTO') return clean === 'CONTACTO' || clean === 'CONTACT';
+            return clean === req;
+        });
+        return idx !== -1;
+    });
+    if (!hasAllCols && !state.confirm.isCreatingColumns) {
+        state.confirm.isCreatingColumns = true;
+        setTimeout(async () => {
+            try {
+                await checkAndCreateWarehouseColumns();
+            } finally {
+                state.confirm.isCreatingColumns = false;
+            }
+        }, 100);
+    }
+
     const columnsUpper = columns.map(c => String(c || '').toUpperCase());
     
     const cleanString = (str) => String(str || '')
@@ -1002,6 +1023,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
     const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
     const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
+    const notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
     
     const paidIdx = columns.findIndex((c, i) => {
         const h = cleanString(c);
@@ -1061,7 +1083,8 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
                 no: noValue,
                 originalGlobalIndex: groupedClients.size + 1,
                 rows: [],
-                statuses: []
+                statuses: [],
+                hasResponse: false
             });
         }
 
@@ -1100,6 +1123,12 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
 
         if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
             rowStatus = 'PARCIAL';
+        }
+
+        const rawNota = notaDutyIdx !== -1 ? String(row[notaDutyIdx] || '').trim() : '';
+        const hasRowResponse = rawNota.toUpperCase().includes('RESPOSTA:');
+        if (hasRowResponse) {
+            currentGroup.hasResponse = true;
         }
 
         const rowNotes = (state.confirm.notes && state.confirm.notes[i]) ? state.confirm.notes[i] : [];
@@ -1269,9 +1298,16 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
                 
                 ${lockBadgeHtml}
                 
-                <!-- Top Right Badge (Status) -->
-                <div class="absolute top-0 right-0 px-2.5 py-1 ${statusClass} rounded-bl-xl">
-                    <span class="text-[8px] font-black uppercase tracking-wider">${clientStatus}</span>
+                <!-- Top Right Badge (Status & Response) -->
+                <div class="absolute top-0 right-0 flex items-stretch shrink-0 h-7 overflow-hidden rounded-bl-xl z-20">
+                    ${client.hasResponse ? `
+                        <div class="px-2.5 bg-indigo-600 text-white flex items-center justify-center gap-1 border-r border-indigo-500/30 h-full rounded-none" title="Cliente já respondeu à nota de confirmação">
+                            <span class="text-[8px] font-black uppercase tracking-wider animate-pulse flex items-center gap-1">💬 RESPONDIDO</span>
+                        </div>
+                    ` : ''}
+                    <div class="px-3 flex items-center justify-center h-full rounded-none ${statusClass}">
+                        <span class="text-[8px] font-black uppercase tracking-wider">${clientStatus}</span>
+                    </div>
                 </div>
 
                 <div class="mt-3">
@@ -1330,6 +1366,9 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
                 
                 <div class="flex items-center gap-4 shrink-0">
                     ${lockStatusHtml}
+                    ${client.hasResponse ? `
+                        <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded bg-indigo-100 text-indigo-700 border border-indigo-200 animate-pulse flex items-center gap-1" title="Cliente já respondeu à nota de confirmação">💬 RESPONDIDO</span>
+                    ` : ''}
                     <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
                     <div class="text-gray-300 group-hover:text-yellow-600 transition-all shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
@@ -1387,7 +1426,12 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
                     <td class="p-3 text-center text-xs font-semibold text-slate-500">${rowCount}</td>
                     <td class="p-3 text-right font-black text-xs text-slate-800">${formatMZN(clientDuty)}</td>
                     <td class="p-3 text-center">
-                        <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
+                        <div class="flex items-center justify-center gap-2">
+                            ${client.hasResponse ? `
+                                <span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 border border-indigo-200 animate-pulse flex items-center gap-1" title="Cliente já respondeu à nota de confirmação">💬 RESPONDIDO</span>
+                            ` : ''}
+                            <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
+                        </div>
                     </td>
                     <td class="p-3 text-center">
                         <div class="text-gray-300 group-hover:text-yellow-600 transition-all flex justify-center">
@@ -1429,6 +1473,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
 }
 
 export async function showConfirmDetail(client, clientIndex) {
+    const isSameClient = window.currentActiveClient && String(window.currentActiveClientIndex) === String(clientIndex);
     window.currentActiveClient = client;
     window.currentActiveClientIndex = clientIndex;
     const nameEl = document.getElementById('confirm-client-detail-name');
@@ -1547,6 +1592,29 @@ export async function showConfirmDetail(client, clientIndex) {
     const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
     const statusIdx = findCol(['CONFIRMATION', 'STATUS']);
     const notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
+
+    // Determinar se o cliente já respondeu à nota de confirmação e mostrar/ocultar o badge no cabeçalho
+    const hasResponse = client.rows && client.rows.some(r => {
+        const rawNota = notaDutyIdx !== -1 ? String(r.originalRow[notaDutyIdx] || '').trim() : '';
+        return rawNota.toUpperCase().includes('RESPOSTA:');
+    });
+    const badgeResponded = document.getElementById('badge-client-responded');
+    if (badgeResponded) {
+        if (hasResponse) {
+            badgeResponded.classList.remove('hidden');
+        } else {
+            badgeResponded.classList.add('hidden');
+        }
+    }
+    
+    // Novas colunas para Armazém e Frete
+    const packagesIdx = findCol(['PACKAGES']);
+    const unitFreightIdx = findCol(['UNIT CBM FREIGHT']);
+    const amtFreightIdx = findCol(['AMOUNT FREIGHT']);
+    const paidFreightIdx = findCol(['PAID FREIGHT']);
+    const balanceFreightIdx = findCol(['BALANCE FREIGHT']);
+    const bankFreightIdx = findCol(['BANK IN FREIGHT']);
+    const notaFreightIdx = findCol(['NOTA FREIGHT']);
     const getNum = (row, idx) => idx !== -1 ? (parseFloat(String(row[idx]).replace(/[^0-9.-]+/g, '')) || 0) : 0;
 
     // Formatação Numérica (pt-BR para 2 casas decimais)
@@ -1561,6 +1629,14 @@ export async function showConfirmDetail(client, clientIndex) {
     let totalAmountDuty = 0;
     let totalGSheetBalance = 0;
     let allConfirmed = true;
+    
+    // Novas Variáveis Armazém
+    let totalPackages = 0;
+    let totalCbm = 0;
+    let totalAmountFreight = 0;
+    let totalPaidFreight = 0;
+    let totalBalanceFreight = 0;
+    let armazemFreightNotes = [];
 
     // Guarda os dados na global para podermos editar
     window.currentClientRows = [];
@@ -1580,17 +1656,34 @@ export async function showConfirmDetail(client, clientIndex) {
             const paid = getNum(rowData, paidDutyIdx);
             const balance = getNum(rowData, balanceIdx);
             const bankDuty = getRaw(rowData, bankDutyIdx);
+            
+            // Armazém / Frete dados
+            const packages = getNum(rowData, packagesIdx);
+            const amtFreight = getNum(rowData, amtFreightIdx);
+            const pdFreight = getNum(rowData, paidFreightIdx);
+            const balFreight = getNum(rowData, balanceFreightIdx);
+            const noteFreight = getRaw(rowData, notaFreightIdx);
 
             totalPaid += paid;
             totalDutyPrepaid += dutyPrepaid;
             totalAmountDuty += amountDuty;
             totalGSheetBalance += balance;
+            
+            totalPackages += packages;
+            totalCbm += cbm;
+            totalAmountFreight += amtFreight;
+            totalPaidFreight += pdFreight;
+            totalBalanceFreight += balFreight;
+            if (noteFreight && noteFreight !== '—' && String(noteFreight).trim() !== '') {
+                armazemFreightNotes.push(String(noteFreight).trim());
+            }
 
             // Salva dados processados para facilitar edição
             window.currentClientRows.push({
                 originalIndex,
                 orderNumber, cbm, unitDuty, dutyPrepaid, amountDuty, paid, balance,
-                bankDuty: bankDuty === '—' ? '' : bankDuty
+                bankDuty: bankDuty === '—' ? '' : bankDuty,
+                packages, amtFreight, pdFreight, balFreight
             });
 
             let rowStatus = String(rowData[statusIdx] || 'PENDENTE').trim();
@@ -1690,16 +1783,42 @@ export async function showConfirmDetail(client, clientIndex) {
 
         // Buscar todos os pagamentos já alocados a este cliente
         const payments = await getPaymentsByAllocatedTo(combinedInfo);
+        const freightPayments = await getPaymentsByAllocatedTo(`FRETE - ${combinedInfo}`);
+        
         let totalAllocated = 0;
         let pbHtml = '';
 
-        if (payments && payments.length > 0) {
-            payments.forEach(p => totalAllocated += p.amount);
+        // FUNÇÃO AUXILIAR PARA GERAR O HTML DE RECONCILIAÇÃO E BUSCAR SIBLINGS
+        const renderReconciliationBlock = (pmts, title, color) => {
+            if (!pmts || pmts.length === 0) return '';
+            
+            let html = `
+                <div class="mb-4 p-4 border border-${color}-100 bg-${color}-50 rounded-xl shadow-inner">
+                    <div class="flex justify-between items-center mb-4 border-b border-${color}-100 pb-2">
+                        <h5 class="text-[10px] font-bold text-${color}-800 uppercase tracking-wider">${title}</h5>
+                        <span class="text-[10px] font-bold text-${color}-600 bg-${color}-200 px-3 py-1 rounded-full">${pmts.length} Pagamento(s)</span>
+                    </div>
+                    <div class="space-y-4">
+            `;
+
+            pmts.forEach((payment, idx) => {
+                html += `
+                    <div class="grid grid-cols-2 gap-2 text-[11px] text-${color}-900 ${idx !== pmts.length - 1 ? `border-b border-${color}-100 pb-3` : ''}">
+                        <div><span class="font-bold text-${color}-700">Banco:</span> ${payment.bank || '---'}</div>
+                        <div><span class="font-bold text-${color}-700">Titular da Conta:</span> ${payment.account_owner || '---'}</div>
+                        <div><span class="font-bold text-${color}-700">Valor (MZN):</span> ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount)}</div>
+                        <div><span class="font-bold text-${color}-700">Data:</span> ${payment.date ? payment.date.split(' ')[0] : '---'}</div>
+                        <div class="col-span-2"><span class="font-bold text-${color}-700">Referência:</span> ${payment.reference || payment.description || '---'}</div>
+                        <div class="col-span-2" id="siblings-${payment.id}"></div>
+                    </div>
+                `;
+            });
+
+            html += `</div></div>`;
 
             // Lógica para carregar detalhes de partilha (siblings)
-            // Vamos carregar em background para não travar a UI
             setTimeout(async () => {
-                for (const p of payments) {
+                for (const p of pmts) {
                     if (p.reference && p.reference.includes("(Ref Mestre:")) {
                         const siblings = await getPaymentsByMasterRef(p.reference);
                         if (siblings.length > 1) {
@@ -1707,29 +1826,29 @@ export async function showConfirmDetail(client, clientIndex) {
                             const el = document.getElementById(containerId);
                             if (el) {
                                 let sibHtml = `
-                                    <div class="mt-2 pt-2 border-t border-blue-100">
-                                        <div class="text-[9px] font-black text-blue-400 uppercase mb-1">Divisão deste Pagamento:</div>
+                                    <div class="mt-2 pt-2 border-t border-${color}-100">
+                                        <div class="text-[9px] font-black text-${color}-500 uppercase mb-1">Divisão deste Pagamento:</div>
                                         <div class="space-y-1">
                                 `;
                                 let originalTotal = 0;
                                 siblings.forEach(s => {
                                     originalTotal += s.amount;
                                     const isCurrent = s.id === p.id;
-                                    const dest = s.allocated_to || '<span class="text-blue-400 italic">Livre / Não Alocado</span>';
+                                    const dest = s.allocated_to || `<span class="text-${color}-400 italic">Livre / Não Alocado</span>`;
                                     sibHtml += `
-                                        <div class="flex justify-between items-center text-[10px] ${isCurrent ? 'bg-blue-100 px-1 rounded' : ''}">
+                                        <div class="flex justify-between items-center text-[10px] ${isCurrent ? `bg-${color}-100 px-1 rounded` : ''}">
                                             <span class="truncate max-w-[120px]">${dest}</span>
                                             <span class="font-bold">${formatValue(s.amount)}</span>
                                         </div>
                                     `;
                                 });
                                 sibHtml += `
-                                        <div class="flex justify-between items-center text-[10px] font-black text-blue-800 pt-1 border-t border-blue-200 mt-1">
+                                        <div class="flex justify-between items-center text-[10px] font-black text-${color}-800 pt-1 border-t border-${color}-200 mt-1">
                                             <span>TOTAL ORIGINAL:</span>
                                             <span>${formatValue(originalTotal)}</span>
                                         </div>
                                     </div>
-                                </div>`;
+                                `;
                                 el.innerHTML = sibHtml;
                             }
                         }
@@ -1737,29 +1856,16 @@ export async function showConfirmDetail(client, clientIndex) {
                 }
             }, 100);
 
-            pbHtml = `
-                <div class="mb-4 p-4 border border-blue-100 bg-blue-50 rounded-xl shadow-inner">
-                    <div class="flex justify-between items-center mb-4 border-b border-blue-100 pb-2">
-                        <h5 class="text-[10px] font-bold text-blue-800 uppercase tracking-wider">Detalhes de Reconciliação</h5>
-                        <span class="text-[10px] font-bold text-blue-600 bg-blue-200 px-3 py-1 rounded-full">${payments.length} Pagamento(s)</span>
-                    </div>
-                    <div class="space-y-4">
-            `;
+            return html;
+        };
 
-            payments.forEach((payment, idx) => {
-                pbHtml += `
-                    <div class="grid grid-cols-2 gap-2 text-[11px] text-blue-900 ${idx !== payments.length - 1 ? 'border-b border-blue-100 pb-3' : ''}">
-                        <div><span class="font-bold text-blue-700">Banco:</span> ${payment.bank || '---'}</div>
-                        <div><span class="font-bold text-blue-700">Titular da Conta:</span> ${payment.account_owner || '---'}</div>
-                        <div><span class="font-bold text-blue-700">Valor (MZN):</span> ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount)}</div>
-                        <div><span class="font-bold text-blue-700">Data:</span> ${payment.date ? payment.date.split(' ')[0] : '---'}</div>
-                        <div class="col-span-2"><span class="font-bold text-blue-700">Referência:</span> ${payment.reference || payment.description || '---'}</div>
-                        <div class="col-span-2" id="siblings-${payment.id}"></div>
-                    </div>
-                `;
-            });
+        if (payments && payments.length > 0) {
+            payments.forEach(p => totalAllocated += p.amount);
+            pbHtml += renderReconciliationBlock(payments, 'Detalhes de Reconciliação - DUTY', 'blue');
+        }
 
-            pbHtml += `</div></div>`;
+        if (freightPayments && freightPayments.length > 0) {
+            pbHtml += renderReconciliationBlock(freightPayments, 'Detalhes de Reconciliação - FRETE', 'rose');
         }
 
         let remainingToPay = targetAmount - totalAllocated;
@@ -1835,10 +1941,17 @@ export async function showConfirmDetail(client, clientIndex) {
                 <div class="mt-4 mb-4 p-4 bg-amber-50/70 border border-amber-200 rounded-2xl shadow-sm mr-4 ml-4">
                     <div class="flex items-center gap-2 mb-2 text-amber-800">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-                        <span class="text-[10px] font-black uppercase tracking-wider">Notas de Confirmação (Motivo do Estado):</span>
+                        <span class="text-[10px] font-black uppercase tracking-wider">Notas de Confirmação (Motivo do Estado) - Clique para Responder:</span>
                     </div>
-                    <ul class="list-disc pl-5 space-y-1 text-xs text-slate-700 font-bold">
-                        ${confirmationNotes.map(note => `<li>${note}</li>`).join('')}
+                    <ul class="space-y-2 text-xs text-slate-700 font-bold">
+                        ${confirmationNotes.map(note => `
+                            <li onclick="ui.replyToConfirmationNote('${escapeJSAndHTML(note)}')" 
+                                class="cursor-pointer hover:text-amber-900 hover:underline transition-colors flex items-start gap-2 py-1 bg-amber-100/50 hover:bg-amber-100 px-3 py-2 rounded-xl border border-amber-200/50 active:scale-[0.98]"
+                                title="Clique para responder a esta nota e alterar o estado para Pendente">
+                                <span class="text-amber-500 font-extrabold text-sm leading-none">💬</span>
+                                <span>${note}</span>
+                            </li>
+                        `).join('')}
                     </ul>
                 </div>
             `;
@@ -1906,6 +2019,239 @@ export async function showConfirmDetail(client, clientIndex) {
             bulkStatusSelect.disabled = false;
             bulkStatusSelect.classList.remove('bg-slate-100', 'cursor-not-allowed', 'opacity-60');
             bulkStatusSelect.classList.add('bg-white', 'cursor-pointer');
+        }
+    }
+    // Atualizar UI do Armazém
+    const pkgEl = document.getElementById('armazem-total-packages');
+    const cbmEl = document.getElementById('armazem-total-volume');
+
+    if (pkgEl) pkgEl.innerText = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 0 }).format(Math.round(totalPackages));
+    if (cbmEl) cbmEl.innerText = formatValue(totalCbm);
+
+    // Renderizar tabela e controlo de entrega do Armazém
+    renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed);
+
+    // Botão Mini de Frete na aba Confirm
+    const miniFreightBtn = document.getElementById('btn-confirm-freight-mini');
+    const miniFreightStatus = document.getElementById('confirm-freight-mini-status');
+    if (miniFreightBtn && miniFreightStatus) {
+        if (totalAmountFreight > 0 || totalPaidFreight > 0 || totalBalanceFreight > 0) {
+            miniFreightBtn.dataset.hasFreight = 'true';
+            miniFreightBtn.classList.remove('hidden');
+            if (totalBalanceFreight <= 0 && totalAmountFreight > 0) {
+                miniFreightStatus.innerText = 'PAGO';
+                miniFreightStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-green-100 text-green-700';
+            } else if (totalPaidFreight > 0 && totalBalanceFreight > 0) {
+                miniFreightStatus.innerText = 'PARCIAL';
+                miniFreightStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-yellow-100 text-yellow-700';
+            } else {
+                miniFreightStatus.innerText = 'PENDENTE';
+                miniFreightStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-red-100 text-red-700';
+            }
+        } else {
+            miniFreightBtn.dataset.hasFreight = 'false';
+            miniFreightBtn.classList.add('hidden');
+        }
+    }
+
+    // Restaurar/manter a aba ativa correspondente
+    let activeTab = 'confirm';
+    if (isSameClient) {
+        const armazemTab = document.getElementById('btn-tab-armazem');
+        if (armazemTab && armazemTab.classList.contains('bg-white')) {
+            activeTab = 'armazem';
+        }
+    }
+    toggleConfirmArmazem(activeTab);
+}
+
+export async function replyToConfirmationNote(note) {
+    const client = window.currentActiveClient;
+    if (!client || !client.rows || client.rows.length === 0) {
+        toast('Erro: Nenhum cliente ativo selecionado.', 'error');
+        return;
+    }
+
+    const columns = state.confirm.columns || [];
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+    const notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
+
+    if (statusIdx === -1) {
+        toast('Erro: Coluna de Confirmação não encontrada.', 'error');
+        return;
+    }
+    if (notaDutyIdx === -1) {
+        toast('Erro: Coluna NOTA DUTY não encontrada.', 'error');
+        return;
+    }
+
+    // Solicitar resposta ao utilizador
+    const reply = prompt(`Responder ao motivo do estado: "${note}"\n\nIntroduza a sua resposta para salvar na coluna NOTA DUTY (o estado será alterado para Pendente):`);
+    if (reply === null) return; // Utilizador cancelou
+    const cleanReply = reply.trim();
+    if (cleanReply === '') {
+        toast('A resposta não pode ser vazia.', 'warning');
+        return;
+    }
+
+    // Construir atualizações em massa para todas as linhas do cliente
+    const batchUpdates = [];
+    let sheetName = 'Folha1';
+    if (state.confirm.range && state.confirm.range.includes('!')) {
+        sheetName = state.confirm.range.split('!')[0];
+    }
+    const cleanSheetName = sheetName.replace(/'/g, '');
+    const prefixClean = cleanSheetName ? `${cleanSheetName}!` : '';
+
+    const updatedRows = [];
+
+    client.rows.forEach(r => {
+        const rowIndex = r.originalIndex;
+        const rowNum = rowIndex + 1;
+        const rowData = [...state.confirm.data[rowIndex]];
+
+        // 1. NOTA DUTY
+        const existingNote = rowData[notaDutyIdx] !== undefined && rowData[notaDutyIdx] !== null && rowData[notaDutyIdx] !== '—' ? String(rowData[notaDutyIdx]).trim() : '';
+        const newNote = existingNote ? `${existingNote} | Resposta: ${cleanReply}` : `Resposta: ${cleanReply}`;
+        rowData[notaDutyIdx] = newNote;
+        batchUpdates.push({
+            range: `${prefixClean}${getColLetter(notaDutyIdx)}${rowNum}`,
+            values: [[newNote]]
+        });
+
+        // 2. CONFIRMATION para "?"
+        rowData[statusIdx] = '?';
+        batchUpdates.push({
+            range: `${prefixClean}${getColLetter(statusIdx)}${rowNum}`,
+            values: [['?']]
+        });
+
+        updatedRows.push({ rowIndex, rowData });
+    });
+
+    try {
+        setLoader(true, 'A gravar resposta...');
+        await updateGSheetBatch(state.confirm.sheetId, batchUpdates);
+
+        // Atualizar estado em memória local
+        updatedRows.forEach(item => {
+            state.confirm.data[item.rowIndex] = item.rowData;
+            const rObj = client.rows.find(r => r.originalIndex === item.rowIndex);
+            if (rObj) {
+                rObj.originalRow = item.rowData;
+                rObj.confirmNote = ''; // Limpar a nota de confirmação local visto que o estado agora é "?" (Pendente)
+            }
+        });
+
+        // Mapear também os status agrupados do cliente
+        if (client.statuses) {
+            client.statuses = client.statuses.map(() => 'PENDENTE');
+        }
+
+        toast('Resposta gravada e estado alterado para Pendente!', 'success');
+
+        // Re-renderizar o detalhe do cliente
+        await showConfirmDetail(client, window.currentActiveClientIndex);
+    } catch (err) {
+        console.error('[CONFIRM-REPLY] Erro ao gravar resposta:', err);
+        toast('Erro ao gravar dados no GSheet: ' + err.message, 'error');
+    } finally {
+        setLoader(false);
+    }
+}
+
+export function toggleConfirmArmazem(mode) {
+    const confirmTab = document.getElementById('btn-tab-confirm');
+    const armazemTab = document.getElementById('btn-tab-armazem');
+    const confirmContent = document.getElementById('confirm-client-orders');
+    const armazemContent = document.getElementById('armazem-client-details');
+    const bulkPanel = document.getElementById('btn-toggle-bulk-actions');
+    const bulkContent = document.getElementById('confirm-bulk-actions-panel');
+    const summaryCards = document.getElementById('summary-cards');
+    const miniFreightBtn = document.getElementById('btn-confirm-freight-mini');
+    const mainCol = document.getElementById('confirm-main-content-col');
+    const sideSuportes = document.getElementById('confirm-side-suportes');
+    const reconciliationPanel = document.getElementById('btn-toggle-reconciliation');
+    const paymentInfoContainer = document.getElementById('payment-info-container');
+
+    if (mode === 'confirm') {
+        confirmTab.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+        confirmTab.classList.remove('bg-transparent', 'text-slate-400');
+        armazemTab.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+        armazemTab.classList.add('bg-transparent', 'text-slate-400');
+
+        confirmContent.classList.remove('hidden');
+        armazemContent.classList.add('hidden');
+        if (bulkPanel) bulkPanel.style.display = '';
+        if (reconciliationPanel) reconciliationPanel.style.display = '';
+        if (summaryCards) summaryCards.style.display = '';
+        if (miniFreightBtn && miniFreightBtn.dataset.hasFreight === 'true') {
+            miniFreightBtn.classList.remove('hidden');
+        }
+        const badgeResponded = document.getElementById('badge-client-responded');
+        if (badgeResponded) {
+            const hasResponse = window.currentActiveClient?.rows?.some(r => {
+                const columns = state.confirm.columns || [];
+                const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[^A-Z0-9]/g, "").trim();
+                const notaDutyIdx = columns.findIndex(c => cleanString(c) === 'NOTADUTY' || cleanString(c).includes('NOTADUTY') || cleanString(c) === 'NOTA');
+                const rawNota = notaDutyIdx !== -1 ? String(r.originalRow[notaDutyIdx] || '').trim() : '';
+                return rawNota.toUpperCase().includes('RESPOSTA:');
+            });
+            if (hasResponse) {
+                badgeResponded.classList.remove('hidden');
+            } else {
+                badgeResponded.classList.add('hidden');
+            }
+        }
+
+        // Mostrar suportes e restaurar coluna principal para lg:col-span-3
+        if (sideSuportes) sideSuportes.classList.remove('hidden');
+        if (mainCol) {
+            mainCol.classList.remove('lg:col-span-4');
+            mainCol.classList.add('lg:col-span-3');
+        }
+    } else {
+        armazemTab.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+        armazemTab.classList.remove('bg-transparent', 'text-slate-400');
+        confirmTab.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+        confirmTab.classList.add('bg-transparent', 'text-slate-400');
+
+        confirmContent.classList.add('hidden');
+        armazemContent.classList.remove('hidden');
+        if (bulkPanel) bulkPanel.style.display = 'none';
+        if (bulkContent) bulkContent.classList.add('hidden');
+        if (reconciliationPanel) reconciliationPanel.style.display = 'none';
+        if (paymentInfoContainer) paymentInfoContainer.classList.add('hidden');
+        if (summaryCards) summaryCards.style.display = 'none';
+        if (miniFreightBtn) miniFreightBtn.classList.add('hidden');
+        const badgeResponded = document.getElementById('badge-client-responded');
+        if (badgeResponded) badgeResponded.classList.add('hidden');
+
+        // Ocultar suportes e expandir coluna principal para lg:col-span-4
+        if (sideSuportes) sideSuportes.classList.add('hidden');
+        if (mainCol) {
+            mainCol.classList.remove('lg:col-span-3');
+            mainCol.classList.add('lg:col-span-4');
         }
     }
 }
@@ -2350,6 +2696,16 @@ function updateLocksUI() {
     updatePaymentCardUI();
 }
 
+function escapeJSAndHTML(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '&quot;')
+        .replace(/\n/g, ' ')
+        .replace(/\r/g, ' ');
+}
+
 export function getPaymentCardHtml(client, stateObj) {
     if (!client || !stateObj) return '';
 
@@ -2434,7 +2790,7 @@ export function getPaymentCardHtml(client, stateObj) {
         titleLabel = "Pagamento Concluído";
         displayValueHtml = formatValue(targetAmount);
     } else {
-        cardClick = `onclick="ui.openPaymentMiniFilter('${combinedInfo.replace(/'/g, "\\'")}', '${bankValue}', '${trueRemaining}', '', '${(client.displayName || '').replace(/'/g, "\\'")}', '${clientPhone.replace(/'/g, "\\'")}', '${clientNotaDuty.replace(/'/g, "\\'")}')"`;
+        cardClick = `onclick="window.paymentReconciliationContext = null; ui.openPaymentMiniFilter('${escapeJSAndHTML(combinedInfo)}', '${escapeJSAndHTML(bankValue)}', '${escapeJSAndHTML(trueRemaining)}', '', '${escapeJSAndHTML(client.displayName)}', '${escapeJSAndHTML(clientPhone)}', '${escapeJSAndHTML(clientNotaDuty)}')"`;
         cardCursor = "cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all";
 
         if (payments && payments.length > 0) {
@@ -4094,6 +4450,8 @@ export async function confirmPaymentSelection() {
                 .replace(/[^A-Z0-9]/g, "")
                 .trim();
 
+            const isFreight = window.paymentReconciliationContext === 'FREIGHT';
+
             const findCol = (targets) => {
                 const cleanedTargets = targets.map(cleanString);
                 for (const target of cleanedTargets) {
@@ -4107,18 +4465,32 @@ export async function confirmPaymentSelection() {
                 return -1;
             };
 
-            const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
-            const pag1Idx = findCol(['PAG 1', 'PAG1']);
-            const pag2Idx = findCol(['PAG 2', 'PAG2']);
-            const pag3Idx = findCol(['PAG 3', 'PAG3']);
-            const obsIdx = findCol(['OBS', 'COMENTARIO', 'NOTAS', 'OBSERVACAO', 'OBSERVACOES']);
-            
-            const paidIdx = columns.findIndex((c, i) => {
-                const h = cleanString(c);
-                return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
-            });
-            const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
-            const amountDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+            let statusIdx = -1, pag1Idx = -1, pag2Idx = -1, pag3Idx = -1, obsIdx = -1, paidIdx = -1, balanceIdx = -1, amountIdx = -1;
+            let bankFreightIdx = -1, notaFreightIdx = -1, notaDutyIdx = -1;
+
+            if (isFreight) {
+                paidIdx = findCol(['PAID FREIGHT']);
+                balanceIdx = findCol(['BALANCE FREIGHT']);
+                amountIdx = findCol(['AMOUNT FREIGHT']);
+                bankFreightIdx = findCol(['BANK IN FREIGHT']);
+                notaFreightIdx = findCol(['NOTA FREIGHT']);
+                pag1Idx = findCol(['PAG FRETE 1']);
+                pag2Idx = findCol(['PAG FRETE 2']);
+                pag3Idx = findCol(['PAG FRETE 3']);
+            } else {
+                statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+                notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
+                pag1Idx = findCol(['PAG 1', 'PAG1']);
+                pag2Idx = findCol(['PAG 2', 'PAG2']);
+                pag3Idx = findCol(['PAG 3', 'PAG3']);
+                obsIdx = findCol(['OBS', 'COMENTARIO', 'NOTAS', 'OBSERVACAO', 'OBSERVACOES']);
+                paidIdx = columns.findIndex((c, i) => {
+                    const h = cleanString(c);
+                    return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
+                });
+                balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+                amountIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+            }
 
             if (state.confirm.sheetId) {
                 let sheetName = '';
@@ -4150,6 +4522,8 @@ export async function confirmPaymentSelection() {
 
                 const batchUpdates = [];
                 const localStateUpdates = [];
+                
+                let firstRowPassed = false;
 
                 // Fazer o update para cada linha deste cliente
                 for (const rowObj of window.currentClientRows) {
@@ -4159,37 +4533,29 @@ export async function confirmPaymentSelection() {
 
                     let newStatus = filterStatus;
 
-                    if (newStatus === 'PENDENTE') {
-                        // Reverter pagamentos
-                        if (paidIdx !== -1) {
-                            rowData[paidIdx] = '';
-                        }
-                        if (balanceIdx !== -1) {
-                            rowData[balanceIdx] = rowObj.amountDuty;
-                        }
+                    if (newStatus === 'PENDENTE' && !isFreight) {
+                        // Reverter pagamentos (apenas para duty)
+                        if (paidIdx !== -1) rowData[paidIdx] = '';
+                        if (balanceIdx !== -1) rowData[balanceIdx] = rowObj.amountDuty;
                     } else {
                         // Distribuir o valor do pagamento
-                        const currentBalance = rowObj.balance;
+                        const currentBalance = isFreight ? rowObj.balFreight : rowObj.balance;
+                        const currentPaid = isFreight ? rowObj.pdFreight : rowObj.paid;
+                        
                         let allocatedForThisRow = 0;
                         if (currentBalance > 0 && allocatedAmountRemaining > 0) {
                             allocatedForThisRow = Math.min(allocatedAmountRemaining, currentBalance);
                             allocatedAmountRemaining -= allocatedForThisRow;
                         }
 
-                        const newPaid = rowObj.paid + allocatedForThisRow;
+                        const newPaid = currentPaid + allocatedForThisRow;
                         const newBalance = Math.max(0, currentBalance - allocatedForThisRow);
 
-                        if (paidIdx !== -1) {
-                            rowData[paidIdx] = newPaid;
-                        }
-                        if (balanceIdx !== -1) {
-                            rowData[balanceIdx] = newBalance;
-                        }
+                        if (paidIdx !== -1) rowData[paidIdx] = newPaid;
+                        if (balanceIdx !== -1) rowData[balanceIdx] = newBalance;
 
-                        if (newStatus === 'CONFIRMADO') {
-                            if (newBalance > 1.0) {
-                                newStatus = 'PARCIAL';
-                            }
+                        if (newStatus === 'CONFIRMADO' && !isFreight) {
+                            if (newBalance > 1.0) newStatus = 'PARCIAL';
                         }
 
                         // Mapear as datas dos pagamentos selecionados diretamente nas colunas correspondentes (PAG 1, PAG 2, PAG 3)
@@ -4204,11 +4570,16 @@ export async function confirmPaymentSelection() {
                         }
                     }
 
-                    if (statusIdx !== -1) {
+                    if (statusIdx !== -1 && !isFreight) {
                         rowData[statusIdx] = newStatus;
                     }
 
-                    if (newStatus === 'PENDENTE') {
+                    if (newStatus !== 'CONFIRMADO' && !isFreight && notaDutyIdx !== -1) {
+                        // Se o status for diferente de Confirmado, limpar a Nota Duty (resposta do operador)
+                        rowData[notaDutyIdx] = '';
+                    }
+
+                    if (newStatus === 'PENDENTE' && !isFreight) {
                         // Se for PENDENTE, limpar as datas de pagamento
                         const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
                         for (const pIdx of pagIndices) {
@@ -4216,35 +4587,50 @@ export async function confirmPaymentSelection() {
                         }
                     }
 
+                    // Gravar Nota e Banco na Primeira Linha (apenas para Frete)
+                    if (isFreight && !firstRowPassed) {
+                        const noteSelect = document.getElementById('select-freight-note')?.value || '';
+                        const noteCustom = document.getElementById('input-freight-note-custom')?.value || '';
+                        const bankVal = document.getElementById('select-freight-bank')?.value || '';
+                        let finalNote = noteSelect === 'CUSTOM' ? noteCustom.trim() : noteSelect;
+                        
+                        if (bankFreightIdx !== -1 && bankVal) rowData[bankFreightIdx] = bankVal;
+                        if (notaFreightIdx !== -1 && finalNote) rowData[notaFreightIdx] = finalNote;
+                    }
+
                     // Acumular apenas as células modificadas para o Google Sheets
                     const cleanSheetName = sheetName.replace(/'/g, '');
                     const prefixClean = cleanSheetName ? `${cleanSheetName}!` : '';
 
                     if (paidIdx !== -1) {
-                        batchUpdates.push({
-                            range: `${prefixClean}${getColLetter(paidIdx)}${sheetRowNumber}`,
-                            values: [[rowData[paidIdx]]]
-                        });
+                        batchUpdates.push({ range: `${prefixClean}${getColLetter(paidIdx)}${sheetRowNumber}`, values: [[rowData[paidIdx]]] });
                     }
-                    if (balanceIdx !== -1) {
-                        batchUpdates.push({
-                            range: `${prefixClean}${getColLetter(balanceIdx)}${sheetRowNumber}`,
-                            values: [[rowData[balanceIdx]]]
-                        });
+                    if (balanceIdx !== -1 && !isFreight) {
+                        batchUpdates.push({ range: `${prefixClean}${getColLetter(balanceIdx)}${sheetRowNumber}`, values: [[rowData[balanceIdx]]] });
                     }
-                    if (statusIdx !== -1) {
-                        batchUpdates.push({
-                            range: `${prefixClean}${getColLetter(statusIdx)}${sheetRowNumber}`,
-                            values: [[rowData[statusIdx]]]
-                        });
+                    if (statusIdx !== -1 && !isFreight) {
+                        batchUpdates.push({ range: `${prefixClean}${getColLetter(statusIdx)}${sheetRowNumber}`, values: [[rowData[statusIdx]]] });
+                    }
+                    if (newStatus !== 'CONFIRMADO' && !isFreight && notaDutyIdx !== -1) {
+                        batchUpdates.push({ range: `${prefixClean}${getColLetter(notaDutyIdx)}${sheetRowNumber}`, values: [['']] });
+                    }
+                    if (isFreight && !firstRowPassed) {
+                        if (bankFreightIdx !== -1) {
+                            batchUpdates.push({ range: `${prefixClean}${getColLetter(bankFreightIdx)}${sheetRowNumber}`, values: [[rowData[bankFreightIdx]]] });
+                        }
+                        if (notaFreightIdx !== -1) {
+                            batchUpdates.push({ range: `${prefixClean}${getColLetter(notaFreightIdx)}${sheetRowNumber}`, values: [[rowData[notaFreightIdx]]] });
+                        }
                     }
                     
+                    firstRowPassed = true;
+
                     // PAG 1, PAG 2, PAG 3
                     const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
                     for (let i = 0; i < pagIndices.length; i++) {
                         const pIdx = pagIndices[i];
                         const dateVal = formattedDates[i];
-                        if (newStatus === 'PENDENTE') {
+                        if (newStatus === 'PENDENTE' && !isFreight) {
                             batchUpdates.push({
                                 range: `${prefixClean}${getColLetter(pIdx)}${sheetRowNumber}`,
                                 values: [['']]
@@ -4398,6 +4784,9 @@ export function closePaymentMiniFilter() {
         container.classList.add('max-w-3xl');
     }
     if (modal) modal.classList.add('hidden');
+    
+    // Limpar o contexto de vínculo para evitar conflitos com Duty
+    window.paymentReconciliationContext = null;
 }
 
 // --- MÓDULO DEFINIÇÕES (USERS) ---
@@ -4864,7 +5253,903 @@ export function updateQuotePreview() {
     if (grandTotalEl) grandTotalEl.innerText = `MZN ${formatCurr(grandTotal)}`;
     if (grandTotalUsdEl) grandTotalUsdEl.innerText = `(USD ${formatCurr(grandTotalUsd)})`;
 
-    // Guardar total temporário no DOM para recuperação no Save
     const formEl = document.getElementById('view-quote-form');
     if (formEl) formEl.dataset.computedTotal = grandTotal.toString();
 }
+
+// ==========================================
+// FREIGHT MODAL LOGIC
+// ==========================================
+
+export function openFreightModal() {
+    const totalBal = (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || 0), 0);
+    const totalFrt = (window.currentClientRows || []).reduce((acc, r) => acc + (r.amtFreight || 0), 0);
+
+    // Se não há frete a pagar ou já está todo pago, não abre o popup
+    if (totalBal <= 0 && totalFrt > 0) {
+        toast("Este frete já se encontra pago e saldado.", "success");
+        return;
+    }
+
+    const modal = document.getElementById('modal-freight-update');
+    if (modal) {
+        document.getElementById('select-freight-bank').value = '';
+        
+        document.getElementById('modal-freight-total-value').innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalFrt);
+
+        setFreightOrigin('local');
+        
+        modal.classList.remove('hidden');
+    }
+}
+
+export function setFreightOrigin(origin) {
+    const btnChina = document.getElementById('btn-freight-origin-china');
+    const btnLocal = document.getElementById('btn-freight-origin-local');
+    const localFields = document.getElementById('freight-local-fields');
+    const btnVincular = document.getElementById('btn-freight-vincular');
+
+    if (origin === 'china') {
+        btnChina.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+        btnChina.classList.remove('bg-transparent', 'text-slate-500');
+        btnLocal.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+        btnLocal.classList.add('bg-transparent', 'text-slate-500');
+        
+        localFields.classList.add('hidden');
+        if (btnVincular) btnVincular.classList.add('hidden');
+        window.currentFreightOrigin = 'china';
+    } else {
+        btnLocal.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+        btnLocal.classList.remove('bg-transparent', 'text-slate-500');
+        btnChina.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+        btnChina.classList.add('bg-transparent', 'text-slate-500');
+        
+        localFields.classList.remove('hidden');
+        if (btnVincular) btnVincular.classList.remove('hidden');
+        window.currentFreightOrigin = 'local';
+    }
+}
+
+export function vincularPagamentoFrete() {
+    closeFreightModal();
+    if (!window.currentActiveClient) return;
+
+    window.paymentReconciliationContext = 'FREIGHT';
+
+    const bankValue = document.getElementById('select-freight-bank').value;
+    const finalNote = 'PAID TO JUPITER';
+
+    const trueRemaining = (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || 0), 0);
+
+    let projectName = 'Folha';
+    const breadcrumbSpan = document.querySelector('#confirm-breadcrumb > span.hover\\:text-black.cursor-pointer.transition-colors');
+    if (breadcrumbSpan) {
+        projectName = breadcrumbSpan.innerText.trim();
+    }
+    const combinedInfo = `FRETE - ${window.currentActiveClient.no || ''} - ${projectName}`.replace(/(^ - )|( - $)/g, '').trim();
+
+    ui.openPaymentMiniFilter(
+        combinedInfo,
+        bankValue,
+        trueRemaining,
+        '',
+        window.currentActiveClient.displayName || '',
+        window.currentActiveClientState?.clientPhone || '',
+        finalNote
+    );
+}
+
+export function closeFreightModal() {
+    const modal = document.getElementById('modal-freight-update');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+export async function saveFreightModal() {
+    if (!window.currentActiveClient || !window.currentActiveClient.rows || window.currentActiveClient.rows.length === 0) {
+        toast("Erro: Nenhum cliente selecionado.", "error");
+        return;
+    }
+
+    let finalNote = '';
+    let bankVal = '';
+    const isChina = window.currentFreightOrigin === 'china';
+
+    if (!isChina) {
+        bankVal = document.getElementById('select-freight-bank').value;
+        finalNote = 'PAID TO JUPITER';
+
+        if (!bankVal) {
+            toast("Por favor, selecione um banco para continuar.", "info");
+            return;
+        }
+    }
+
+    const btn = document.querySelector('#modal-freight-update button:nth-child(2)');
+    if (btn) btn.disabled = true;
+
+    try {
+        const columns = state.confirm.columns || [];
+        const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+        const findCol = (targets) => {
+            const cleanedTargets = targets.map(cleanString);
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => cleanString(c) === target);
+                if (idx !== -1) return idx;
+            }
+            return -1;
+        };
+
+        const bankFreightIdx = findCol(['BANK IN FREIGHT']);
+        const notaFreightIdx = findCol(['NOTA FREIGHT']);
+        const paidFreightIdx = findCol(['PAID FREIGHT']);
+        const amountFreightIdx = findCol(['AMOUNT FREIGHT']);
+        const balanceFreightIdx = findCol(['BALANCE FREIGHT']);
+
+        const currentProjectSheetId = state.confirm.sheetId;
+        
+        let cleanSheetName = '';
+        if (state.confirm.range && state.confirm.range.includes('!')) {
+            cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
+        }
+
+        const updates = [];
+        
+        // Loop sobre todas as ordens deste cliente
+        for (const rowObj of window.currentActiveClient.rows) {
+            const rowIndex = rowObj.originalIndex + 1; // +1 porque google sheets é 1-indexed
+
+            if (!isChina) {
+                // Update Bank in Freight
+                if (bankVal !== '' && bankFreightIdx !== -1) {
+                    updates.push({
+                        range: `${cleanSheetName}!${String.fromCharCode(65 + bankFreightIdx)}${rowIndex}`,
+                        values: [[bankVal === '?' ? '' : bankVal]]
+                    });
+                }
+                
+                // Update Nota Freight
+                if (finalNote !== '' && notaFreightIdx !== -1) {
+                    updates.push({
+                        range: `${cleanSheetName}!${String.fromCharCode(65 + notaFreightIdx)}${rowIndex}`,
+                        values: [[finalNote]]
+                    });
+                }
+            }
+
+            // Update PAID FREIGHT (o BALANCE FREIGHT será calculado por fórmula para ambas as origens)
+            if (paidFreightIdx !== -1 && amountFreightIdx !== -1) {
+                // Ir buscar o AMOUNT FREIGHT da linha
+                const amountVal = state.confirm.data[rowObj.originalIndex][amountFreightIdx];
+                const amt = parseFloat(String(amountVal).replace(/[^0-9.-]+/g, "")) || 0;
+                
+                updates.push({
+                    range: `${cleanSheetName}!${String.fromCharCode(65 + paidFreightIdx)}${rowIndex}`,
+                    values: [[amt]]
+                });
+            }
+        }
+
+        if (updates.length > 0) {
+            await updateGSheetBatch(currentProjectSheetId, updates);
+            toast("Frete atualizado com sucesso no GSheet!", "success");
+        } else {
+            toast("Erro: Colunas de Frete não encontradas no GSheet.", "warning");
+        }
+
+        closeFreightModal();
+
+        // Recarregar os dados para refletir na UI
+        if (typeof window.startGSheetPolling === 'function') {
+            const freshData = await api.readGSheet(currentProjectSheetId, 'A1:AZ1000', true);
+            if (freshData && typeof window.processGSheetData === 'function') {
+                window.processGSheetData(freshData);
+                const freshClient = window.currentConfirmClients.find(c => c.displayName === window.currentActiveClient.displayName);
+                if (freshClient) {
+                    await showConfirmDetail(freshClient, window.currentActiveClientIndex);
+                }
+            }
+        }
+
+    } catch (err) {
+        console.error(err);
+        toast("Erro ao gravar no GSheet.", "error");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+/**
+ * Verifica e cria colunas de Armazém em falta no GSheet
+ */
+export async function checkAndCreateWarehouseColumns() {
+    const columns = state.confirm.columns || [];
+    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO'];
+    
+    const missing = [];
+    required.forEach(req => {
+        const found = columns.findIndex(c => {
+            const clean = String(c || '').toUpperCase().trim();
+            if (req === 'CONTACTO') return clean === 'CONTACTO' || clean === 'CONTACT';
+            return clean === req;
+        });
+        if (found === -1) {
+            missing.push(req);
+        }
+    });
+
+    if (missing.length === 0) return;
+
+    console.log('[WAREHOUSE] Colunas em falta no GSheet:', missing);
+    const newColumns = [...columns, ...missing];
+    
+    let cleanSheetName = '';
+    if (state.confirm.range) {
+        cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
+    }
+    const sheetPrefix = cleanSheetName ? `'${cleanSheetName}'!` : '';
+    const lastColLetter = getColLetter(newColumns.length - 1);
+    const range = `${sheetPrefix}A1:${lastColLetter}1`;
+
+    try {
+        setLoader(true, 'A criar colunas de Armazém...');
+        await updateGSheet(state.confirm.sheetId, range, [newColumns]);
+        
+        // Atualizar colunas e re-ler
+        const freshData = await readGSheet(state.confirm.sheetId, 'A1:AZ1000', true);
+        toast('Colunas de Armazém criadas com sucesso!', 'success');
+        
+        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
+        renderConfirmList(freshData, "", statusFilter);
+    } catch (err) {
+        console.error('[WAREHOUSE] Erro ao criar colunas:', err);
+        toast('Erro ao criar colunas de Armazém: ' + err.message, 'error');
+    } finally {
+        setLoader(false);
+    }
+}
+
+/**
+ * Renderiza o painel operacional de Armazém nos detalhes do cliente
+ */
+export async function renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed) {
+    const container = document.getElementById('armazem-operations-container');
+    if (!container) return;
+
+    const role = pb.authStore.model?.role || 'USER';
+    const isAdmin = role === 'ADMIN';
+
+    const formatDateForInput = (dateStr) => {
+        if (!dateStr || dateStr === '—') return '';
+        const trimmed = String(dateStr).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+        const parts = trimmed.split('/');
+        if (parts.length === 3) {
+            const dd = parts[0].padStart(2, '0');
+            const mm = parts[1].padStart(2, '0');
+            const yyyy = parts[2];
+            if (yyyy.length === 4) {
+                return `${yyyy}-${mm}-${dd}`;
+            }
+        }
+        return trimmed;
+    };
+
+    // Detetar índices das colunas
+    const columns = state.confirm.columns || [];
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
+    const packagesIdx = findCol(['PACKAGES']);
+    const dischargeIdx = findCol(['DISCHARGE']);
+    const deliverIdx = findCol(['DELIVER']);
+    const deliverDateIdx = findCol(['DELIVER DATE']);
+    const deliverToIdx = findCol(['DELIVER TO']);
+    const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+
+    // Verificar se todas as colunas de armazém existem
+    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO'];
+    const hasAll = required.every(req => {
+        const idx = columns.findIndex(c => {
+            const clean = String(c || '').toUpperCase().trim();
+            if (req === 'CONTACTO') return clean === 'CONTACTO' || clean === 'CONTACT';
+            return clean === req;
+        });
+        return idx !== -1;
+    });
+
+    if (!hasAll) {
+        container.innerHTML = `
+            <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center">
+                <p class="text-xs font-bold text-slate-500 mb-4 uppercase">Para gerir o Armazém, é necessário criar as colunas de controlo (Discharge, Deliver, Deliver Date, Deliver To, Contacto) no GSheet.</p>
+                <button onclick="ui.checkAndCreateWarehouseColumns()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
+                    Criar Colunas de Armazém
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    // Regras de negócio para autorização de entrega:
+    // 1. Direitos aduaneiros (Duty) vinculados e confirmados (allConfirmed === true)
+    // 2. Frete pago (totalBalanceFreight <= 0)
+    const isDutyConfirmed = allConfirmed;
+    const isFreightPaid = totalBalanceFreight <= 0;
+    const allowDelivery = isDutyConfirmed && isFreightPaid;
+
+    // Calcular agregados
+    let totalOriginal = 0;
+    const ordersList = [];
+    client.rows.forEach(r => {
+        const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
+        if (orderNum && orderNum !== '—') ordersList.push(orderNum);
+
+        const pkgs = packagesIdx !== -1 ? parseFloat(r.originalRow[packagesIdx]) || 0 : 0;
+        totalOriginal += pkgs;
+    });
+
+    const ordersString = ordersList.join(', ') || '—';
+
+    // Calcular agregados de Discharge e Deliver
+    let totalDischarged = 0;
+    let totalDelivered = 0;
+    let hasAnyDischarge = false;
+    let hasAnyDeliver = false;
+
+    client.rows.forEach(r => {
+        if (dischargeIdx !== -1) {
+            const val = parseFloat(r.originalRow[dischargeIdx]);
+            if (!isNaN(val)) {
+                totalDischarged += val;
+                hasAnyDischarge = true;
+            }
+        }
+        if (deliverIdx !== -1) {
+            const val = parseFloat(r.originalRow[deliverIdx]);
+            if (!isNaN(val)) {
+                totalDelivered += val;
+                hasAnyDeliver = true;
+            }
+        }
+    });
+
+    const dischargeVal = hasAnyDischarge ? totalDischarged : '';
+    const deliverVal = hasAnyDeliver ? totalDelivered : '';
+
+    // Ler valores textuais da primeira linha do cliente
+    const firstRowIndex = client.rows[0].originalIndex;
+    const firstRowData = state.confirm.data[firstRowIndex];
+    const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
+    const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
+    const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
+
+    // Verificar se toda a informação necessária para a emissão da guia está gravada
+    const hasDeliveryInfoSaved = totalDelivered > 0 && 
+                                 String(deliverDateVal).trim() !== '' && 
+                                 String(deliverDateVal).trim() !== '—' &&
+                                 String(deliverToVal).trim() !== '' && 
+                                 String(deliverToVal).trim() !== '—' &&
+                                 String(contactoVal).trim() !== '' && 
+                                 String(contactoVal).trim() !== '—';
+
+    const isEditable = !hasDeliveryInfoSaved || isAdmin;
+
+    let bannerHtml = '';
+    if (allowDelivery) {
+        if (hasDeliveryInfoSaved) {
+            bannerHtml = `
+                <div class="bg-green-50 border border-green-200 text-green-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-green-500">
+                    <div class="p-2 bg-green-100 rounded-xl text-green-600 flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-xs uppercase tracking-wider text-green-900">Entrega Autorizada ✅</h4>
+                        <p class="text-[11px] text-green-700 font-semibold mt-1">Os Direitos Aduaneiros estão CONFIRMADOS e o Frete está totalmente PAGO. A guia de entrega está pronta para emissão.</p>
+                    </div>
+                </div>
+            `;
+        } else {
+            bannerHtml = `
+                <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-amber-500">
+                    <div class="p-2 bg-amber-100 rounded-xl text-amber-600 flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-xs uppercase tracking-wider text-amber-900">Aguardando Informações de Entrega ⚠️</h4>
+                        <p class="text-[11px] text-amber-700 font-semibold mt-1">A entrega está AUTORIZADA (Duty Confirmado e Frete Pago), mas a guia só pode ser emitida após gravar a quantidade entregue, data, recebedor e contacto abaixo.</p>
+                    </div>
+                </div>
+            `;
+        }
+    } else {
+        bannerHtml = `
+            <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-red-500">
+                <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                </div>
+                <div>
+                    <h4 class="font-black text-xs uppercase tracking-wider text-red-900">Entrega Bloqueada 🔒</h4>
+                    <p class="text-[11px] text-red-700 font-bold mt-1">A carga não pode ser entregue até que as pendências sejam resolvidas:</p>
+                    <ul class="list-disc pl-5 mt-1 text-[11px] text-red-700 font-bold space-y-0.5">
+                        ${!isDutyConfirmed ? '<li>Os Direitos Aduaneiros (Duty) não estão totalmente CONFIRMADOS.</li>' : ''}
+                        ${!isFreightPaid ? '<li>O Frete não está totalmente PAGO (Saldo pendente).</li>' : ''}
+                    </ul>
+                </div>
+            </div>
+        `;
+    }
+
+    let buttonsHtml = '';
+    if (!hasDeliveryInfoSaved) {
+        buttonsHtml = `
+            <div class="md:col-span-2">
+                <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
+                    class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
+                    <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                    Gravar
+                </button>
+            </div>
+        `;
+    } else {
+        if (isAdmin) {
+            buttonsHtml = `
+                <div class="md:col-span-2 flex gap-2">
+                    <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
+                        class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Atualizar dados operacionais">
+                        <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                        Actualizar
+                    </button>
+                    <button onclick="ui.printDeliveryNote()" 
+                        class="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia de Entrega">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                        Emitir Guia
+                    </button>
+                </div>
+            `;
+        } else {
+            buttonsHtml = `
+                <div class="md:col-span-2">
+                    <button onclick="ui.printDeliveryNote()" 
+                        class="w-full py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia de Entrega">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                        Emitir Guia
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    container.innerHTML = `
+        ${bannerHtml}
+        
+        ${allowDelivery ? `
+        <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-3">
+                <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Controlo Operacional (Armazém)</h4>
+                
+                <!-- Resumos e Quantidades Totais -->
+                <div class="flex flex-wrap items-center gap-2.5 text-xs">
+                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg">
+                        Ordens: <strong class="text-slate-700 ml-1 font-extrabold">${ordersString}</strong>
+                    </span>
+                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg">
+                        Total Original: <strong class="text-indigo-900 ml-1 font-extrabold">${totalOriginal} Vol</strong>
+                    </span>
+                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-sky-50 text-sky-700 px-2.5 py-1 rounded-lg">
+                        Descarregado: <strong class="text-sky-900 ml-1 font-extrabold">${dischargeVal || '0'} Vol</strong>
+                    </span>
+                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg">
+                        Entregue: <strong class="text-emerald-900 ml-1 font-extrabold">${deliverVal || '0'} Vol</strong>
+                    </span>
+                </div>
+            </div>
+            
+            <div id="armazem-form-container" class="grid grid-cols-1 md:grid-cols-7 gap-3 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                <div>
+                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Descarregado</label>
+                    <input type="number" name="discharge" value="${dischargeVal}" placeholder="Qtd" 
+                        ${!isEditable ? 'disabled' : ''}
+                        class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue</label>
+                    <input type="number" name="deliver" value="${deliverVal}" placeholder="Qtd" 
+                        ${!isEditable ? 'disabled' : ''}
+                        class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Data Entrega</label>
+                    <input type="date" name="deliverDate" value="${formatDateForInput(deliverDateVal)}" 
+                        ${!isEditable ? 'disabled' : ''}
+                        class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue A</label>
+                    <input type="text" name="deliverTo" value="${deliverToVal}" placeholder="Nome" 
+                        ${!isEditable ? 'disabled' : ''}
+                        class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Contacto</label>
+                    <input type="text" name="contacto" value="${contactoVal}" placeholder="Contacto" 
+                        ${!isEditable ? 'disabled' : ''}
+                        class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                </div>
+                ${buttonsHtml}
+            </div>
+        </div>
+        ` : ''}
+    `;
+}
+
+/**
+ * Grava dados da linha operacional do Armazém no GSheet
+ */
+export async function saveArmazemRow(originalIndex, buttonEl) {
+    const container = buttonEl.closest('#armazem-operations-container') || buttonEl.closest('#armazem-form-container') || document;
+    if (!container) return;
+
+    // Obter inputs
+    const dischargeInput = container.querySelector('input[name="discharge"]');
+    const deliverInput = container.querySelector('input[name="deliver"]');
+    const deliverDateInput = container.querySelector('input[name="deliverDate"]');
+    const deliverToInput = container.querySelector('input[name="deliverTo"]');
+    const contactoInput = container.querySelector('input[name="contacto"]');
+
+    const formatDateForSheet = (dateStr) => {
+        if (!dateStr) return '';
+        const trimmed = String(dateStr).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+            const parts = trimmed.split('-');
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+        return trimmed;
+    };
+
+    const dischargeVal = dischargeInput ? dischargeInput.value.trim() : '';
+    const deliverVal = deliverInput ? deliverInput.value.trim() : '';
+    const deliverDateValRaw = deliverDateInput ? deliverDateInput.value.trim() : '';
+    const deliverDateVal = formatDateForSheet(deliverDateValRaw);
+    const deliverToVal = deliverToInput ? deliverToInput.value.trim() : '';
+    const contactoVal = contactoInput ? contactoInput.value.trim() : '';
+
+    const columns = state.confirm.columns || [];
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const packagesIdx = findCol(['PACKAGES']);
+    const dischargeIdx = findCol(['DISCHARGE']);
+    const deliverIdx = findCol(['DELIVER']);
+    const deliverDateIdx = findCol(['DELIVER DATE']);
+    const deliverToIdx = findCol(['DELIVER TO']);
+    const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+
+    if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1) {
+        toast('Erro: Colunas de Armazém não encontradas.', 'error');
+        return;
+    }
+
+    const client = window.currentActiveClient;
+    if (!client) {
+        toast('Erro: Cliente ativo não encontrado.', 'error');
+        return;
+    }
+
+    const totalDischargeInput = dischargeVal !== '' ? parseFloat(dischargeVal) : null;
+    const totalDeliverInput = deliverVal !== '' ? parseFloat(deliverVal) : null;
+
+    let remainingDischarge = totalDischargeInput !== null ? totalDischargeInput : 0;
+    let remainingDeliver = totalDeliverInput !== null ? totalDeliverInput : 0;
+
+    const batchUpdates = [];
+    let sheetName = 'Folha1';
+    if (state.confirm.range && state.confirm.range.includes('!')) {
+        sheetName = state.confirm.range.split('!')[0];
+    }
+    const cleanSheetName = sheetName.replace(/'/g, '');
+    const prefixClean = cleanSheetName ? `${cleanSheetName}!` : '';
+
+    const updatedClientRows = [];
+
+    client.rows.forEach((r, idx) => {
+        const rowIndex = r.originalIndex;
+        const rowNum = rowIndex + 1;
+        const rowData = [...state.confirm.data[rowIndex]];
+        const origPackages = packagesIdx !== -1 ? (parseFloat(rowData[packagesIdx]) || 0) : 0;
+
+        // Distribuição de Descarregado pelas ordens
+        if (dischargeIdx !== -1) {
+            let allocatedDischarge = '';
+            if (totalDischargeInput !== null) {
+                if (idx === client.rows.length - 1) {
+                    allocatedDischarge = String(Math.max(0, remainingDischarge));
+                } else {
+                    const alloc = Math.min(remainingDischarge, origPackages);
+                    allocatedDischarge = String(alloc);
+                    remainingDischarge = Math.max(0, remainingDischarge - alloc);
+                }
+            }
+            rowData[dischargeIdx] = allocatedDischarge;
+            batchUpdates.push({ range: `${prefixClean}${getColLetter(dischargeIdx)}${rowNum}`, values: [[allocatedDischarge]] });
+        }
+
+        // Distribuição de Entregue pelas ordens
+        if (deliverIdx !== -1) {
+            let allocatedDeliver = '';
+            if (totalDeliverInput !== null) {
+                if (idx === client.rows.length - 1) {
+                    allocatedDeliver = String(Math.max(0, remainingDeliver));
+                } else {
+                    const alloc = Math.min(remainingDeliver, origPackages);
+                    allocatedDeliver = String(alloc);
+                    remainingDeliver = Math.max(0, remainingDeliver - alloc);
+                }
+            }
+            rowData[deliverIdx] = allocatedDeliver;
+            batchUpdates.push({ range: `${prefixClean}${getColLetter(deliverIdx)}${rowNum}`, values: [[allocatedDeliver]] });
+        }
+
+        // Metadados replicados para todas as ordens
+        if (deliverDateIdx !== -1) {
+            rowData[deliverDateIdx] = deliverDateVal;
+            batchUpdates.push({ range: `${prefixClean}${getColLetter(deliverDateIdx)}${rowNum}`, values: [[deliverDateVal]] });
+        }
+        if (deliverToIdx !== -1) {
+            rowData[deliverToIdx] = deliverToVal;
+            batchUpdates.push({ range: `${prefixClean}${getColLetter(deliverToIdx)}${rowNum}`, values: [[deliverToVal]] });
+        }
+        if (contactoIdx !== -1) {
+            rowData[contactoIdx] = contactoVal;
+            batchUpdates.push({ range: `${prefixClean}${getColLetter(contactoIdx)}${rowNum}`, values: [[contactoVal]] });
+        }
+
+        updatedClientRows.push({ rowIndex, rowData });
+    });
+
+    try {
+        setBtnLoading(buttonEl, true);
+        await updateGSheetBatch(state.confirm.sheetId, batchUpdates);
+        
+        // Atualizar estado em memória local
+        updatedClientRows.forEach(item => {
+            state.confirm.data[item.rowIndex] = item.rowData;
+            const rObj = client.rows.find(r => r.originalIndex === item.rowIndex);
+            if (rObj) {
+                rObj.originalRow = item.rowData;
+            }
+        });
+
+        // Re-renderizar o detalhe do cliente para atualizar a tabela
+        await showConfirmDetail(client, window.currentActiveClientIndex);
+        
+        toast('Dados de Armazém gravados com sucesso!', 'success');
+    } catch (err) {
+        console.error('[WAREHOUSE] Erro ao gravar dados:', err);
+        toast('Erro ao gravar dados no GSheet: ' + err.message, 'error');
+    } finally {
+        setBtnLoading(buttonEl, false);
+    }
+}
+
+/**
+ * Abre o ecrã de impressão para emissão de Guia de Entrega
+ */
+export function printDeliveryNote() {
+    const client = window.currentActiveClient;
+    if (!client) return;
+
+    const projectName = document.getElementById('confirm-project-active-name')?.textContent || 'PROJETO';
+    const clientName = client.displayName || 'Cliente Sem Nome';
+    const clientCode = client.displayIdCode || '---';
+    const clientNo = client.no || '—';
+
+    const columns = state.confirm.columns || [];
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^A-Z0-9]/g, "")
+        .trim();
+
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
+    const packagesIdx = findCol(['PACKAGES']);
+    const dischargeIdx = findCol(['DISCHARGE']);
+    const deliverIdx = findCol(['DELIVER']);
+    const deliverDateIdx = findCol(['DELIVER DATE']);
+    const deliverToIdx = findCol(['DELIVER TO']);
+    const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+
+    let totalOriginal = 0;
+    const ordersList = [];
+    client.rows.forEach(r => {
+        const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
+        if (orderNum && orderNum !== '—') ordersList.push(orderNum);
+
+        const pkgs = packagesIdx !== -1 ? parseFloat(r.originalRow[packagesIdx]) || 0 : 0;
+        totalOriginal += pkgs;
+    });
+
+    const ordersString = ordersList.join(', ') || '—';
+
+    // Ler da primeira linha
+    const firstRowData = client.rows[0].originalRow;
+    
+    // Calcular agregados de Discharge e Deliver sobre todas as ordens
+    let totalDischarged = 0;
+    let totalDelivered = 0;
+    client.rows.forEach(r => {
+        if (dischargeIdx !== -1) totalDischarged += parseFloat(r.originalRow[dischargeIdx]) || 0;
+        if (deliverIdx !== -1) totalDelivered += parseFloat(r.originalRow[deliverIdx]) || 0;
+    });
+
+    let receiverName = '—';
+    let receiverContact = '—';
+    let deliveryDate = new Date().toLocaleDateString('pt-BR');
+
+    const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
+    const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
+    const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
+
+    if (deliverToVal && deliverToVal !== '—') receiverName = deliverToVal;
+    if (contactoVal && contactoVal !== '—') receiverContact = contactoVal;
+    if (deliverDateVal && deliverDateVal !== '—') deliveryDate = deliverDateVal;
+
+    const printWindow = window.open('', '_blank', 'width=800,height=900');
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Guia de Entrega - ${clientName}</title>
+            <style>
+                body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; color: #1e293b; line-height: 1.5; }
+                .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4f46e5; padding-bottom: 20px; margin-bottom: 30px; }
+                .logo-section h1 { margin: 0; color: #4f46e5; font-size: 28px; font-weight: 800; tracking-tight: -0.05em; }
+                .logo-section p { margin: 5px 0 0 0; font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.1em; }
+                .doc-info { text-align: right; }
+                .doc-info h2 { margin: 0; color: #1e293b; font-size: 20px; font-weight: 800; text-transform: uppercase; }
+                .doc-info p { margin: 5px 0 0 0; font-size: 12px; color: #64748b; font-weight: 600; }
+                .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 40px; }
+                .card { border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; background: #f8fafc; }
+                .card h3 { margin: 0 0 10px 0; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #4f46e5; letter-spacing: 0.05em; }
+                .card p { margin: 4px 0; font-size: 12px; font-weight: 600; }
+                .card span { color: #64748b; font-weight: normal; }
+                table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+                th { background: #f1f5f9; padding: 12px 10px; text-align: left; font-size: 10px; text-transform: uppercase; font-weight: 800; color: #475569; border-bottom: 2px solid #cbd5e1; }
+                .totals-row { background: #f8fafc; border-top: 2px solid #cbd5e1; font-weight: bold; }
+                .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; }
+                .sig-box { border-top: 1px dashed #cbd5e1; padding-top: 15px; text-align: center; }
+                .sig-box p { margin: 5px 0 0 0; font-size: 12px; font-weight: bold; color: #1e293b; }
+                .sig-box span { font-size: 10px; color: #64748b; }
+                .btn-print { background: #4f46e5; color: white; padding: 10px 20px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; display: block; margin: 0 auto 30px auto; }
+                @media print {
+                    .btn-print { display: none; }
+                    body { margin: 20px; }
+                }
+            </style>
+        </head>
+        <body>
+            <button class="btn-print" onclick="window.print()">Imprimir Guia de Entrega</button>
+
+            <div class="header">
+                <div class="logo-section">
+                    <h1>IMPORTMOZ</h1>
+                    <p>Logística & Distribuição</p>
+                </div>
+                <div class="doc-info">
+                    <h2>Guia de Entrega</h2>
+                    <p>Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}</p>
+                </div>
+            </div>
+
+            <div class="details-grid">
+                <div class="card">
+                    <h3>Dados do Cliente</h3>
+                    <p><span>Cliente:</span> ${clientName}</p>
+                    <p><span>ID Code:</span> ${clientCode}</p>
+                    <p><span>Nº do Cliente:</span> ${clientNo}</p>
+                    <p><span>Projeto/Lista:</span> ${projectName}</p>
+                </div>
+                <div class="card">
+                    <h3>Informações de Recebimento</h3>
+                    <p><span>Entregue A:</span> ${receiverName}</p>
+                    <p><span>Contacto:</span> ${receiverContact}</p>
+                    <p><span>Data de Entrega:</span> ${deliveryDate}</p>
+                </div>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 45%;">Descrição da Mercadoria</th>
+                        <th style="width: 15%; text-align: center;">Volumes Enviados</th>
+                        <th style="width: 20%; text-align: center;">Volumes Descarregados</th>
+                        <th style="width: 20%; text-align: center;">Volumes Entregues</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr style="border-bottom: 1px solid #e2e8f0;">
+                        <td style="padding: 12px 10px; font-weight: bold; font-size: 12px; color: #1e293b;">
+                            Mercadoria do Cliente (Ordens: ${ordersString})
+                        </td>
+                        <td style="padding: 12px 10px; text-align: center; font-size: 12px; color: #334155;">${totalOriginal}</td>
+                        <td style="padding: 12px 10px; text-align: center; font-size: 12px; color: #334155;">${totalDischarged}</td>
+                        <td style="padding: 12px 10px; text-align: center; font-weight: bold; font-size: 12px; color: #10b981;">${totalDelivered}</td>
+                    </tr>
+                    <tr class="totals-row">
+                        <td style="padding: 12px 10px; font-weight: bold;">TOTAL</td>
+                        <td style="padding: 12px 10px; text-align: center; font-weight: bold;">${totalOriginal}</td>
+                        <td style="padding: 12px 10px; text-align: center; font-weight: bold;">${totalDischarged}</td>
+                        <td style="padding: 12px 10px; text-align: center; font-weight: bold; color: #10b981;">${totalDelivered}</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div style="font-size: 11px; color: #64748b; margin-top: 40px; border-left: 3px solid #cbd5e1; padding-left: 15px;">
+                <strong>Nota:</strong> Esta guia confirma que os volumes acima listados foram devidamente conferidos e entregues em perfeitas condições. O recebedor declara ter recebido a mercadoria conforme descrito.
+            </div>
+
+            <div class="signatures">
+                <div class="sig-box">
+                    <p>IMPORTMOZ</p>
+                    <span>Assinatura do Responsável</span>
+                </div>
+                <div class="sig-box">
+                    <p>${receiverName}</p>
+                    <span>Assinatura do Recebedor</span>
+                </div>
+            </div>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+}
+
