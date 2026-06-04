@@ -6324,8 +6324,7 @@ export function printDeliveryNote() {
 
             <div class="header">
                 <div class="logo-section">
-                    <h1 style="color: #0f172a; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em;">JUPITER LOGISTICS</h1>
-                    <p style="margin: 2px 0 6px 0; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #4f46e5; letter-spacing: 0.05em;">Jupiter Logistics Lda</p>
+                    <h1 style="color: #0f172a; margin: 0 0 6px 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em;">JUPITER LOGISTICS LDA</h1>
                     <div style="font-size: 9px; color: #475569; font-weight: 600; line-height: 1.4;">
                         Av. do Trabalho nº 1412, 3º Andar<br>
                         Tel: +258 21401334 | Cel: +258 84 0485 691<br>
