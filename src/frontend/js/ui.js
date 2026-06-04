@@ -975,7 +975,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     state.confirm.columns = columns;
 
     // Verificar e criar colunas de Armazém em falta
-    const requiredCols = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO'];
+    const requiredCols = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID'];
     const hasAllCols = requiredCols.every(req => {
         const idx = columns.findIndex(c => {
             const clean = String(c || '').toUpperCase().trim();
@@ -5465,7 +5465,7 @@ export async function saveFreightModal() {
  */
 export async function checkAndCreateWarehouseColumns() {
     const columns = state.confirm.columns || [];
-    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO'];
+    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID'];
     
     const missing = [];
     required.forEach(req => {
@@ -5513,292 +5513,459 @@ export async function checkAndCreateWarehouseColumns() {
 /**
  * Renderiza o painel operacional de Armazém nos detalhes do cliente
  */
+export function parseDate(dateStr) {
+    if (!dateStr || dateStr === '—') return null;
+    const trimmed = String(dateStr).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+        const parts = trimmed.split('-');
+        return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+    }
+    const parts = trimmed.split('/');
+    if (parts.length === 3) {
+        const dd = Number(parts[0]);
+        const mm = Number(parts[1]);
+        const yyyy = Number(parts[2]);
+        if (!isNaN(dd) && !isNaN(mm) && !isNaN(yyyy)) {
+            return new Date(yyyy, mm - 1, dd, 0, 0, 0, 0);
+        }
+    }
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+        const d = new Date(parsed);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }
+    return null;
+}
+
 export async function renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed) {
     const container = document.getElementById('armazem-operations-container');
     if (!container) return;
 
-    const role = pb.authStore.model?.role || 'USER';
-    const isAdmin = role === 'ADMIN';
+    try {
+        const role = pb.authStore.model?.role || 'USER';
+        const isAdmin = role === 'ADMIN';
 
-    const formatDateForInput = (dateStr) => {
-        if (!dateStr || dateStr === '—') return '';
-        const trimmed = String(dateStr).trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-        const parts = trimmed.split('/');
-        if (parts.length === 3) {
-            const dd = parts[0].padStart(2, '0');
-            const mm = parts[1].padStart(2, '0');
-            const yyyy = parts[2];
-            if (yyyy.length === 4) {
-                return `${yyyy}-${mm}-${dd}`;
+        const formatDateForInput = (dateStr) => {
+            if (!dateStr || dateStr === '—') return '';
+            const trimmed = String(dateStr).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+            const parts = trimmed.split('/');
+            if (parts.length === 3) {
+                const dd = parts[0].padStart(2, '0');
+                const mm = parts[1].padStart(2, '0');
+                const yyyy = parts[2];
+                if (yyyy.length === 4) {
+                    return `${yyyy}-${mm}-${dd}`;
+                }
             }
-        }
-        return trimmed;
-    };
+            return trimmed;
+        };
 
-    // Detetar índices das colunas
-    const columns = state.confirm.columns || [];
-    const cleanString = (str) => String(str || '')
-        .toUpperCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^A-Z0-9]/g, "")
-        .trim();
+        // Detetar índices das colunas
+        const columns = state.confirm?.columns || [];
+        const cleanString = (str) => String(str || '')
+            .toUpperCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^A-Z0-9]/g, "")
+            .trim();
 
-    const findCol = (targets) => {
-        const cleanedTargets = targets.map(cleanString);
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c) === target);
-            if (idx !== -1) return idx;
-        }
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c).includes(target));
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    };
+        const findCol = (targets) => {
+            const cleanedTargets = targets.map(cleanString);
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => cleanString(c) === target);
+                if (idx !== -1) return idx;
+            }
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => cleanString(c).includes(target));
+                if (idx !== -1) return idx;
+            }
+            return -1;
+        };
 
-    const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
-    const packagesIdx = findCol(['PACKAGES']);
-    const dischargeIdx = findCol(['DISCHARGE']);
-    const deliverIdx = findCol(['DELIVER']);
-    const deliverDateIdx = findCol(['DELIVER DATE']);
-    const deliverToIdx = findCol(['DELIVER TO']);
-    const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+        const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
+        const packagesIdx = findCol(['PACKAGES']);
+        const dischargeIdx = findCol(['DISCHARGE']);
+        const deliverIdx = findCol(['DELIVER']);
+        const deliverDateIdx = findCol(['DELIVER DATE']);
+        const deliverToIdx = findCol(['DELIVER TO']);
+        const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+        const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
+        const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
+        const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
+        const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
+        const pag1Idx = findCol(['PAG 1', 'PAG1']);
+        const pag2Idx = findCol(['PAG 2', 'PAG2']);
+        const pag3Idx = findCol(['PAG 3', 'PAG3']);
 
-    // Verificar se todas as colunas de armazém existem
-    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO'];
-    const hasAll = required.every(req => {
-        const idx = columns.findIndex(c => {
-            const clean = String(c || '').toUpperCase().trim();
-            if (req === 'CONTACTO') return clean === 'CONTACTO' || clean === 'CONTACT';
-            return clean === req;
+        // Verificar se todas as colunas de armazém existem
+        const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID'];
+        const hasAll = required.every(req => {
+            const idx = columns.findIndex(c => {
+                const clean = String(c || '').toUpperCase().trim();
+                if (req === 'CONTACTO') return clean === 'CONTACTO' || clean === 'CONTACT';
+                return clean === req;
+            });
+            return idx !== -1;
         });
-        return idx !== -1;
-    });
 
-    if (!hasAll) {
-        container.innerHTML = `
-            <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center">
-                <p class="text-xs font-bold text-slate-500 mb-4 uppercase">Para gerir o Armazém, é necessário criar as colunas de controlo (Discharge, Deliver, Deliver Date, Deliver To, Contacto) no GSheet.</p>
-                <button onclick="ui.checkAndCreateWarehouseColumns()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
-                    Criar Colunas de Armazém
-                </button>
-            </div>
-        `;
-        return;
-    }
+        if (!hasAll) {
+            container.innerHTML = `
+                <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center">
+                    <p class="text-xs font-bold text-slate-500 mb-4 uppercase">Para gerir o Armazém e custos, é necessário criar as colunas de controlo (Discharge, Deliver, Deliver Date, Deliver To, Contacto, Storage Paid) no GSheet.</p>
+                    <button onclick="ui.checkAndCreateWarehouseColumns()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
+                        Criar Colunas de Armazém
+                    </button>
+                </div>
+            `;
+            return;
+        }
 
-    // Regras de negócio para autorização de entrega:
-    // 1. Direitos aduaneiros (Duty) vinculados e confirmados (allConfirmed === true)
-    // 2. Frete pago (totalBalanceFreight <= 0)
-    const isDutyConfirmed = allConfirmed;
-    const isFreightPaid = totalBalanceFreight <= 0;
-    const allowDelivery = isDutyConfirmed && isFreightPaid;
+        // Regras de negócio para autorização de entrega:
+        // 1. Direitos aduaneiros (Duty) vinculados e confirmados (allConfirmed === true)
+        // 2. Frete pago (totalBalanceFreight <= 0)
+        const isDutyConfirmed = allConfirmed;
+        const isFreightPaid = totalBalanceFreight <= 0;
+        const allowDelivery = isDutyConfirmed && isFreightPaid;
 
-    // Calcular agregados
-    let totalOriginal = 0;
-    const ordersList = [];
-    client.rows.forEach(r => {
-        const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
-        if (orderNum && orderNum !== '—') ordersList.push(orderNum);
+        // Calcular agregados
+        let totalOriginal = 0;
+        const ordersList = [];
+        client.rows.forEach(r => {
+            const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
+            if (orderNum && orderNum !== '—') ordersList.push(orderNum);
 
-        const pkgs = packagesIdx !== -1 ? parseFloat(r.originalRow[packagesIdx]) || 0 : 0;
-        totalOriginal += pkgs;
-    });
+            const pkgs = packagesIdx !== -1 ? parseFloat(r.originalRow[packagesIdx]) || 0 : 0;
+            totalOriginal += pkgs;
+        });
 
-    const ordersString = ordersList.join(', ') || '—';
+        const ordersString = ordersList.join(', ') || '—';
 
-    // Calcular agregados de Discharge e Deliver
-    let totalDischarged = 0;
-    let totalDelivered = 0;
-    let hasAnyDischarge = false;
-    let hasAnyDeliver = false;
+        // Calcular agregados de Discharge e Deliver
+        let totalDischarged = 0;
+        let totalDelivered = 0;
+        let hasAnyDischarge = false;
+        let hasAnyDeliver = false;
 
-    client.rows.forEach(r => {
-        if (dischargeIdx !== -1) {
-            const val = parseFloat(r.originalRow[dischargeIdx]);
-            if (!isNaN(val)) {
-                totalDischarged += val;
-                hasAnyDischarge = true;
+        client.rows.forEach(r => {
+            if (dischargeIdx !== -1) {
+                const val = parseFloat(r.originalRow[dischargeIdx]);
+                if (!isNaN(val)) {
+                    totalDischarged += val;
+                    hasAnyDischarge = true;
+                }
             }
-        }
-        if (deliverIdx !== -1) {
-            const val = parseFloat(r.originalRow[deliverIdx]);
-            if (!isNaN(val)) {
-                totalDelivered += val;
-                hasAnyDeliver = true;
+            if (deliverIdx !== -1) {
+                const val = parseFloat(r.originalRow[deliverIdx]);
+                if (!isNaN(val)) {
+                    totalDelivered += val;
+                    hasAnyDeliver = true;
+                }
             }
-        }
-    });
+        });
 
-    const dischargeVal = hasAnyDischarge ? totalDischarged : '';
-    const deliverVal = hasAnyDeliver ? totalDelivered : '';
+        const dischargeVal = hasAnyDischarge ? totalDischarged : '';
+        const deliverVal = hasAnyDeliver ? totalDelivered : '';
 
-    // Ler valores textuais da primeira linha do cliente
-    const firstRowIndex = client.rows[0].originalIndex;
-    const firstRowData = state.confirm.data[firstRowIndex];
-    const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
-    const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
-    const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
+        // Ler valores textuais da primeira linha do cliente
+        const firstRowIndex = client.rows[0].originalIndex;
+        const firstRowData = state.confirm?.data?.[firstRowIndex] || [];
+        const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
+        const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
+        const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
+        const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
 
-    // Verificar se toda a informação necessária para a emissão da guia está gravada
-    const hasDeliveryInfoSaved = totalDelivered > 0 && 
-                                 String(deliverDateVal).trim() !== '' && 
-                                 String(deliverDateVal).trim() !== '—' &&
-                                 String(deliverToVal).trim() !== '' && 
-                                 String(deliverToVal).trim() !== '—' &&
-                                 String(contactoVal).trim() !== '' && 
-                                 String(contactoVal).trim() !== '—';
-
-    const isEditable = !hasDeliveryInfoSaved || isAdmin;
-
-    let bannerHtml = '';
-    if (allowDelivery) {
-        if (hasDeliveryInfoSaved) {
-            bannerHtml = `
-                <div class="bg-green-50 border border-green-200 text-green-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-green-500">
-                    <div class="p-2 bg-green-100 rounded-xl text-green-600 flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                    </div>
-                    <div>
-                        <h4 class="font-black text-xs uppercase tracking-wider text-green-900">Entrega Autorizada ✅</h4>
-                        <p class="text-[11px] text-green-700 font-semibold mt-1">Os Direitos Aduaneiros estão CONFIRMADOS e o Frete está totalmente PAGO. A guia de entrega está pronta para emissão.</p>
-                    </div>
-                </div>
-            `;
-        } else {
-            bannerHtml = `
-                <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-amber-500">
-                    <div class="p-2 bg-amber-100 rounded-xl text-amber-600 flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                    </div>
-                    <div>
-                        <h4 class="font-black text-xs uppercase tracking-wider text-amber-900">Aguardando Informações de Entrega ⚠️</h4>
-                        <p class="text-[11px] text-amber-700 font-semibold mt-1">A entrega está AUTORIZADA (Duty Confirmado e Frete Pago), mas a guia só pode ser emitida após gravar a quantidade entregue, data, recebedor e contacto abaixo.</p>
-                    </div>
-                </div>
-            `;
-        }
-    } else {
-        bannerHtml = `
-            <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-red-500">
-                <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                </div>
-                <div>
-                    <h4 class="font-black text-xs uppercase tracking-wider text-red-900">Entrega Bloqueada 🔒</h4>
-                    <p class="text-[11px] text-red-700 font-bold mt-1">A carga não pode ser entregue até que as pendências sejam resolvidas:</p>
-                    <ul class="list-disc pl-5 mt-1 text-[11px] text-red-700 font-bold space-y-0.5">
-                        ${!isDutyConfirmed ? '<li>Os Direitos Aduaneiros (Duty) não estão totalmente CONFIRMADOS.</li>' : ''}
-                        ${!isFreightPaid ? '<li>O Frete não está totalmente PAGO (Saldo pendente).</li>' : ''}
-                    </ul>
-                </div>
-            </div>
-        `;
-    }
-
-    let buttonsHtml = '';
-    if (!hasDeliveryInfoSaved) {
-        buttonsHtml = `
-            <div class="md:col-span-2">
-                <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
-                    class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
-                    <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                    Gravar
-                </button>
-            </div>
-        `;
-    } else {
-        if (isAdmin) {
-            buttonsHtml = `
-                <div class="md:col-span-2 flex gap-2">
-                    <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
-                        class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Atualizar dados operacionais">
-                        <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                        Actualizar
-                    </button>
-                    <button onclick="ui.printDeliveryNote()" 
-                        class="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia de Entrega">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                        Emitir Guia
-                    </button>
-                </div>
-            `;
-        } else {
-            buttonsHtml = `
-                <div class="md:col-span-2">
-                    <button onclick="ui.printDeliveryNote()" 
-                        class="w-full py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia de Entrega">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                        Emitir Guia
-                    </button>
-                </div>
-            `;
-        }
-    }
-
-    container.innerHTML = `
-        ${bannerHtml}
+        // --- CÁLCULO DE CUSTO DE ARMAZENAGEM ---
+        const dischargeDateStr = state.confirm?.dischargeDate || ''; // YYYY-MM-DD
+        const dDate = parseDate(dischargeDateStr);
         
-        ${allowDelivery ? `
-        <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
-            <div class="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-3">
-                <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Controlo Operacional (Armazém)</h4>
-                
-                <!-- Resumos e Quantidades Totais -->
-                <div class="flex flex-wrap items-center gap-2.5 text-xs">
-                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg">
-                        Ordens: <strong class="text-slate-700 ml-1 font-extrabold">${ordersString}</strong>
-                    </span>
-                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg">
-                        Total Original: <strong class="text-indigo-900 ml-1 font-extrabold">${totalOriginal} Vol</strong>
-                    </span>
-                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-sky-50 text-sky-700 px-2.5 py-1 rounded-lg">
-                        Descarregado: <strong class="text-sky-900 ml-1 font-extrabold">${dischargeVal || '0'} Vol</strong>
-                    </span>
-                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg">
-                        Entregue: <strong class="text-emerald-900 ml-1 font-extrabold">${deliverVal || '0'} Vol</strong>
-                    </span>
-                </div>
-            </div>
+        // Determinar se o pagamento do Duty foi antecipado
+        let totalDuty = 0;
+        let totalPrepaid = 0;
+        let totalBalance = 0;
+        let hasPaymentAfterDischarge = false;
+
+        client.rows.forEach(r => {
+            const rowData = r.originalRow;
+            const dVal = dutyIdx !== -1 ? parseFloat(String(rowData[dutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+            const pVal = dutyPrepaidIdx !== -1 ? parseFloat(String(rowData[dutyPrepaidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+            const bVal = balanceIdx !== -1 ? parseFloat(String(rowData[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
             
-            <div id="armazem-form-container" class="grid grid-cols-1 md:grid-cols-7 gap-3 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-                <div>
-                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Descarregado</label>
-                    <input type="number" name="discharge" value="${dischargeVal}" placeholder="Qtd" 
-                        ${!isEditable ? 'disabled' : ''}
-                        class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+            totalDuty += dVal;
+            totalPrepaid += pVal;
+            totalBalance += bVal;
+            
+            // Analisar datas nas colunas PAG 1, 2, 3
+            const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(idx => idx !== -1);
+            pagIndices.forEach(idx => {
+                const dateStr = rowData[idx];
+                if (dateStr && String(dateStr).trim() !== '' && String(dateStr).trim() !== '—') {
+                    const pDate = parseDate(dateStr);
+                    if (pDate && dDate && pDate.getTime() > dDate.getTime()) {
+                        hasPaymentAfterDischarge = true;
+                    }
+                }
+            });
+        });
+
+        const isFullyPaid = (totalBalance <= 1.0);
+        const isAnticipated = (totalPrepaid >= totalDuty) || (isFullyPaid && !hasPaymentAfterDischarge);
+
+        // Calcular dias decorridos
+        const deliverDateStr = deliverDateVal && deliverDateVal !== '—' ? deliverDateVal : '';
+        const todayStr = new Date().toISOString().split('T')[0];
+        const targetEndDateStr = deliverDateStr || todayStr;
+        const targetEndDate = parseDate(targetEndDateStr);
+        
+        let daysDiff = 0;
+        if (dDate && targetEndDate) {
+            const timeDiff = targetEndDate.getTime() - dDate.getTime();
+            daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
+        }
+
+        // Aplicar a regra de armazenamento
+        let storageCost = 0;
+        if (dischargeDateStr) {
+            if (isAnticipated) {
+                if (daysDiff <= 3) {
+                    storageCost = 0;
+                } else {
+                    storageCost = (daysDiff - 3) * 1000;
+                }
+            } else {
+                if (daysDiff <= 3) {
+                    storageCost = daysDiff * 500;
+                } else {
+                    storageCost = 1500 + (daysDiff - 3) * 1000;
+                }
+            }
+        }
+
+        // Estado do pagamento da armazenagem
+        const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
+
+        // Verificar se toda a informação necessária para a emissão da guia está gravada
+        const hasDeliveryInfoSaved = totalDelivered > 0 && 
+                                     String(deliverDateVal).trim() !== '' && 
+                                     String(deliverDateVal).trim() !== '—' &&
+                                     String(deliverToVal).trim() !== '' && 
+                                     String(deliverToVal).trim() !== '—' &&
+                                     String(contactoVal).trim() !== '' && 
+                                     String(contactoVal).trim() !== '—';
+
+        const canEmitGuia = hasDeliveryInfoSaved && isStoragePaid;
+        const isEditable = !hasDeliveryInfoSaved || isAdmin;
+
+        // Cabeçalho da Guia com a data de descarga e dados de armazenagem
+        const formatDateForDisplay = (dateStr) => {
+            if (!dateStr) return '';
+            const p = parseDate(dateStr);
+            return p ? p.toLocaleDateString('pt-PT') : dateStr;
+        };
+
+        let bannerHtml = '';
+        if (allowDelivery) {
+            if (storageCost > 0 && !isStoragePaid) {
+                bannerHtml = `
+                    <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-red-500">
+                        <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        </div>
+                        <div>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-red-900">Emissão Bloqueada (Armazenagem Pendente) ❌</h4>
+                            <p class="text-[11px] text-red-700 font-semibold mt-1">A entrega está financeiramente autorizada (Duty e Frete confirmados), mas a guia de entrega está bloqueada até que o custo de armazenagem de <strong>${formatMZN(storageCost)}</strong> seja pago.</p>
+                        </div>
+                    </div>
+                `;
+            } else if (hasDeliveryInfoSaved) {
+                bannerHtml = `
+                    <div class="bg-green-50 border border-green-200 text-green-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-green-500">
+                        <div class="p-2 bg-green-100 rounded-xl text-green-600 flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                        </div>
+                        <div>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-green-900">Entrega Autorizada ✅</h4>
+                            <p class="text-[11px] text-green-700 font-semibold mt-1">Os Direitos Aduaneiros estão CONFIRMADOS, o Frete está PAGO e a Armazenagem está liquidada/isenta. A guia de entrega está pronta para emissão.</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                bannerHtml = `
+                    <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-amber-500">
+                        <div class="p-2 bg-amber-100 rounded-xl text-amber-600 flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        </div>
+                        <div>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-amber-900">Aguardando Informações de Entrega ⚠️</h4>
+                            <p class="text-[11px] text-amber-700 font-semibold mt-1">A entrega está pré-autorizada (Duty Confirmado e Frete Pago), mas a guia só pode ser emitida após gravar os dados de descarga/entrega e confirmar a armazenagem.</p>
+                        </div>
+                    </div>
+                `;
+            }
+        } else {
+            bannerHtml = `
+                <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-red-500">
+                    <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-xs uppercase tracking-wider text-red-900">Entrega Bloqueada 🔒</h4>
+                        <p class="text-[11px] text-red-700 font-bold mt-1">A carga não pode ser entregue até que as pendências sejam resolvidas:</p>
+                        <ul class="list-disc pl-5 mt-1 text-[11px] text-red-700 font-bold space-y-0.5">
+                            ${!isDutyConfirmed ? '<li>Os Direitos Aduaneiros (Duty) não estão totalmente CONFIRMADOS.</li>' : ''}
+                            ${!isFreightPaid ? '<li>O Frete não está totalmente PAGO (Saldo pendente).</li>' : ''}
+                        </ul>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue</label>
-                    <input type="number" name="deliver" value="${deliverVal}" placeholder="Qtd" 
-                        ${!isEditable ? 'disabled' : ''}
-                        class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+            `;
+        }
+
+        let buttonsHtml = '';
+        if (!hasDeliveryInfoSaved) {
+            buttonsHtml = `
+                <div class="${storageCost === 0 ? 'md:col-span-3' : 'md:col-span-2'}">
+                    <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
+                        class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
+                        <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                        Gravar
+                    </button>
                 </div>
-                <div>
-                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Data Entrega</label>
-                    <input type="date" name="deliverDate" value="${formatDateForInput(deliverDateVal)}" 
-                        ${!isEditable ? 'disabled' : ''}
-                        class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+            `;
+        } else {
+            if (isAdmin) {
+                buttonsHtml = `
+                    <div class="${storageCost === 0 ? 'md:col-span-3' : 'md:col-span-2'} flex gap-2">
+                        <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
+                            class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Atualizar dados operacionais">
+                            <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                            Actualizar
+                        </button>
+                        <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: O pagamento de armazenagem está pendente.\', \'warning\')'}" 
+                            class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia de Entrega' : 'Bloqueado: Pagamento de armazenagem pendente'}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                            Emitir Guia
+                        </button>
+                    </div>
+                `;
+            } else {
+                buttonsHtml = `
+                    <div class="${storageCost === 0 ? 'md:col-span-3' : 'md:col-span-2'}">
+                        <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: O pagamento de armazenagem está pendente.\', \'warning\')'}" 
+                            class="w-full py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia de Entrega' : 'Bloqueado: Pagamento de armazenagem pendente'}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                            Emitir Guia
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        // Badges de Armazenagem
+        const dischargeDateBadge = `
+            <span class="text-slate-400 font-bold uppercase text-[9px] bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200">
+                Descarga: <strong class="text-amber-900 ml-1 font-extrabold">${dischargeDateStr ? formatDateForDisplay(dischargeDateStr) : 'NÃO DEFINIDA'}</strong>
+            </span>
+        `;
+
+        let storageBadgesHtml = '';
+        if (dischargeDateStr && storageCost > 0) {
+            const statusColor = isStoragePaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse';
+            const textStatus = isStoragePaid ? 'Pago' : 'Pendente';
+            storageBadgesHtml = `
+                <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                    Dias: <strong class="text-slate-700 ml-1 font-extrabold">${daysDiff}d</strong>
+                </span>
+                <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                    Tarifa: <strong class="text-slate-700 ml-1 font-extrabold">${isAnticipated ? 'Antecipado' : 'Normal/Multa'}</strong>
+                </span>
+                <span class="font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border ${statusColor}">
+                    Armazenagem: <strong class="ml-1 font-extrabold">${formatMZN(storageCost)} (${textStatus})</strong>
+                </span>
+            `;
+        }
+
+        container.innerHTML = `
+            ${bannerHtml}
+            
+            ${allowDelivery ? `
+            <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-3">
+                    <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Controlo Operacional (Armazém)</h4>
+                    
+                    <!-- Resumos e Quantidades Totais -->
+                    <div class="flex flex-wrap items-center gap-2.5 text-xs">
+                        <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg">
+                            Ordens: <strong class="text-slate-700 ml-1 font-extrabold">${ordersString}</strong>
+                        </span>
+                        <span class="text-slate-400 font-bold uppercase text-[9px] bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg">
+                            Total Original: <strong class="text-indigo-900 ml-1 font-extrabold">${totalOriginal} Vol</strong>
+                        </span>
+                        <span class="text-slate-400 font-bold uppercase text-[9px] bg-sky-50 text-sky-700 px-2.5 py-1 rounded-lg">
+                            Descarregado: <strong class="text-sky-900 ml-1 font-extrabold">${dischargeVal || '0'} Vol</strong>
+                        </span>
+                        <span class="text-slate-400 font-bold uppercase text-[9px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg">
+                            Entregue: <strong class="text-emerald-900 ml-1 font-extrabold">${deliverVal || '0'} Vol</strong>
+                        </span>
+                        ${dischargeDateBadge}
+                        ${storageBadgesHtml}
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue A</label>
-                    <input type="text" name="deliverTo" value="${deliverToVal}" placeholder="Nome" 
-                        ${!isEditable ? 'disabled' : ''}
-                        class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                
+                <div id="armazem-form-container" class="grid grid-cols-1 md:grid-cols-8 gap-3 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                    <div>
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Descarregado</label>
+                        <input type="number" name="discharge" value="${dischargeVal}" placeholder="Qtd" 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue</label>
+                        <input type="number" name="deliver" value="${deliverVal}" placeholder="Qtd" 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Data Entrega</label>
+                        <input type="date" name="deliverDate" value="${formatDateForInput(deliverDateVal)}" 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue A</label>
+                        <input type="text" name="deliverTo" value="${deliverToVal}" placeholder="Nome" 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Contacto</label>
+                        <input type="text" name="contacto" value="${contactoVal}" placeholder="Contacto" 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    </div>
+                    <div class="${storageCost === 0 ? 'hidden' : ''}">
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Armazenagem</label>
+                        <select name="storagePaid" ${!isEditable ? 'disabled' : ''}
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            <option value="NAO" ${storageCost > 0 && storagePaidVal === 'NAO' ? 'selected' : ''}>❌ PENDENTE</option>
+                            <option value="SIM" ${storageCost === 0 || storagePaidVal === 'SIM' ? 'selected' : ''}>✅ PAGO</option>
+                        </select>
+                    </div>
+                    ${buttonsHtml}
                 </div>
-                <div>
-                    <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Contacto</label>
-                    <input type="text" name="contacto" value="${contactoVal}" placeholder="Contacto" 
-                        ${!isEditable ? 'disabled' : ''}
-                        class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
-                </div>
-                ${buttonsHtml}
             </div>
-        </div>
-        ` : ''}
-    `;
+            ` : ''}
+        `;
+    } catch (err) {
+        console.error('[WAREHOUSE] Erro ao renderizar detalhes de Armazém:', err);
+        container.innerHTML = `
+            <div class="bg-red-50 border border-red-200 text-red-800 p-6 rounded-2xl text-center">
+                <h4 class="font-black text-xs uppercase text-red-900 mb-2">Erro de Renderização ❌</h4>
+                <p class="text-xs font-semibold">${err.message}</p>
+                <pre class="text-[9px] text-left bg-white/50 p-3 rounded-lg mt-3 overflow-auto">${err.stack}</pre>
+            </div>
+        `;
+    }
 }
 
 /**
@@ -5814,6 +5981,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateInput = container.querySelector('input[name="deliverDate"]');
     const deliverToInput = container.querySelector('input[name="deliverTo"]');
     const contactoInput = container.querySelector('input[name="contacto"]');
+    const storagePaidInput = container.querySelector('select[name="storagePaid"]');
 
     const formatDateForSheet = (dateStr) => {
         if (!dateStr) return '';
@@ -5831,6 +5999,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateVal = formatDateForSheet(deliverDateValRaw);
     const deliverToVal = deliverToInput ? deliverToInput.value.trim() : '';
     const contactoVal = contactoInput ? contactoInput.value.trim() : '';
+    const storagePaidVal = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
 
     const columns = state.confirm.columns || [];
     const cleanString = (str) => String(str || '')
@@ -5859,8 +6028,9 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateIdx = findCol(['DELIVER DATE']);
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+    const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
 
-    if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1) {
+    if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1 || storagePaidIdx === -1) {
         toast('Erro: Colunas de Armazém não encontradas.', 'error');
         return;
     }
@@ -5938,6 +6108,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             rowData[contactoIdx] = contactoVal;
             batchUpdates.push({ range: `${prefixClean}${getColLetter(contactoIdx)}${rowNum}`, values: [[contactoVal]] });
         }
+        if (storagePaidIdx !== -1) {
+            rowData[storagePaidIdx] = storagePaidVal;
+            batchUpdates.push({ range: `${prefixClean}${getColLetter(storagePaidIdx)}${rowNum}`, values: [[storagePaidVal]] });
+        }
 
         updatedClientRows.push({ rowIndex, rowData });
     });
@@ -6007,6 +6181,13 @@ export function printDeliveryNote() {
     const deliverDateIdx = findCol(['DELIVER DATE']);
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+    const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
+    const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
+    const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
+    const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
+    const pag1Idx = findCol(['PAG 1', 'PAG1']);
+    const pag2Idx = findCol(['PAG 2', 'PAG2']);
+    const pag3Idx = findCol(['PAG 3', 'PAG3']);
 
     let totalOriginal = 0;
     const ordersList = [];
@@ -6038,10 +6219,72 @@ export function printDeliveryNote() {
     const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
     const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
     const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
+    const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
 
     if (deliverToVal && deliverToVal !== '—') receiverName = deliverToVal;
     if (contactoVal && contactoVal !== '—') receiverContact = contactoVal;
     if (deliverDateVal && deliverDateVal !== '—') deliveryDate = deliverDateVal;
+
+    // --- CÁLCULO DE ARMAZENAGEM PARA IMPRESSÃO ---
+    const dischargeDateStr = state.confirm.dischargeDate || '';
+    const dDate = parseDate(dischargeDateStr);
+    
+    let totalDuty = 0;
+    let totalPrepaid = 0;
+    let totalBalance = 0;
+    let hasPaymentAfterDischarge = false;
+
+    client.rows.forEach(r => {
+        const rowData = r.originalRow;
+        const dVal = dutyIdx !== -1 ? parseFloat(String(rowData[dutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+        const pVal = dutyPrepaidIdx !== -1 ? parseFloat(String(rowData[dutyPrepaidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+        const bVal = balanceIdx !== -1 ? parseFloat(String(rowData[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+        
+        totalDuty += dVal;
+        totalPrepaid += pVal;
+        totalBalance += bVal;
+        
+        const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(idx => idx !== -1);
+        pagIndices.forEach(idx => {
+            const dateStr = rowData[idx];
+            if (dateStr && String(dateStr).trim() !== '' && String(dateStr).trim() !== '—') {
+                const pDate = parseDate(dateStr);
+                if (pDate && dDate && pDate.getTime() > dDate.getTime()) {
+                    hasPaymentAfterDischarge = true;
+                }
+            }
+        });
+    });
+
+    const isFullyPaid = (totalBalance <= 1.0);
+    const isAnticipated = (totalPrepaid >= totalDuty) || (isFullyPaid && !hasPaymentAfterDischarge);
+
+    const targetEndDate = parseDate(deliveryDate || new Date().toISOString().split('T')[0]);
+    let daysDiff = 0;
+    if (dDate && targetEndDate) {
+        const timeDiff = targetEndDate.getTime() - dDate.getTime();
+        daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
+    }
+
+    let storageCost = 0;
+    if (dischargeDateStr) {
+        if (isAnticipated) {
+            if (daysDiff <= 3) {
+                storageCost = 0;
+            } else {
+                storageCost = (daysDiff - 3) * 1000;
+            }
+        } else {
+            if (daysDiff <= 3) {
+                storageCost = daysDiff * 500;
+            } else {
+                storageCost = 1500 + (daysDiff - 3) * 1000;
+            }
+        }
+    }
+
+    const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
+    const textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
 
     const printWindow = window.open('', '_blank', 'width=800,height=900');
     printWindow.document.write(`
@@ -6057,7 +6300,7 @@ export function printDeliveryNote() {
                 .doc-info { text-align: right; }
                 .doc-info h2 { margin: 0; color: #1e293b; font-size: 20px; font-weight: 800; text-transform: uppercase; }
                 .doc-info p { margin: 5px 0 0 0; font-size: 12px; color: #64748b; font-weight: 600; }
-                .details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 40px; }
+                .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 40px; }
                 .card { border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; background: #f8fafc; }
                 .card h3 { margin: 0 0 10px 0; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #4f46e5; letter-spacing: 0.05em; }
                 .card p { margin: 4px 0; font-size: 12px; font-weight: 600; }
@@ -6103,6 +6346,13 @@ export function printDeliveryNote() {
                     <p><span>Entregue A:</span> ${receiverName}</p>
                     <p><span>Contacto:</span> ${receiverContact}</p>
                     <p><span>Data de Entrega:</span> ${deliveryDate}</p>
+                </div>
+                <div class="card">
+                    <h3>Controlo de Armazenagem</h3>
+                    <p><span>Data Descarga:</span> ${dischargeDateStr ? new Date(dischargeDateStr + 'T00:00:00').toLocaleDateString('pt-PT') : '—'}</p>
+                    <p><span>Dias Decorridos:</span> ${daysDiff} dias</p>
+                    <p><span>Custo Armazenagem:</span> ${formatMZN(storageCost)}</p>
+                    <p><span>Estado Pagamento:</span> <strong style="color: ${isStoragePaid ? '#10b981' : '#ef4444'};">${textStoragePaid}</strong></p>
                 </div>
             </div>
 

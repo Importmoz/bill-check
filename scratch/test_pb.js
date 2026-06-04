@@ -1,19 +1,20 @@
-
 const PocketBase = require('pocketbase/cjs');
 const pb = new PocketBase('http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io');
 
-async function test() {
+async function main() {
     try {
-        const result = await pb.collection('bank_incomes').getList(1, 5, {
-            sort: '-created'
-        });
-        console.log('CONEXAO OK. TOTAL REGISTROS:', result.totalItems);
-        result.items.forEach(item => {
-            console.log(`- ID: ${item.id}, Data: ${item.date}, Desc: ${item.description}, Sig: ${item.signature}`);
-        });
+        console.log("Conectando ao PocketBase...");
+        const records = await pb.collection('confirm_projects').getList(1, 1);
+        console.log("Registros encontrados:", records.items.length);
+        if (records.items.length > 0) {
+            console.log("Campos de confirm_projects:", Object.keys(records.items[0]));
+            console.log("Registro completo:", records.items[0]);
+        } else {
+            console.log("Nenhum registro encontrado.");
+        }
     } catch (err) {
-        console.error('ERRO AO CONECTAR AO POCKETBASE:', err.message);
+        console.error("Erro ao consultar PocketBase:", err);
     }
 }
 
-test();
+main();

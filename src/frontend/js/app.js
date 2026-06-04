@@ -1091,22 +1091,44 @@ async function openConfirmProjectModal(projectId = null) {
     const nameInput = document.getElementById('input-project-name');
     const sheetInput = document.getElementById('input-project-sheet-id');
     const driveInput = document.getElementById('input-project-drive-id');
+    const dischargeInput = document.getElementById('input-project-discharge-date');
     const delContainer = document.getElementById('confirm-project-delete-container');
 
     if (projectId) {
-        // Modo Edição (busca no estado ou recarrega?)
-        // Por simplicidade, assumimos que o estado api.state tem ou buscamos do DOM
         title.innerText = "EDITAR PROJETO";
         idInput.value = projectId;
         delContainer.classList.remove('hidden');
         
-        // Buscar dados do projeto clicado (via atributo ou cache)
-        const projects = api.state.confirm?.projects || [];
+        const projects = state.confirm?.projects || [];
         const p = projects.find(x => x.id === projectId);
         if (p) {
             nameInput.value = p.name;
             sheetInput.value = p.sheetId;
             driveInput.value = p.folderId;
+            
+            // Prefill discharge date (prioritize PocketBase record)
+            dischargeInput.value = p.dischargeDate || "";
+            if (!dischargeInput.value && state.confirm && state.confirm.sheetId === p.sheetId && state.confirm.dischargeDate) {
+                dischargeInput.value = state.confirm.dischargeDate;
+            } else if (!dischargeInput.value && p.sheetId) {
+                // Tentar obter dinamicamente sem afetar o estado global
+                try {
+                    const res = await fetch('/api/google/sheet/read', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ spreadsheetId: p.sheetId, range: 'A1:A1' })
+                    });
+                    if (res.ok) {
+                        const resData = await res.json();
+                        const note = resData.notes?.[0]?.[0] || '';
+                        if (note.startsWith("DISCHARGE_DATE:")) {
+                            dischargeInput.value = note.replace("DISCHARGE_DATE:", "").trim();
+                        }
+                    }
+                } catch (err) {
+                    console.warn("Não foi possível obter a data de descarga da planilha:", err);
+                }
+            }
         }
     } else {
         title.innerText = "NOVO PROJETO";
@@ -1114,6 +1136,7 @@ async function openConfirmProjectModal(projectId = null) {
         nameInput.value = "";
         sheetInput.value = "";
         driveInput.value = "";
+        dischargeInput.value = "";
         delContainer.classList.add('hidden');
     }
     ui.openModal('modal-confirm-project');
@@ -1127,11 +1150,13 @@ async function saveConfirmProject() {
         return match ? match[0] : str.trim();
     };
 
+    const dischargeDate = document.getElementById('input-project-discharge-date').value;
     const data = {
         id: document.getElementById('input-project-id').value,
         name: document.getElementById('input-project-name').value.trim(),
         sheetId: extractId(document.getElementById('input-project-sheet-id').value),
         folderId: extractId(document.getElementById('input-project-drive-id').value),
+        dischargeDate: dischargeDate || '' // Gravar no PocketBase
     };
 
     if (!data.name || !data.sheetId) return ui.toast("Nome e ID da Folha são obrigatórios.", "error");
@@ -1140,6 +1165,22 @@ async function saveConfirmProject() {
     ui.setBtnLoading(btn, true);
     try {
         await api.saveConfirmProject(data);
+        
+        // Gravar a data de descarga na planilha (fallback / redundância)
+        if (data.sheetId) {
+            const noteText = dischargeDate ? `DISCHARGE_DATE:${dischargeDate}` : '';
+            await api.updateGSheetNote(data.sheetId, "", 0, 0, noteText);
+            
+            if (state.confirm && state.confirm.sheetId === data.sheetId) {
+                state.confirm.dischargeDate = dischargeDate;
+                
+                // Forçar atualização do estado em memória e ecrã de detalhes se estiver aberto
+                if (window.currentActiveClient) {
+                    await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+                }
+            }
+        }
+
         ui.closeModal('modal-confirm-project');
         loadConfirmProjects();
     } catch (err) {
@@ -1181,6 +1222,21 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
     try {
         // Carrega o GSheet lendo por defeito a aba primária ou o que estiver definido
         const data = await api.readGSheet(sheetId);
+        
+        // Extrair Data de Descarga do PocketBase ou da nota da célula A1 se existir
+        state.confirm.dischargeDate = '';
+        const projectRecord = state.confirm?.projects?.find(x => x.sheetId === sheetId);
+        if (projectRecord && projectRecord.dischargeDate) {
+            state.confirm.dischargeDate = projectRecord.dischargeDate;
+            console.log(`[WAREHOUSE] Data de Descarga carregada do PocketBase: ${state.confirm.dischargeDate}`);
+        } else if (state.confirm && state.confirm.notes && state.confirm.notes[0] && state.confirm.notes[0][0]) {
+            const note = state.confirm.notes[0][0];
+            if (note.startsWith("DISCHARGE_DATE:")) {
+                state.confirm.dischargeDate = note.replace("DISCHARGE_DATE:", "").trim();
+                console.log(`[WAREHOUSE] Data de Descarga carregada da planilha (fallback): ${state.confirm.dischargeDate}`);
+            }
+        }
+        
         const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
         ui.renderConfirmList(data, "", statusFilter);
         
