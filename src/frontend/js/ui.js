@@ -975,7 +975,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     state.confirm.columns = columns;
 
     // Verificar e criar colunas de Armazém em falta
-    const requiredCols = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID'];
+    const requiredCols = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
     const hasAllCols = requiredCols.every(req => {
         const idx = columns.findIndex(c => {
             const clean = String(c || '').toUpperCase().trim();
@@ -5502,6 +5502,9 @@ export async function checkAndCreateWarehouseColumns() {
         
         const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
         renderConfirmList(freshData, "", statusFilter);
+        if (window.currentActiveClient) {
+            await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+        }
     } catch (err) {
         console.error('[WAREHOUSE] Erro ao criar colunas:', err);
         toast('Erro ao criar colunas de Armazém: ' + err.message, 'error');
