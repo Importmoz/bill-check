@@ -1,0 +1,87 @@
+<USER_REQUEST>
+agora vamos trabalhar na melhoria do sistema sem publicar por enquanto, percebeu depois vamos fazer uma publicacao com varias actualizacaoes. podemo?
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-01T16:49:24+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+as permissoes dos usuarios do nivel 1, quero que nas Ações em Massa quero que ele consiga actualizar so o Banco em massa, e que sempre que se actualizar o banco em massa o sitema pergunte se é para actualizar os valores tambem como pagos, e dependendo do usuario se faca o solicitado
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-01T16:51:34+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+aprovado
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-01T17:05:48+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+note que eu so actualizei o banco e voce tambem actualizou o status mesmo nao eu nao ter mexido no status nas actualizacoes em Massa
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-01T17:16:34+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+vamos corigir algo, " Deseja também atualizar os valores destas ordens como pagos (Paid = Amount Duty) e marcar como CONFIRMADO?"  eu nao quero marcar como confirmado pois so é possivel marcar confirmado apos vincular um pagamento.  
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-01T17:24:28+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+pode publicar 
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-01T17:30:19+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+vamos continuar a melhorar, para os cliente com stataus diferente de Pendente , Aguarda Pagamento ou confirmado, e que tenham uma Notas de Confirmação: peço para mostrar a Notas de Confirmação: por baixo das ordens, para que os usuarios de Nivel 1 tambem possao ver o porque desse estatus
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-02T11:00:43+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+rode localmente o sistema
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-02T11:06:58+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+agora vamos trabalhar em uma grande actualizacao que primeiro vamos testar localmente antes de publicar, percebido?
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-02T11:08:31+02:00.
+</ADDITIONAL_METADATA>
+
+---
+
+<USER_REQUEST>
+Continue
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-06-02T11:17:45+02:00.
+</ADDITIONAL_METADATA>

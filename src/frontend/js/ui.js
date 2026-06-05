@@ -2952,12 +2952,12 @@ export async function saveConfirmOrderEdit(e) {
                 values: [[paid]]
             });
         }
-        if (balanceIdx !== -1) {
-            batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
-                values: [[balance]]
-            });
-        }
+        // if (balanceIdx !== -1) {
+        //     batchUpdates.push({
+        //         range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+        //         values: [[balance]]
+        //     });
+        // }
         if (bankDutyIdx !== -1) {
             batchUpdates.push({
                 range: `${cleanSheetName}!${getColLetter(bankDutyIdx)}${rowNum}`,
@@ -3238,12 +3238,12 @@ export async function applyBulkUpdate() {
                             values: [[rowData[paidIdx]]]
                         });
                     }
-                    if (balanceIdx !== -1) {
-                        batchUpdates.push({
-                            range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
-                            values: [[rowData[balanceIdx]]]
-                        });
-                    }
+                    // if (balanceIdx !== -1) {
+                    //     batchUpdates.push({
+                    //         range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+                    //         values: [[rowData[balanceIdx]]]
+                    //     });
+                    // }
                     wrotePaidAndBalance = true;
                 }
 
@@ -3261,12 +3261,12 @@ export async function applyBulkUpdate() {
                                 values: [[rowData[paidIdx]]]
                             });
                         }
-                        if (balanceIdx !== -1) {
-                            batchUpdates.push({
-                                range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
-                                values: [[rowData[balanceIdx]]]
-                            });
-                        }
+                        // if (balanceIdx !== -1) {
+                        //     batchUpdates.push({
+                        //         range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+                        //         values: [[rowData[balanceIdx]]]
+                        //     });
+                        // }
                     }
                 }
 
@@ -4605,9 +4605,9 @@ export async function confirmPaymentSelection() {
                     if (paidIdx !== -1) {
                         batchUpdates.push({ range: `${prefixClean}${getColLetter(paidIdx)}${sheetRowNumber}`, values: [[rowData[paidIdx]]] });
                     }
-                    if (balanceIdx !== -1 && !isFreight) {
-                        batchUpdates.push({ range: `${prefixClean}${getColLetter(balanceIdx)}${sheetRowNumber}`, values: [[rowData[balanceIdx]]] });
-                    }
+                    // if (balanceIdx !== -1 && !isFreight) {
+                    //     batchUpdates.push({ range: `${prefixClean}${getColLetter(balanceIdx)}${sheetRowNumber}`, values: [[rowData[balanceIdx]]] });
+                    // }
                     if (statusIdx !== -1 && !isFreight) {
                         batchUpdates.push({ range: `${prefixClean}${getColLetter(statusIdx)}${sheetRowNumber}`, values: [[rowData[statusIdx]]] });
                     }
@@ -6548,7 +6548,7 @@ export function checkAndShowNewsIcon(version) {
     const btn = document.createElement('button');
     btn.id = 'btn-global-news';
     btn.className = 'fixed top-3.5 right-16 z-[9990] bg-indigo-600 text-white p-2 rounded-full shadow-lg hover:shadow-indigo-500/20 active:scale-95 transition-all animate-bounce cursor-pointer flex items-center justify-center border border-indigo-400';
-    btn.title = 'Novidades da Versão (V1.1.0)';
+    btn.title = 'Novidades da Versão (V1.2.0)';
     btn.onclick = () => showChangelogModal();
     btn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
@@ -6592,27 +6592,27 @@ export function showChangelogModal() {
                     <!-- Coluna 1 -->
                     <div class="space-y-3">
                         <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
-                            <span class="text-[8px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Confirm</span>
-                            <p class="font-bold text-[10px] text-slate-800">💬 Respostas e Badges Unificados:</p>
-                            <p class="text-[10px] text-slate-500 font-medium mt-1">Os operadores já podem responder diretamente às observações dos estados. O badge animado <code>💬 RESPONDIDO</code> foi otimizado nos cards em grelha, alinhando-se com o status (ex: <code>ERRADO</code>) sem espaços ou cantos individuais arredondados.</p>
+                            <span class="text-[8px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Confirm & Infraestrutura</span>
+                            <p class="font-bold text-[10px] text-slate-800">🛡️ Modo Offline e Sincronização Automática:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">O sistema agora tem tolerância a falhas do GSheet. Se a planilha cair, o <code>Modo Backup Ativo</code> entra em ação permitindo continuar o trabalho. As alterações ficam no PocketBase e são injetadas no GSheet quando a ligação voltar.</p>
                         </div>
                         <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
-                            <span class="text-[8px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Reconciliação</span>
-                            <p class="font-bold text-[10px] text-slate-800">🧹 Limpeza de Respostas Antigas:</p>
-                            <p class="text-[10px] text-slate-500 font-medium mt-1">Ao vincular pagamento ou alterar status para valores diferentes de <code>CONFIRMADO</code> no ecrã de reconciliação, a resposta anterior do operador em <code>NOTA DUTY</code> é apagada automaticamente para que o operador possa responder à nova questão.</p>
+                            <span class="text-[8px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Prevenção de Perdas</span>
+                            <p class="font-bold text-[10px] text-slate-800">⚖️ Resolução de Conflitos:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Se alguém alterar o GSheet em casa enquanto o armazém trabalhava em Modo Offline, o sistema deteta e exibe o "Modal de Conflito de Sincronização", permitindo escolher entre a versão do Sistema ou a versão GSheet para evitar perda de dados.</p>
                         </div>
                     </div>
                     <!-- Coluna 2 -->
                     <div class="space-y-3">
                         <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
-                            <span class="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Armazém</span>
-                            <p class="font-bold text-[10px] text-slate-800">📅 Calendário Nativo & Permissões:</p>
-                            <p class="text-[10px] text-slate-500 font-medium mt-1">Substituído o campo manual de data por um calendário nativo (datepicker) que salva no GSheet em formato standard. Para segurança operacional, após a gravação, os inputs são bloqueados para operadores normais e editáveis apenas por <code>ADMIN</code>.</p>
+                            <span class="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Reconciliação</span>
+                            <p class="font-bold text-[10px] text-slate-800">🧮 Preservação de Fórmulas (Duty & Frete):</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Ações em massa e reconciliações individuais deixaram de exportar valores fixos para as colunas de <code>BALANCE</code>. Agora o sistema apenas atualiza pagamentos e datas, permitindo que a fórmula nativa do Google Sheets continue a operar de forma inteligente.</p>
                         </div>
                         <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
                             <span class="text-[8px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Armazém</span>
-                            <p class="font-bold text-[10px] text-slate-800">📦 Botões Inteligentes e Sem Duplicados:</p>
-                            <p class="text-[10px] text-slate-500 font-medium mt-1">Se gravado, operadores normais vêm apenas <code>Emitir Guia</code>. Utilizadores <code>ADMIN</code> vêm os botões <code>Actualizar</code> e <code>Emitir Guia</code> lado a lado. O botão redundante que era exibido no banner de autorização superior foi removido.</p>
+                            <p class="font-bold text-[10px] text-slate-800">📅 Atualizações Estáveis:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Mantido o calendário nativo (datepicker) que salva no GSheet em formato standard e a ocultação de botões redundantes. O sistema geral está mais robusto contra latência da Google API.</p>
                         </div>
                     </div>
                 </div>
@@ -6634,10 +6634,120 @@ export function closeChangelogModal(markAsViewed = false) {
     if (modal) modal.remove();
 
     if (markAsViewed) {
-        const version = window.__SYSTEM_VERSION__ || 'v1.1.0';
+        const version = window.__SYSTEM_VERSION__ || 'v1.2.0';
         localStorage.setItem('viewed-version-' + version, 'true');
         const btn = document.getElementById('btn-global-news');
         if (btn) btn.remove();
     }
 }
 
+export function showSyncStatus(isOffline) {
+    let banner = document.getElementById('sync-status-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'sync-status-banner';
+        banner.className = 'fixed top-0 left-0 w-full z-[999] transition-all duration-500 flex justify-center items-center pointer-events-none opacity-0 -translate-y-full';
+        document.body.appendChild(banner);
+    }
+    
+    if (isOffline) {
+        banner.innerHTML = `
+            <div class="bg-red-500 text-white px-4 py-2 rounded-b-xl shadow-lg flex items-center gap-2 pointer-events-auto">
+                <i class="fas fa-exclamation-triangle text-sm"></i>
+                <span class="text-xs font-bold uppercase tracking-wide">Modo Backup Ativo (Offline)</span>
+            </div>
+        `;
+        requestAnimationFrame(() => {
+            banner.classList.remove('opacity-0', '-translate-y-full');
+            banner.classList.add('opacity-100', 'translate-y-0');
+        });
+    } else {
+        banner.classList.remove('opacity-100', 'translate-y-0');
+        banner.classList.add('opacity-0', '-translate-y-full');
+    }
+}
+
+export function showSyncConflict(conflictData) {
+    const { projectId, spreadsheetId, pbRecord } = conflictData;
+    let modal = document.getElementById('modal-sync-conflict');
+    if (modal) modal.remove();
+
+    modal = document.createElement('div');
+    modal.id = 'modal-sync-conflict';
+    modal.className = "fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4";
+    modal.innerHTML = `
+        <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col border border-slate-200">
+            <div class="p-6 bg-red-50 border-b border-red-100 flex items-center gap-4">
+                <div class="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <i class="fas fa-exclamation-circle text-2xl text-red-600"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-black text-slate-800 tracking-tight">Conflito de Sincronização</h2>
+                    <p class="text-xs font-medium text-red-600">Detetámos alterações em ambos os locais.</p>
+                </div>
+            </div>
+            
+            <div class="p-6 space-y-4">
+                <p class="text-sm text-slate-600 font-medium">A Planilha Google foi modificada externamente enquanto a app operava em Modo Offline. O que deseja fazer?</p>
+                
+                <div class="grid grid-cols-1 gap-3 mt-4">
+                    <button id="btn-resolve-system" class="w-full text-left p-4 rounded-xl border-2 border-indigo-100 hover:border-indigo-600 bg-indigo-50/50 hover:bg-indigo-50 transition-colors group cursor-pointer">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-sm text-indigo-900">Forçar Versão do Sistema</span>
+                            <i class="fas fa-arrow-right text-indigo-400 group-hover:text-indigo-600"></i>
+                        </div>
+                        <p class="text-[10px] text-indigo-600/70 mt-1 font-medium">Substitui a Planilha Google com os dados guardados localmente nesta app.</p>
+                    </button>
+                    
+                    <button id="btn-resolve-gsheet" class="w-full text-left p-4 rounded-xl border-2 border-slate-200 hover:border-slate-400 bg-slate-50 transition-colors group cursor-pointer">
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-sm text-slate-700">Usar Versão da Planilha</span>
+                            <i class="fas fa-download text-slate-400 group-hover:text-slate-600"></i>
+                        </div>
+                        <p class="text-[10px] text-slate-500 mt-1 font-medium">Descarta as edições feitas na app e carrega os dados atuais do Google Sheets.</p>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    document.getElementById('btn-resolve-system').onclick = async () => {
+        const btn = document.getElementById('btn-resolve-system');
+        const icon = btn.querySelector('i');
+        icon.className = 'fas fa-spinner fa-spin text-indigo-600';
+        try {
+            // Fetch PB explicitamente, é mais seguro que usar pb globals
+            const pb_url = window.POCKETBASE_CONFIG && window.POCKETBASE_CONFIG.POCKETBASE_URL ? window.POCKETBASE_CONFIG.POCKETBASE_URL : 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+            const restoreData = pbRecord.sheet_data.values || pbRecord.sheet_data;
+            await fetch('/api/google/sheet/update', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ spreadsheetId, range: 'A1', values: restoreData })
+            });
+            // Limpa flag
+            const { pb } = await import('./api.js');
+            await pb.collection('confirm_projects').update(projectId, { has_pending_sync: false });
+            window.location.reload();
+        } catch (e) {
+            alert("Erro ao forçar gravação: " + e.message);
+            icon.className = 'fas fa-arrow-right text-indigo-600';
+        }
+    };
+    
+    document.getElementById('btn-resolve-gsheet').onclick = async () => {
+        const btn = document.getElementById('btn-resolve-gsheet');
+        const icon = btn.querySelector('i');
+        icon.className = 'fas fa-spinner fa-spin text-slate-600';
+        try {
+            // Limpa flag e recarrega
+            const { pb } = await import('./api.js');
+            await pb.collection('confirm_projects').update(projectId, { has_pending_sync: false });
+            window.location.reload();
+        } catch (e) {
+            alert("Erro ao limpar flag: " + e.message);
+            icon.className = 'fas fa-download text-slate-600';
+        }
+    };
+}

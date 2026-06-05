@@ -31,10 +31,13 @@ export const state = {
         records: []
     },
     confirm: {
+        projectId: '',
         sheetId: localStorage.getItem('confirm_sheet_id') || '',
         data: [],
         columns: [],
-        driveFiles: []
+        driveFiles: [],
+        isOfflineMode: false,
+        hasPendingSync: false
     },
     bank: {
         incomes: []
@@ -299,82 +302,299 @@ export function logout() {
 
 /** --- MÓDULO CONFIRM (GOOGLE API) --- **/
 
-export async function readGSheet(spreadsheetId, range = 'A1:AZ1000', skipModifiedTimeCheck = false) {
-    const res = await fetch('/api/google/sheet/read', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spreadsheetId, range })
-    });
-    if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Erro ao ler GSheet");
-    }
-    const data = await res.json();
-    state.confirm.sheetId = spreadsheetId; // <-- CORREÇÃO CRÍTICA: Guardar o ID real do projeto
-    state.confirm.data = data.values || data; // Retrocompatibilidade se falhar
-    state.confirm.notes = data.notes || []; // Guardar as notas nativas das células
-    state.confirm.range = data.range || 'Folha1!A1:AZ1000'; // Guardar a aba real
-    if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
-
-    // Buscar data de modificação inicial da planilha
-    if (!skipModifiedTimeCheck) {
+export async function readGSheet(projectRecord, range = 'A1:AZ1000', skipModifiedTimeCheck = false) {
+    const spreadsheetId = typeof projectRecord === 'string' ? projectRecord : projectRecord?.sheetId;
+    const projectId = typeof projectRecord === 'object' ? projectRecord?.id : (state.confirm.projectId || null);
+    
+    if (projectId) state.confirm.projectId = projectId;
+    state.confirm.sheetId = spreadsheetId;
+    state.confirm.isOfflineMode = false;
+    
+    let hasPendingSync = false;
+    let pbRecord = null;
+    
+    if (projectId) {
         try {
+            pbRecord = await pb.collection('confirm_projects').getOne(projectId);
+            hasPendingSync = pbRecord.has_pending_sync === true;
+            state.confirm.hasPendingSync = hasPendingSync;
+            console.log(`[SYNC] Projeto carregado do PB. has_pending_sync = ${hasPendingSync}`);
+        } catch (e) {
+            console.warn("[SYNC] Erro ao carregar projeto do PocketBase:", e);
+        }
+    }
+
+    // Fluxo de Sincronização Pendente (Prioridade ao PocketBase)
+    if (hasPendingSync && pbRecord?.sheet_data) {
+        console.log("[SYNC] Alterações offline detetadas. Verificando conflitos com Google Sheets...");
+        let conflictDetected = false;
+        
+        try {
+            // Verificar data de modificação no Google
             const updateCheckRes = await fetch('/api/google/sheet/check-update', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ spreadsheetId })
             });
+            
             if (updateCheckRes.ok) {
-                const updateCheckData = await updateCheckRes.json();
-                state.confirm.lastModifiedTime = updateCheckData.modifiedTime;
-                console.log(`[API] Guardado lastModifiedTime inicial da planilha: ${state.confirm.lastModifiedTime}`);
+                const checkData = await updateCheckRes.json();
+                const gsheetModifiedTime = checkData.modifiedTime ? new Date(checkData.modifiedTime).getTime() : 0;
+                const pbLastSync = pbRecord.last_sync ? new Date(pbRecord.last_sync).getTime() : 0;
+                
+                // Tolerância de 10 segundos
+                if (gsheetModifiedTime > (pbLastSync + 10000)) {
+                    console.warn(`[SYNC] CONFLITO! GSheet modificado externamente (${new Date(gsheetModifiedTime)}) depois da última sync (${new Date(pbLastSync)}).`);
+                    conflictDetected = true;
+                }
             }
-        } catch (checkErr) {
-            console.warn("[API] Erro ao obter data de modificação inicial:", checkErr);
+        } catch (err) {
+            console.log("[SYNC] GSheet ainda está inacessível durante tentativa de verificação.");
+            // Mantemos em modo offline
         }
+
+        if (conflictDetected) {
+            // Disparar evento global para UI mostrar modal de conflito
+            window.dispatchEvent(new CustomEvent('confirmSyncConflict', { 
+                detail: { projectId, spreadsheetId, pbRecord }
+            }));
+            state.confirm.isOfflineMode = true;
+        } else {
+            console.log("[SYNC] Restaurando dados do PocketBase para o GSheet...");
+            try {
+                // Tenta restaurar o GSheet
+                const restoreData = pbRecord.sheet_data.values || pbRecord.sheet_data;
+                await fetch('/api/google/sheet/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ spreadsheetId, range: 'A1', values: restoreData })
+                });
+                console.log("[SYNC] Restauro no GSheet com sucesso. Limpando pending_sync...");
+                await pb.collection('confirm_projects').update(projectId, { has_pending_sync: false });
+                state.confirm.hasPendingSync = false;
+            } catch (restoreErr) {
+                console.error("[SYNC] Falha ao restaurar GSheet. Mantendo modo offline.", restoreErr);
+                state.confirm.isOfflineMode = true;
+            }
+        }
+
+        // Carregar dados locais do PB para a app funcionar
+        const pbData = pbRecord.sheet_data;
+        state.confirm.data = pbData.values || pbData;
+        state.confirm.notes = pbData.notes || [];
+        state.confirm.range = pbData.range || 'Folha1!A1:AZ1000';
+        if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
+        
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: state.confirm.isOfflineMode } }));
+        return state.confirm.data;
     }
 
-    return state.confirm.data;
+    // Fluxo Normal (Prioridade ao Google Sheets)
+    try {
+        const res = await fetch('/api/google/sheet/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId, range })
+        });
+        
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Erro ao ler GSheet");
+        }
+        
+        const data = await res.json();
+        state.confirm.data = data.values || data;
+        state.confirm.notes = data.notes || [];
+        state.confirm.range = data.range || 'Folha1!A1:AZ1000';
+        if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
+
+        // Atualizar PocketBase com snapshot mais recente
+        if (projectId) {
+            try {
+                await pb.collection('confirm_projects').update(projectId, {
+                    sheet_data: {
+                        values: state.confirm.data,
+                        notes: state.confirm.notes,
+                        range: state.confirm.range
+                    },
+                    last_sync: new Date().toISOString(),
+                    has_pending_sync: false
+                });
+                console.log("[SYNC] Backup do GSheet guardado no PocketBase.");
+            } catch (pbErr) {
+                console.warn("[SYNC] Erro ao guardar snapshot no PocketBase:", pbErr);
+            }
+        }
+
+        // Buscar data de modificação inicial da planilha
+        if (!skipModifiedTimeCheck) {
+            try {
+                const updateCheckRes = await fetch('/api/google/sheet/check-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ spreadsheetId })
+                });
+                if (updateCheckRes.ok) {
+                    const updateCheckData = await updateCheckRes.json();
+                    state.confirm.lastModifiedTime = updateCheckData.modifiedTime;
+                    console.log(`[API] Guardado lastModifiedTime inicial: ${state.confirm.lastModifiedTime}`);
+                }
+            } catch (checkErr) {
+                console.warn("[API] Erro ao obter data de modificação inicial:", checkErr);
+            }
+        }
+
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: false } }));
+        return state.confirm.data;
+
+    } catch (gsheetErr) {
+        console.error("[SYNC] GSheet inacessível:", gsheetErr);
+        // Fallback para PocketBase
+        if (pbRecord && pbRecord.sheet_data) {
+            console.log("[SYNC] Fallback: Carregando dados do PocketBase (Modo Offline ativado).");
+            state.confirm.isOfflineMode = true;
+            const pbData = pbRecord.sheet_data;
+            state.confirm.data = pbData.values || pbData;
+            state.confirm.notes = pbData.notes || [];
+            state.confirm.range = pbData.range || 'Folha1!A1:AZ1000';
+            if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
+            
+            window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
+            return state.confirm.data;
+        } else {
+            throw new Error("GSheet inacessível e nenhum backup encontrado no PocketBase.");
+        }
+    }
+}
+
+let pbSyncTimeout = null;
+
+async function debouncedSyncToPocketBase() {
+    if (!state.confirm.projectId) return;
+    
+    if (pbSyncTimeout) {
+        clearTimeout(pbSyncTimeout);
+    }
+    
+    pbSyncTimeout = setTimeout(async () => {
+        try {
+            console.log("[SYNC] Guardando alterações pendentes no PocketBase...");
+            
+            const payload = {
+                sheet_data: {
+                    values: state.confirm.data,
+                    notes: state.confirm.notes,
+                    range: state.confirm.range
+                }
+            };
+            
+            if (state.confirm.isOfflineMode) {
+                payload.has_pending_sync = true;
+                state.confirm.hasPendingSync = true;
+            }
+            
+            await pb.collection('confirm_projects').update(state.confirm.projectId, payload);
+            console.log("[SYNC] Gravação no PocketBase concluída com sucesso.");
+        } catch (e) {
+            console.error("[SYNC] Falha ao gravar no PocketBase:", e);
+        }
+    }, 3000);
 }
 
 export async function updateGSheet(spreadsheetId, range, values) {
-    const res = await fetch('/api/google/sheet/update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spreadsheetId, range, values })
-    });
-    if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Erro ao atualizar GSheet");
+    if (state.confirm.isOfflineMode) {
+        console.log("[SYNC] Modo offline ativo. Ignorando chamada ao GSheet e guardando localmente.");
+        debouncedSyncToPocketBase();
+        return { success: true, offline: true };
     }
-    return await res.json();
+
+    try {
+        const res = await fetch('/api/google/sheet/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId, range, values })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Erro ao atualizar GSheet");
+        }
+        const data = await res.json();
+        debouncedSyncToPocketBase();
+        return data;
+    } catch (err) {
+        console.warn("[SYNC] GSheet update failed. Ativando Modo Offline.", err);
+        state.confirm.isOfflineMode = true;
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
+        debouncedSyncToPocketBase();
+        return { success: true, offline: true };
+    }
 }
 
-export async function updateGSheetBatch(spreadsheetId, data) {
-    const res = await fetch('/api/google/sheet/batch-update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spreadsheetId, data })
-    });
-    if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Erro ao atualizar GSheet em lote");
+export async function updateGSheetBatch(spreadsheetId, dataUpdate) {
+    if (state.confirm.isOfflineMode) {
+        console.log("[SYNC] Modo offline ativo. Ignorando batchUpdate ao GSheet e guardando localmente.");
+        debouncedSyncToPocketBase();
+        return { success: true, offline: true };
     }
-    return await res.json();
-}
 
+    try {
+        const res = await fetch('/api/google/sheet/batch-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId, data: dataUpdate })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Erro ao atualizar GSheet em lote");
+        }
+        const responseData = await res.json();
+        debouncedSyncToPocketBase();
+        return responseData;
+    } catch (err) {
+        console.warn("[SYNC] GSheet batchUpdate failed. Ativando Modo Offline.", err);
+        state.confirm.isOfflineMode = true;
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
+        debouncedSyncToPocketBase();
+        return { success: true, offline: true };
+    }
+}
 
 export async function updateGSheetNote(spreadsheetId, sheetName, row, col, note, color = null) {
-    const res = await fetch('/api/google/sheet/update-notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spreadsheetId, sheetName, row, col, note, color })
-    });
-    if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Erro ao atualizar nota no GSheet");
+    if (state.confirm.isOfflineMode) {
+        console.log("[SYNC] Modo offline ativo. Ignorando updateNote ao GSheet e guardando localmente.");
+        // Atualizar estado em memória
+        if (!state.confirm.notes[row]) state.confirm.notes[row] = [];
+        state.confirm.notes[row][col] = note;
+        debouncedSyncToPocketBase();
+        return { success: true, offline: true };
     }
-    return await res.json();
+
+    try {
+        const res = await fetch('/api/google/sheet/update-notes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId, sheetName, row, col, note, color })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || "Erro ao atualizar nota no GSheet");
+        }
+        const data = await res.json();
+        
+        if (!state.confirm.notes[row]) state.confirm.notes[row] = [];
+        state.confirm.notes[row][col] = note;
+        debouncedSyncToPocketBase();
+        
+        return data;
+    } catch (err) {
+        console.warn("[SYNC] GSheet updateNote failed. Ativando Modo Offline.", err);
+        state.confirm.isOfflineMode = true;
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
+        if (!state.confirm.notes[row]) state.confirm.notes[row] = [];
+        state.confirm.notes[row][col] = note;
+        debouncedSyncToPocketBase();
+        return { success: true, offline: true };
+    }
 }
 
 // --- REALTIME EVENTOS (CONFIRM) ---

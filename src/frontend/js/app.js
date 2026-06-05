@@ -1220,12 +1220,11 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
     if (nameEl) nameEl.innerText = projectName;
 
     try {
-        // Carrega o GSheet lendo por defeito a aba primária ou o que estiver definido
-        const data = await api.readGSheet(sheetId);
+        const projectRecord = state.confirm?.projects?.find(x => x.sheetId === sheetId);
+        const data = await api.readGSheet(projectRecord || sheetId);
         
         // Extrair Data de Descarga do PocketBase ou da nota da célula A1 se existir
         state.confirm.dischargeDate = '';
-        const projectRecord = state.confirm?.projects?.find(x => x.sheetId === sheetId);
         if (projectRecord && projectRecord.dischargeDate) {
             state.confirm.dischargeDate = projectRecord.dischargeDate;
             console.log(`[WAREHOUSE] Data de Descarga carregada do PocketBase: ${state.confirm.dischargeDate}`);
@@ -1888,7 +1887,8 @@ function startGSheetPolling(spreadsheetId) {
                     // Sincronizar o lastModifiedTime local de imediato para evitar que a próxima iteração use a data antiga
                     api.state.confirm.lastModifiedTime = checkData.modifiedTime;
                     
-                    const freshData = await api.readGSheet(spreadsheetId, 'A1:AZ1000', true);
+                    const projectRecord = api.state.confirm?.projects?.find(x => x.id === api.state.confirm.projectId) || spreadsheetId;
+                    const freshData = await api.readGSheet(projectRecord, 'A1:AZ1000', true);
                     
                     // Atualiza a tabela principal se activa
                     if (isConfirmTableVisible) {
@@ -2202,4 +2202,16 @@ window.handleSaveQuote = handleSaveQuote;
 window.handleDeleteQuote = handleDeleteQuote;
 window.handlePrintQuote = handlePrintQuote;
 
+// --- GSheet Sync Event Listeners ---
+window.addEventListener('confirmModeChanged', (e) => {
+    if (typeof ui.showSyncStatus === 'function') {
+        ui.showSyncStatus(e.detail.offline);
+    }
+});
+
+window.addEventListener('confirmSyncConflict', (e) => {
+    if (typeof ui.showSyncConflict === 'function') {
+        ui.showSyncConflict(e.detail);
+    }
+});
 
