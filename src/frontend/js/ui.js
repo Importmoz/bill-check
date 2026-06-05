@@ -3751,18 +3751,14 @@ export function showFilePreview(file) {
                 const copyBtn = document.getElementById('btn-copy-md');
                 if (copyBtn) {
                     copyBtn.onclick = async () => {
-                        try {
-                            await navigator.clipboard.writeText(text);
-                            const originalHTML = copyBtn.innerHTML;
-                            copyBtn.innerHTML = "COPIADO!";
-                            copyBtn.classList.replace('bg-[#00a884]', 'bg-gray-500');
-                            setTimeout(() => {
-                                copyBtn.innerHTML = originalHTML;
-                                copyBtn.classList.replace('bg-gray-500', 'bg-[#00a884]');
-                            }, 2000);
-                        } catch (err) {
-                            ui.toast("Erro ao copiar o texto.", "error");
-                        }
+                        await window.copyToClipboard(text, "Texto Markdown copiado!");
+                        const originalHTML = copyBtn.innerHTML;
+                        copyBtn.innerHTML = "COPIADO!";
+                        copyBtn.classList.replace('bg-[#00a884]', 'bg-gray-500');
+                        setTimeout(() => {
+                            copyBtn.innerHTML = originalHTML;
+                            copyBtn.classList.replace('bg-gray-500', 'bg-[#00a884]');
+                        }, 2000);
                     };
                 }
             })
@@ -3860,17 +3856,13 @@ function renderFilePreviewInSidebar(file) {
                         const copyBtn = document.getElementById('btn-copy-md-side');
                         if (copyBtn) {
                             copyBtn.onclick = async () => {
-                                try {
-                                    await navigator.clipboard.writeText(text);
-                                    copyBtn.innerHTML = "COPIADO!";
-                                    copyBtn.classList.replace('bg-[#00a884]', 'bg-gray-500');
-                                    setTimeout(() => {
-                                        copyBtn.innerHTML = "COPIAR";
-                                        copyBtn.classList.replace('bg-gray-500', 'bg-[#00a884]');
-                                    }, 2000);
-                                } catch (err) {
-                                    ui.toast("Erro ao copiar.", "error");
-                                }
+                                await window.copyToClipboard(text, "Texto Markdown copiado!");
+                                copyBtn.innerHTML = "COPIADO!";
+                                copyBtn.classList.replace('bg-[#00a884]', 'bg-gray-500');
+                                setTimeout(() => {
+                                    copyBtn.innerHTML = "COPIAR";
+                                    copyBtn.classList.replace('bg-gray-500', 'bg-[#00a884]');
+                                }, 2000);
                             };
                         }
                     }
