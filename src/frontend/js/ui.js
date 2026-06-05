@@ -5465,7 +5465,7 @@ export async function saveFreightModal() {
  */
 export async function checkAndCreateWarehouseColumns() {
     const columns = state.confirm.columns || [];
-    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID'];
+    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
     
     const missing = [];
     required.forEach(req => {
@@ -5592,6 +5592,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const deliverToIdx = findCol(['DELIVER TO']);
         const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
         const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
+        const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
         const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
         const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
         const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
@@ -5600,7 +5601,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const pag3Idx = findCol(['PAG 3', 'PAG3']);
 
         // Verificar se todas as colunas de armazém existem
-        const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID'];
+        const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
         const hasAll = required.every(req => {
             const idx = columns.findIndex(c => {
                 const clean = String(c || '').toUpperCase().trim();
@@ -5613,7 +5614,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         if (!hasAll) {
             container.innerHTML = `
                 <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center">
-                    <p class="text-xs font-bold text-slate-500 mb-4 uppercase">Para gerir o Armazém e custos, é necessário criar as colunas de controlo (Discharge, Deliver, Deliver Date, Deliver To, Contacto, Storage Paid) no GSheet.</p>
+                    <p class="text-xs font-bold text-slate-500 mb-4 uppercase">Para gerir o Armazém e custos, é necessário criar as colunas de controlo (Discharge, Deliver, Deliver Date, Deliver To, Contacto, Storage Paid, Delivered) no GSheet.</p>
                     <button onclick="ui.checkAndCreateWarehouseColumns()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
                         Criar Colunas de Armazém
                     </button>
@@ -5675,6 +5676,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
         const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
         const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
+        const deliveredVal = deliveredIdx !== -1 ? String(firstRowData[deliveredIdx] || '').trim().toUpperCase() : 'NAO';
+        const isDelivered = (deliveredVal === 'SIM' || deliveredVal === 'ENTREGUE' || deliveredVal === 'YES');
 
         // --- CÁLCULO DE CUSTO DE ARMAZENAGEM ---
         const dischargeDateStr = state.confirm?.dischargeDate || ''; // YYYY-MM-DD
@@ -5755,7 +5758,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                                      String(contactoVal).trim() !== '—';
 
         const canEmitGuia = hasDeliveryInfoSaved && isStoragePaid;
-        const isEditable = !hasDeliveryInfoSaved || isAdmin;
+        const isEditable = !isDelivered && (!hasDeliveryInfoSaved || isAdmin);
 
         // Cabeçalho da Guia com a data de descarga e dados de armazenagem
         const formatDateForDisplay = (dateStr) => {
@@ -5765,7 +5768,19 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         };
 
         let bannerHtml = '';
-        if (allowDelivery) {
+        if (isDelivered) {
+            bannerHtml = `
+                <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-emerald-500">
+                    <div class="p-2 bg-emerald-100 rounded-xl text-emerald-600 flex-shrink-0">
+                        <svg class="w-5 h-5 text-emerald-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </div>
+                    <div>
+                        <h4 class="font-black text-xs uppercase tracking-wider text-emerald-900">Carga Entregue ✅</h4>
+                        <p class="text-[11px] text-emerald-700 font-semibold mt-1">A entrega desta carga foi confirmada e encerrada. A edição dos dados está bloqueada.</p>
+                    </div>
+                </div>
+            `;
+        } else if (allowDelivery) {
             if (storageCost > 0 && !isStoragePaid) {
                 bannerHtml = `
                     <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-red-500">
@@ -5822,27 +5837,19 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         }
 
         let buttonsHtml = '';
-        if (!hasDeliveryInfoSaved) {
-            buttonsHtml = `
-                <div class="${storageCost === 0 ? 'md:col-span-3' : 'md:col-span-2'}">
-                    <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
-                        class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
-                        <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                        Gravar
-                    </button>
-                </div>
-            `;
-        } else {
+        const btnSpan = storageCost === 0 ? 'md:col-span-3' : 'md:col-span-2';
+        
+        if (isDelivered) {
             if (isAdmin) {
                 buttonsHtml = `
-                    <div class="${storageCost === 0 ? 'md:col-span-3' : 'md:col-span-2'} flex gap-2">
-                        <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
-                            class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Atualizar dados operacionais">
-                            <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-                            Actualizar
+                    <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
+                        <button onclick="ui.reopenDelivery(${firstRowIndex}, this)" 
+                            class="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Reabrir edição da entrega">
+                            <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
+                            Reabrir
                         </button>
-                        <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: O pagamento de armazenagem está pendente.\', \'warning\')'}" 
-                            class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia de Entrega' : 'Bloqueado: Pagamento de armazenagem pendente'}">
+                        <button onclick="ui.printDeliveryNote()" 
+                            class="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
                             Emitir Guia
                         </button>
@@ -5850,9 +5857,42 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                 `;
             } else {
                 buttonsHtml = `
-                    <div class="${storageCost === 0 ? 'md:col-span-3' : 'md:col-span-2'}">
+                    <div class="${btnSpan}">
+                        <button onclick="ui.printDeliveryNote()" 
+                            class="w-full py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                            Emitir Guia
+                        </button>
+                    </div>
+                `;
+            }
+        } else {
+            if (!hasDeliveryInfoSaved) {
+                buttonsHtml = `
+                    <div class="${btnSpan}">
+                        <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
+                            class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
+                            <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                            Gravar
+                        </button>
+                    </div>
+                `;
+            } else {
+                buttonsHtml = `
+                    <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
+                        ${isAdmin ? `
+                            <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
+                                class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Atualizar dados operacionais">
+                                Actualizar
+                            </button>
+                        ` : ''}
+                        <button onclick="ui.confirmDelivery(${firstRowIndex}, this)" 
+                            class="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Confirmar entrega da carga e encerrar edição">
+                            <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                            Entregue
+                        </button>
                         <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: O pagamento de armazenagem está pendente.\', \'warning\')'}" 
-                            class="w-full py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia de Entrega' : 'Bloqueado: Pagamento de armazenagem pendente'}">
+                            class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia de Entrega' : 'Bloqueado: Pagamento de armazenagem pendente'}">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
                             Emitir Guia
                         </button>
@@ -5885,6 +5925,12 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             `;
         }
 
+        const deliveryStatusBadge = `
+            <span class="font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border ${isDelivered ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}">
+                Entrega: <strong class="ml-1 font-extrabold text-[9px]">${isDelivered ? 'ENTREGUE ✅' : 'PENDENTE'}</strong>
+            </span>
+        `;
+
         container.innerHTML = `
             ${bannerHtml}
             
@@ -5909,6 +5955,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         </span>
                         ${dischargeDateBadge}
                         ${storageBadgesHtml}
+                        ${deliveryStatusBadge}
                     </div>
                 </div>
                 
@@ -6029,8 +6076,9 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
     const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
+    const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
 
-    if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1 || storagePaidIdx === -1) {
+    if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1 || storagePaidIdx === -1 || deliveredIdx === -1) {
         toast('Erro: Colunas de Armazém não encontradas.', 'error');
         return;
     }
@@ -6040,6 +6088,11 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
         toast('Erro: Cliente ativo não encontrado.', 'error');
         return;
     }
+
+    const firstRowIndex = client.rows[0].originalIndex;
+    const firstRowData = state.confirm?.data?.[firstRowIndex] || [];
+    const deliveredInput = container.querySelector('input[name="delivered"]');
+    const deliveredVal = deliveredInput ? deliveredInput.value.trim().toUpperCase() : (deliveredIdx !== -1 && firstRowData[deliveredIdx] ? String(firstRowData[deliveredIdx]).trim().toUpperCase() : 'NAO');
 
     const totalDischargeInput = dischargeVal !== '' ? parseFloat(dischargeVal) : null;
     const totalDeliverInput = deliverVal !== '' ? parseFloat(deliverVal) : null;
@@ -6112,6 +6165,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             rowData[storagePaidIdx] = storagePaidVal;
             batchUpdates.push({ range: `${prefixClean}${getColLetter(storagePaidIdx)}${rowNum}`, values: [[storagePaidVal]] });
         }
+        if (deliveredIdx !== -1) {
+            rowData[deliveredIdx] = deliveredVal;
+            batchUpdates.push({ range: `${prefixClean}${getColLetter(deliveredIdx)}${rowNum}`, values: [[deliveredVal]] });
+        }
 
         updatedClientRows.push({ rowIndex, rowData });
     });
@@ -6139,6 +6196,77 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     } finally {
         setBtnLoading(buttonEl, false);
     }
+}
+
+/**
+ * Confirma a entrega da carga (marca como ENTREGUE) e bloqueia edições
+ */
+export async function confirmDelivery(originalIndex, buttonEl) {
+    const container = buttonEl.closest('#armazem-operations-container') || buttonEl.closest('#armazem-form-container') || document;
+    if (!container) return;
+
+    const deliverInput = container.querySelector('input[name="deliver"]');
+    const deliverDateInput = container.querySelector('input[name="deliverDate"]');
+    const deliverToInput = container.querySelector('input[name="deliverTo"]');
+    const contactoInput = container.querySelector('input[name="contacto"]');
+
+    const deliverVal = deliverInput ? deliverInput.value.trim() : '';
+    const deliverDateVal = deliverDateInput ? deliverDateInput.value.trim() : '';
+    const deliverToVal = deliverToInput ? deliverToInput.value.trim() : '';
+    const contactoVal = contactoInput ? contactoInput.value.trim() : '';
+
+    if (!deliverVal || parseFloat(deliverVal) <= 0) {
+        toast('Erro: Introduza uma quantidade válida de volumes entregues.', 'warning');
+        return;
+    }
+    if (!deliverDateVal) {
+        toast('Erro: Introduza a data de entrega.', 'warning');
+        return;
+    }
+    if (!deliverToVal) {
+        toast('Erro: Introduza o nome de quem recebeu a mercadoria.', 'warning');
+        return;
+    }
+    if (!contactoVal) {
+        toast('Erro: Introduza o contacto de quem recebeu.', 'warning');
+        return;
+    }
+
+    if (!confirm('Deseja confirmar a entrega da carga? Esta ação irá bloquear futuras edições.')) {
+        return;
+    }
+
+    let deliveredInput = container.querySelector('input[name="delivered"]');
+    if (!deliveredInput) {
+        deliveredInput = document.createElement('input');
+        deliveredInput.type = 'hidden';
+        deliveredInput.name = 'delivered';
+        container.appendChild(deliveredInput);
+    }
+    deliveredInput.value = 'SIM';
+
+    await saveArmazemRow(originalIndex, buttonEl);
+}
+
+/**
+ * Reabre a entrega da carga permitindo edições (apenas Admin)
+ */
+export async function reopenDelivery(originalIndex, buttonEl) {
+    if (!confirm('Deseja reabrir a edição da entrega para este cliente?')) {
+        return;
+    }
+
+    const container = buttonEl.closest('#armazem-operations-container') || buttonEl.closest('#armazem-form-container') || document;
+    let deliveredInput = container.querySelector('input[name="delivered"]');
+    if (!deliveredInput) {
+        deliveredInput = document.createElement('input');
+        deliveredInput.type = 'hidden';
+        deliveredInput.name = 'delivered';
+        container.appendChild(deliveredInput);
+    }
+    deliveredInput.value = 'NAO';
+
+    await saveArmazemRow(originalIndex, buttonEl);
 }
 
 /**
