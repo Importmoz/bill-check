@@ -1334,6 +1334,20 @@ export async function deleteSettingsUser(id) {
     return await pb.collection('users').delete(id);
 }
 
+// --- MÓDULO DE CÂMBIO API ---
+
+export async function listCambios() {
+    try {
+        const records = await pb.collection('cambio').getFullList({
+            sort: 'moeda',
+        });
+        return records;
+    } catch (err) {
+        console.error("[CAMBIO API] Falha ao aceder ao PocketBase:", err);
+        return [];
+    }
+}
+
 // --- MÓDULO DE COTAÇÕES (QUOTE) API ---
 
 export async function listQuotes() {

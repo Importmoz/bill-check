@@ -1957,9 +1957,13 @@ window.stopGSheetPolling = stopGSheetPolling;
 
 async function showQuoteDashboard() {
     if (!checkModulePermission('QUOTE')) return ui.toast('Acesso negado ao módulo QUOTE.', 'error');
-    ui.setLoader(true, "A carregar cotações...");
+    ui.setLoader(true, "A carregar cotações e câmbio...");
     try {
         await api.listQuotes();
+        
+        // Carrega as moedas e taxas
+        api.state.cambios = await api.listCambios();
+        ui.renderCambioSelect();
         
         // Carrega a pauta se ainda não estiver carregada
         if (!api.state.pauta) {

@@ -4908,6 +4908,52 @@ export function closeUserModal() {
     }, 300);
 }
 
+// --- MÓDULO DE CÂMBIO (CAMBIO) RENDERING ---
+
+export function renderCambioSelect() {
+    const select = document.getElementById('input-quote-currency');
+    const inputEx = document.getElementById('input-quote-exchange');
+    if (!select || !inputEx) return;
+
+    // Se existirem dados, populamos o dropdown
+    if (state.cambios && state.cambios.length > 0) {
+        select.innerHTML = '';
+        state.cambios.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = c.moeda;
+            opt.text = c.moeda;
+            opt.dataset.taxa = c.taxa;
+            select.appendChild(opt);
+        });
+
+        // Tentar manter o USD selecionado se existir, senão usa o primeiro
+        const usdOpt = Array.from(select.options).find(o => o.value === 'USD');
+        if (usdOpt) {
+            select.value = 'USD';
+            inputEx.value = parseFloat(usdOpt.dataset.taxa).toFixed(2);
+        } else {
+            select.selectedIndex = 0;
+            inputEx.value = parseFloat(select.options[0].dataset.taxa).toFixed(2);
+        }
+    }
+}
+
+window.handleCurrencyChange = function() {
+    const select = document.getElementById('input-quote-currency');
+    const inputEx = document.getElementById('input-quote-exchange');
+    if (!select || !inputEx) return;
+
+    const opt = select.options[select.selectedIndex];
+    if (opt && opt.dataset.taxa) {
+        inputEx.value = parseFloat(opt.dataset.taxa).toFixed(2);
+    }
+    
+    // Atualizar a fatura com a nova taxa
+    if (typeof window.calculateFullInvoice === 'function') {
+        window.calculateFullInvoice();
+    }
+};
+
 // --- MÓDULO DE COTAÇÕES (QUOTE) RENDERING ---
 
 export function renderQuoteDashboard() {
