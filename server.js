@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 
 const googleRoutes = require('./src/backend/routes/googleRoutes');
 const bankRoutes = require('./src/backend/routes/bankRoutes');
+const pautaRoutes = require('./src/backend/routes/pautaRoutes');
 // Force reload: 2026-05-12 14:20
 
 const app = express();
@@ -29,6 +30,11 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 app.use(express.json());
+
+// Proteger o ficheiro pauta.json do acesso direto via browser
+app.use('/data/pauta.json', (req, res) => {
+  res.status(403).send('Forbidden: Acesso direto a este ficheiro está bloqueado.');
+});
 
 // Servir arquivos estáticos do frontend modularizado
 app.use(express.static(path.join(__dirname, 'src', 'frontend'), {
@@ -106,6 +112,7 @@ app.get('/api/version', (req, res) => {
 // Rotas da API
 app.use('/api/google', googleRoutes);
 app.use('/api/bank', bankRoutes);
+app.use('/api/pauta', pautaRoutes);
 
 // Rota base para SPA
 app.get(/.*/, (req, res) => {

@@ -4984,10 +4984,10 @@ document.addEventListener('input', (e) => {
                 if (res) res.classList.add('hidden');
                 return;
             }
-            // Verifica se a pauta carregou
-            if (api && api.state && api.state.pauta) {
-                const results = api.searchPauta(val, 20);
-                renderPautaSearchResults(results);
+            if (api) {
+                api.searchPauta(val, 20).then(results => {
+                    renderPautaSearchResults(results);
+                }).catch(err => console.error(err));
             }
         }, 300);
     }
@@ -5188,16 +5188,24 @@ window.updateQuoteRow = function(id, field, value) {
     }
     
     if (field === 'hsCode') {
-        if (value.length === 8 && state.pauta) {
-            // Find pauta manually from state to avoid full searchPauta DOM changes
-            const term = value.toLowerCase();
-            const results = state.pauta.filter(p => (p.code || '').toLowerCase().startsWith(term));
-            
-            if (results && results.length > 0) {
-                item.pauta = results[0];
-            } else {
-                item.pauta = null;
-            }
+        if (value.length === 8) {
+            fetch(`/api/pauta/search?q=${encodeURIComponent(value)}&limit=1`)
+                .then(res => res.json())
+                .then(results => {
+                    if (results && results.length > 0) {
+                        item.pauta = results[0];
+                    } else {
+                        item.pauta = null;
+                    }
+                    window.calculateFullInvoice();
+                    window.updateRowDOM(item);
+                })
+                .catch(() => {
+                    item.pauta = null;
+                    window.calculateFullInvoice();
+                    window.updateRowDOM(item);
+                });
+            return; // We exit because calculation happens async
         } else {
             item.pauta = null;
         }

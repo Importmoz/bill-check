@@ -1462,33 +1462,18 @@ export async function deleteQuote(id) {
 // --- MÓDULO PAUTA (SIMULADOR) ---
 
 export async function loadPautaData() {
-    if (state.pauta) return state.pauta;
-    
-    try {
-        console.log("[PAUTA API] Carregando dados da pauta...");
-        const response = await fetch('data/pauta.json');
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
-        state.pauta = data;
-        console.log(`[PAUTA API] Pauta carregada com ${data.length} registos.`);
-        return data;
-    } catch (error) {
-        console.error("[PAUTA API] Erro ao carregar pauta.json:", error);
-        throw error;
-    }
+    console.log("[PAUTA API] Pauta.json já não é descarregado para o frontend (migrado para backend).");
+    return [];
 }
 
-export function searchPauta(query, limit = 50) {
-    if (!state.pauta) return [];
-    if (!query) return state.pauta.slice(0, limit);
-
-    const term = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    const results = state.pauta.filter(item => {
-        const desc = (item.description || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const code = (item.code || '').toLowerCase();
-        return desc.includes(term) || code.includes(term);
-    });
-
-    return results.slice(0, limit);
+export async function searchPauta(query, limit = 50) {
+    if (!query) return [];
+    try {
+        const res = await fetch(`/api/pauta/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+        if (!res.ok) return [];
+        return await res.json();
+    } catch (err) {
+        console.error('[PAUTA API] Erro na pesquisa via backend:', err);
+        return [];
+    }
 }
