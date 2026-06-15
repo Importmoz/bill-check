@@ -1470,10 +1470,37 @@ export async function searchPauta(query, limit = 50) {
     if (!query) return [];
     try {
         const res = await fetch(`/api/pauta/search?q=${encodeURIComponent(query)}&limit=${limit}`);
-        if (!res.ok) return [];
-        return await res.json();
+        if (!res.ok) throw new Error('API não retornou sucesso.');
+        
+        // Para precaver que Live Server não envie HTML de erro
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            return await res.json();
+        } else {
+            throw new Error('A resposta da API não é JSON válido.');
+        }
     } catch (err) {
-        console.error('[PAUTA API] Erro na pesquisa via backend:', err);
-        return [];
+        console.warn('[PAUTA API] Backend falhou ou não existe. A ativar modo Fallback (Offline/Live Server)...');
+        
+        if (!state.pauta) {
+            try {
+                const response = await fetch('data/pauta.json');
+                if (response.ok) {
+                    state.pauta = await response.json();
+                } else {
+                    return [];
+                }
+            } catch (e) {
+                return [];
+            }
+        }
+        
+        const term = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const results = state.pauta.filter(item => {
+            const desc = (item.description || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const code = (item.code || '').toLowerCase();
+            return desc.includes(term) || code.includes(term);
+        });
+        return results.slice(0, limit);
     }
 }

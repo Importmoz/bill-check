@@ -5189,9 +5189,8 @@ window.updateQuoteRow = function(id, field, value) {
     
     if (field === 'hsCode') {
         if (value.length === 8) {
-            fetch(`/api/pauta/search?q=${encodeURIComponent(value)}&limit=1`)
-                .then(res => res.json())
-                .then(results => {
+            if (api) {
+                api.searchPauta(value, 1).then(results => {
                     if (results && results.length > 0) {
                         item.pauta = results[0];
                     } else {
@@ -5199,13 +5198,14 @@ window.updateQuoteRow = function(id, field, value) {
                     }
                     window.calculateFullInvoice();
                     window.updateRowDOM(item);
-                })
-                .catch(() => {
+                }).catch(() => {
                     item.pauta = null;
                     window.calculateFullInvoice();
                     window.updateRowDOM(item);
                 });
+            }
             return; // We exit because calculation happens async
+
         } else {
             item.pauta = null;
         }
