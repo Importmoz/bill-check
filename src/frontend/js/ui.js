@@ -5220,11 +5220,15 @@ window.updateRowDOM = function(item) {
     if (!tr) return;
     
     const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
+    const iceRate = item.pauta ? getRateFromPauta(item.pauta, ['ICE', 'Consumo Espec']) : 0;
     const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
     
     tr.querySelector('.cell-fob').innerText = formatCurrencyVal(item.fob);
     tr.querySelector('.cell-cif').innerText = formatCurrencyVal(item.cifMzn);
     tr.querySelector('.cell-da').innerHTML = `${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${(daRate*100).toFixed(0)}%)</span>`;
+    if (tr.querySelector('.cell-ice')) {
+        tr.querySelector('.cell-ice').innerHTML = `${formatCurrencyVal(item.iceValue || 0)} <span class="text-[9px] text-gray-400">(${(iceRate*100).toFixed(0)}%)</span>`;
+    }
     tr.querySelector('.cell-iva').innerHTML = `${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${(ivaRate*100).toFixed(0)}%)</span>`;
 
     const inFrt = tr.querySelector('.input-readonly-freight');
