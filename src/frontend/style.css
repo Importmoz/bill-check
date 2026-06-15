@@ -18,6 +18,28 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e29
 .export-only { display: none !important; }
 
 /* Animações Premium */
+.btn-action-scale {
+    transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    display: inline-flex;
+}
+.btn-action-scale:hover {
+    transform: scale(1.08) !important;
+}
+.btn-action-scale:active {
+    transform: scale(0.92) !important;
+}
+
+.btn-delete:hover {
+    color: #ef4444 !important;
+    background-color: #fef2f2 !important;
+}
+.btn-delete:hover svg {
+    stroke: #ef4444 !important;
+}
+.btn-delete:active {
+    background-color: #fee2e2 !important;
+}
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
@@ -157,3 +179,59 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e29
     }
 }
 
+/* Remove setas dos inputs tipo number */
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; 
+  margin: 0; 
+}
+input[type=number] {
+  -moz-appearance: textfield;
+}
+
+
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    #quote-items-table, #quote-items-table * {
+        visibility: visible;
+    }
+    #quote-items-table {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100% !important;
+        border-collapse: collapse;
+    }
+    
+    /* Expand scrollable containers so all rows print */
+    .overflow-auto, .overflow-hidden, .custom-scrollbar {
+        overflow: visible !important;
+        height: auto !important;
+        max-height: none !important;
+    }
+    
+    /* Remove shadow and sticky behaviors */
+    #quote-items-table thead, #quote-items-table tfoot {
+        position: static !important;
+        box-shadow: none !important;
+    }
+    
+    /* Hide the last action column */
+    #quote-items-table th:last-child,
+    #quote-items-table td:last-child {
+        display: none !important;
+    }
+    
+    /* Inputs should look like normal text */
+    #quote-items-table input {
+        border: none !important;
+        background: transparent !important;
+    }
+
+    @page {
+        size: landscape;
+        margin: 10mm;
+    }
+}

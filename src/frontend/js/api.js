@@ -43,7 +43,8 @@ export const state = {
         incomes: []
     },
     quotes: [],
-    quotesSource: 'local'
+    quotesSource: 'local',
+    pauta: null
 };
 
 /**
@@ -1441,21 +1442,53 @@ function updateLocalQuotesCache(quote) {
 }
 
 export async function deleteQuote(id) {
-    if (id && !id.startsWith('local_')) {
-        try {
-            await pb.collection('quotes').delete(id);
-        } catch (err) {
-            console.warn("[QUOTE API] Erro ao apagar no PocketBase:", err);
+    try {
+        await pb.collection('quotes').delete(id);
+        state.quotes = state.quotes.filter(q => q.id !== id);
+        return true;
+    } catch (err) {
+        console.warn("[QUOTE API] Falha ao apagar no PocketBase, apagando localmente:", err);
+        const localData = localStorage.getItem('quotes');
+        if (localData) {
+            let list = JSON.parse(localData);
+            list = list.filter(q => q.id !== id);
+            localStorage.setItem('quotes', JSON.stringify(list));
         }
+        state.quotes = state.quotes.filter(q => q.id !== id);
+        return true;
     }
-    
-    const localData = localStorage.getItem('quotes');
-    if (localData) {
-        let list = JSON.parse(localData);
-        list = list.filter(q => q.id !== id);
-        localStorage.setItem('quotes', JSON.stringify(list));
-    }
-    
-    state.quotes = state.quotes.filter(q => q.id !== id);
 }
 
+// --- MÓDULO PAUTA (SIMULADOR) ---
+
+export async function loadPautaData() {
+    if (state.pauta) return state.pauta;
+    
+    try {
+        console.log("[PAUTA API] Carregando dados da pauta...");
+        const response = await fetch('data/pauta.json');
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        state.pauta = data;
+        console.log(`[PAUTA API] Pauta carregada com ${data.length} registos.`);
+        return data;
+    } catch (error) {
+        console.error("[PAUTA API] Erro ao carregar pauta.json:", error);
+        throw error;
+    }
+}
+
+export function searchPauta(query, limit = 50) {
+    if (!state.pauta) return [];
+    if (!query) return state.pauta.slice(0, limit);
+
+    const term = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    const results = state.pauta.filter(item => {
+        const desc = (item.description || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const code = (item.code || '').toLowerCase();
+        return desc.includes(term) || code.includes(term);
+    });
+
+    return results.slice(0, limit);
+}

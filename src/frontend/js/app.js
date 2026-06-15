@@ -1960,6 +1960,15 @@ async function showQuoteDashboard() {
     ui.setLoader(true, "A carregar cotações...");
     try {
         await api.listQuotes();
+        
+        // Carrega a pauta se ainda não estiver carregada
+        if (!api.state.pauta) {
+            const loader = document.getElementById('pauta-loader');
+            if (loader) loader.classList.remove('hidden');
+            await api.loadPautaData();
+            if (loader) loader.classList.add('hidden');
+        }
+
         ui.showView('view-quote-dashboard');
         ui.renderQuoteDashboard();
     } catch (err) {
@@ -1972,9 +1981,12 @@ async function showQuoteDashboard() {
 
 function showQuoteForm(id) {
     if (!checkModulePermission('QUOTE')) return ui.toast('Acesso negado ao módulo QUOTE.', 'error');
-    ui.showView('view-quote-form');
-    ui.renderQuoteForm(id);
-    changeQuoteType(); // Forçar alinhamento de visual e preview inicial
+    // For single-item compatibility, just load the saved quote which now opens the overlay
+    if (id) {
+        ui.loadSavedQuote(id);
+    } else {
+        ui.startNewQuote();
+    }
 }
 
 function changeQuoteType() {

@@ -4911,343 +4911,673 @@ export function closeUserModal() {
 // --- MÓDULO DE COTAÇÕES (QUOTE) RENDERING ---
 
 export function renderQuoteDashboard() {
-    const list = document.getElementById('quotes-list');
+    const list = document.getElementById('quote-history-list');
     if (!list) return;
 
     list.innerHTML = '';
-
-    // Status de Sincronização
-    const syncStatusEl = document.getElementById('quote-sync-status');
-    if (syncStatusEl) {
-        if (state.quotesSource === 'pocketbase') {
-            syncStatusEl.innerHTML = `<span class="text-emerald-600 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">● Sincronizado na Nuvem</span>`;
-        } else {
-            syncStatusEl.innerHTML = `<span class="text-amber-600 font-bold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200" title="Crie uma tabela 'quotes' no PocketBase para ativar sincronização em nuvem.">⚠️ Modo Local (Navegador)</span>`;
-        }
-    }
-
-    const searchQuery = (document.getElementById('input-quote-search')?.value || '').toUpperCase().trim();
-    const typeFilter = document.getElementById('select-quote-type-filter')?.value || '';
-    const statusFilter = document.getElementById('select-quote-status-filter')?.value || '';
-
-    // Filtrar cotações
+    
+    // Filtro básico de pesquisa
+    const searchQuery = (document.getElementById('input-quote-history-search')?.value || '').toUpperCase().trim();
+    
     const filtered = (state.quotes || []).filter(q => {
-        const matchesSearch = !searchQuery || 
+        return !searchQuery || 
             q.client_name.toUpperCase().includes(searchQuery) || 
-            q.quote_number.toUpperCase().includes(searchQuery) ||
-            (q.cargo_description && q.cargo_description.toUpperCase().includes(searchQuery));
-            
-        const matchesType = !typeFilter || q.type === typeFilter;
-        const matchesStatus = !statusFilter || q.status === statusFilter;
-
-        return matchesSearch && matchesType && matchesStatus;
+            q.quote_number.toUpperCase().includes(searchQuery);
     });
 
     if (filtered.length === 0) {
-        list.innerHTML = `<div class="col-span-full text-center py-20 bg-gray-50 border-2 border-dashed border-gray-200 rounded-3xl">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 text-gray-300 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
+        list.innerHTML = `<div class="text-center py-10">
             <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">Nenhuma cotação encontrada.</p>
         </div>`;
         return;
     }
 
     filtered.forEach(q => {
-        // Badges cores
-        let statusClass = "bg-gray-100 text-gray-800";
-        if (q.status === 'ENVIADO') statusClass = "bg-blue-100 text-blue-800";
-        else if (q.status === 'APROVADO') statusClass = "bg-emerald-100 text-emerald-800";
-        else if (q.status === 'REJEITADO') statusClass = "bg-rose-100 text-rose-800";
-
-        let typeClass = "bg-indigo-50 text-indigo-700 border-indigo-200";
-        if (q.type === 'IMPORTACAO') typeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
-        else if (q.type === 'GLOBAL') typeClass = "bg-purple-50 text-purple-700 border-purple-200";
-
+        const payload = q.payload || {};
+        const code = payload.itemCode || '---';
+        const fob = parseFloat(payload.fob) || 0;
+        const total = parseFloat(payload.results?.totalImport) || 0;
+        
         const card = document.createElement('div');
-        card.className = "group bg-white p-6 rounded-3xl border-2 border-gray-200 hover:border-black hover:translate-y-[-2px] transition-all cursor-pointer relative flex flex-col justify-between min-h-[180px] shadow-sm";
-        card.setAttribute('onclick', `window.showQuoteForm('${q.id}')`);
+        card.className = "bg-white p-4 rounded-2xl border-2 border-gray-100 hover:border-indigo-500 cursor-pointer transition-all relative group shadow-sm";
+        card.onclick = () => window.loadSavedQuote(q.id);
 
         card.innerHTML = `
-            <div>
-                <div class="flex justify-between items-start gap-2 mb-3">
-                    <span class="text-[10px] font-black text-gray-400 uppercase tracking-wider">${q.quote_number || 'Sem Número'}</span>
-                    <button onclick="event.stopPropagation(); window.handleDeleteQuote('${q.id}')" class="text-gray-300 hover:text-red-600 transition-colors" title="Eliminar cotação">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                    </button>
-                </div>
-                <h4 class="font-black text-base text-gray-900 leading-tight mb-1 group-hover:text-indigo-600 transition-colors">${q.client_name}</h4>
-                <p class="text-xs text-gray-500 font-medium mb-4 line-clamp-2">${q.cargo_description || 'Sem descrição da mercadoria'}</p>
+            <div class="flex justify-between items-start mb-2">
+                <span class="text-[9px] font-black text-gray-400 uppercase tracking-wider">${q.quote_number || 'S/N'}</span>
+                <button onclick="event.stopPropagation(); window.handleDeleteQuote('${q.id}')" class="text-gray-300 hover:text-red-500 transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </button>
             </div>
-            <div>
-                <div class="flex gap-1.5 flex-wrap mb-4">
-                    <span class="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider border ${typeClass}">${q.type}</span>
-                    <span class="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${statusClass}">${q.status}</span>
-                </div>
-                <div class="flex justify-between items-end border-t border-gray-100 pt-3">
-                    <span class="text-[8px] font-black text-gray-400 uppercase">Total Geral</span>
-                    <span class="font-black text-sm text-gray-900">${formatMZN(q.total_amount)}</span>
-                </div>
+            <h4 class="text-sm font-black text-gray-900 group-hover:text-indigo-600 truncate mb-1" title="${q.client_name}">${q.client_name}</h4>
+            <div class="flex items-center gap-2 mb-3">
+                <span class="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">HS: ${code}</span>
+            </div>
+            <div class="flex justify-between items-end border-t border-gray-100 pt-2">
+                <span class="text-[9px] font-black text-gray-500 uppercase">Total Estimado</span>
+                <span class="text-xs font-black text-gray-900">${formatMZN(total)}</span>
             </div>
         `;
         list.appendChild(card);
     });
 }
 
-export function renderQuoteForm(quoteId) {
-    const titleEl = document.getElementById('quote-form-title');
-    const idInput = document.getElementById('input-quote-id');
-    const clientInput = document.getElementById('input-quote-client');
-    const cargoInput = document.getElementById('input-quote-cargo');
-    const typeSelect = document.getElementById('input-quote-type');
-    const statusSelect = document.getElementById('input-quote-status');
-    const numberInput = document.getElementById('input-quote-number');
-    const rateInput = document.getElementById('input-quote-rate');
-    const termsInput = document.getElementById('input-quote-terms');
+// ------------------------------------------
+// SIMULADOR PAUTAL (Lado Direito)
+// ------------------------------------------
 
-    // Transporte inputs
-    const originInput = document.getElementById('input-trans-origin');
-    const destInput = document.getElementById('input-trans-dest');
-    const cbmInput = document.getElementById('input-trans-cbm');
-    const weightInput = document.getElementById('input-trans-weight');
-    const containerInput = document.getElementById('input-trans-container');
-    const freightCostInput = document.getElementById('input-trans-freight-cost');
-    const originFeesInput = document.getElementById('input-trans-origin-fees');
-    const localFeesInput = document.getElementById('input-trans-local-fees');
-    const agentFeesInput = document.getElementById('input-trans-agent-fees');
-    const transMarginInput = document.getElementById('input-trans-margin');
+window.currentPautaItem = null;
 
-    // Importação inputs
-    const cifInput = document.getElementById('input-imp-cif');
-    const dutiesPctInput = document.getElementById('input-imp-duties-pct');
-    const ivaPctInput = document.getElementById('input-imp-iva-pct');
-    const tspFeesInput = document.getElementById('input-imp-tsp-fees');
-    const clearingFeesInput = document.getElementById('input-imp-clearing-fees');
-    const portFeesInput = document.getElementById('input-imp-port-fees');
-    const impMarginInput = document.getElementById('input-imp-margin');
+// Debounce para a pesquisa
+let pautaSearchTimeout = null;
 
-    if (quoteId) {
-        // Edit Mode
-        const quote = (state.quotes || []).find(q => q.id === quoteId);
-        if (!quote) return;
-
-        titleEl.innerText = "Editar Cotação";
-        idInput.value = quote.id;
-        clientInput.value = quote.client_name;
-        cargoInput.value = quote.cargo_description || '';
-        typeSelect.value = quote.type;
-        statusSelect.value = quote.status;
-        numberInput.value = quote.quote_number || '';
-        rateInput.value = quote.payload.exchange_rate || '63.90';
-        termsInput.value = quote.payload.terms || '';
-
-        // Transporte
-        originInput.value = quote.payload.origin || '';
-        destInput.value = quote.payload.destination || '';
-        cbmInput.value = quote.payload.cbm || '';
-        weightInput.value = quote.payload.weight || '';
-        containerInput.value = quote.payload.container_type || '';
-        freightCostInput.value = quote.payload.freight_cost || '';
-        originFeesInput.value = quote.payload.origin_fees || '';
-        localFeesInput.value = quote.payload.local_fees || '';
-        agentFeesInput.value = quote.payload.agent_fees || '';
-        transMarginInput.value = quote.payload.margin_pct || '20';
-
-        // Importação
-        cifInput.value = quote.payload.cif_cost || '';
-        dutiesPctInput.value = quote.payload.duties_pct || '20';
-        ivaPctInput.value = quote.payload.iva_pct || '16';
-        tspFeesInput.value = quote.payload.tsp_fees || '';
-        clearingFeesInput.value = quote.payload.clearing_fees || '';
-        portFeesInput.value = quote.payload.port_fees || '';
-        impMarginInput.value = quote.payload.import_margin_pct || '15';
-    } else {
-        // Create Mode
-        titleEl.innerText = "Nova Cotação";
-        idInput.value = '';
-        clientInput.value = '';
-        cargoInput.value = '';
-        typeSelect.value = 'TRANSPORTE';
-        statusSelect.value = 'RASCUNHO';
-        
-        // Auto gerar número de cotação
-        const yr = new Date().getFullYear();
-        const rand = Math.floor(1000 + Math.random() * 9000);
-        numberInput.value = `QT-${yr}-${rand}`;
-        
-        rateInput.value = '63.90';
-        termsInput.value = `1. Cotação válida por 7 dias.\n2. Sujeito a alterações nas tarifas de frete e taxas aduaneiras sem aviso prévio.\n3. Condições de pagamento: 100% no registo aduaneiro.`;
-
-        // Reset Transporte
-        originInput.value = '';
-        destInput.value = '';
-        cbmInput.value = '';
-        weightInput.value = '';
-        containerInput.value = '';
-        freightCostInput.value = '';
-        originFeesInput.value = '';
-        localFeesInput.value = '';
-        agentFeesInput.value = '';
-        transMarginInput.value = '20';
-
-        // Reset Importação
-        cifInput.value = '';
-        dutiesPctInput.value = '20';
-        ivaPctInput.value = '16';
-        tspFeesInput.value = '';
-        clearingFeesInput.value = '';
-        portFeesInput.value = '';
-        impMarginInput.value = '15';
+// Delegação de eventos para inputs carregados dinamicamente
+document.addEventListener('input', (e) => {
+    if (e.target && e.target.id === 'input-pauta-search') {
+        clearTimeout(pautaSearchTimeout);
+        pautaSearchTimeout = setTimeout(() => {
+            const val = e.target.value.trim();
+            if (val.length < 2) {
+                const res = document.getElementById('pauta-search-results');
+                if (res) res.classList.add('hidden');
+                return;
+            }
+            // Verifica se a pauta carregou
+            if (api && api.state && api.state.pauta) {
+                const results = api.searchPauta(val, 20);
+                renderPautaSearchResults(results);
+            }
+        }, 300);
     }
+    
+    if (e.target && e.target.id === 'input-quote-history-search') {
+        renderQuoteDashboard();
+    }
+});
+
+// Fechar dropdown ao clicar fora
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('#input-pauta-search') && !e.target.closest('#pauta-search-results')) {
+        const res = document.getElementById('pauta-search-results');
+        if (res) res.classList.add('hidden');
+    }
+});
+
+function renderPautaSearchResults(results) {
+    const container = document.getElementById('pauta-search-results');
+    if (!container) return;
+
+    if (results.length === 0) {
+        container.innerHTML = '<div class="p-4 text-center text-sm font-bold text-gray-400">Nenhum resultado encontrado.</div>';
+        container.classList.remove('hidden');
+        return;
+    }
+
+    container.innerHTML = '';
+    results.forEach(item => {
+        const div = document.createElement('div');
+        div.className = "p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 transition-colors";
+        div.onclick = () => {
+            window.selectPautaItem(item);
+            container.classList.add('hidden');
+            if (pautaSearchInput) pautaSearchInput.value = '';
+        };
+        div.innerHTML = `
+            <div class="font-black text-indigo-700 text-sm mb-0.5">${item.code}</div>
+            <div class="text-xs text-gray-600 line-clamp-2">${item.description}</div>
+        `;
+        container.appendChild(div);
+    });
+    
+    container.classList.remove('hidden');
 }
 
-export function updateQuotePreview() {
-    const type = document.getElementById('input-quote-type')?.value || 'TRANSPORTE';
-    const client = document.getElementById('input-quote-client')?.value || 'CLIENTE EXECUTIVO';
-    const cargo = document.getElementById('input-quote-cargo')?.value || 'Mercadoria Geral';
-    const number = document.getElementById('input-quote-number')?.value || 'QT-XXXX';
-    const status = document.getElementById('input-quote-status')?.value || 'RASCUNHO';
-    const rate = parseFloat(document.getElementById('input-quote-rate')?.value) || 63.90;
-    const terms = document.getElementById('input-quote-terms')?.value || '';
-
-    // Obter data formatada
-    const now = new Date();
-    const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth()+1).padStart(2, '0')}/${now.getFullYear()}`;
-
-    // Atualizar cabeçalhos de preview
-    const previewClient = document.getElementById('lbl-preview-client');
-    const previewCargo = document.getElementById('lbl-preview-cargo');
-    const previewNumber = document.getElementById('lbl-preview-number');
-    const previewDate = document.getElementById('lbl-preview-date');
-    const previewStatus = document.getElementById('lbl-preview-status');
-    const previewType = document.getElementById('lbl-preview-type');
-    const previewTerms = document.getElementById('lbl-preview-terms');
-
-    if (previewClient) previewClient.innerText = client.toUpperCase();
-    if (previewCargo) previewCargo.innerText = cargo;
-    if (previewNumber) previewNumber.innerText = `Nº ${number}`;
-    if (previewDate) previewDate.innerText = `Data: ${dateStr}`;
-    if (previewStatus) {
-        previewStatus.innerText = status;
-        previewStatus.className = `text-[9px] font-black uppercase px-3 py-1 rounded-full ${
-            status === 'APROVADO' ? 'bg-emerald-100 text-emerald-800' :
-            status === 'ENVIADO' ? 'bg-blue-100 text-blue-800' :
-            status === 'REJEITADO' ? 'bg-rose-100 text-rose-800' : 'bg-gray-100 text-gray-800'
-        }`;
-    }
-    if (previewType) previewType.innerText = `COTAÇÃO DE ${type}`;
-    if (previewTerms) previewTerms.innerText = terms;
-
-    // Calcular custos
-    const tbody = document.getElementById('preview-cost-table-body');
-    if (!tbody) return;
+window.selectPautaItem = function(item) {
+    window.currentPautaItem = item;
+    
+    document.getElementById('pauta-workspace-empty').classList.add('hidden');
+    document.getElementById('pauta-workspace-content').classList.remove('hidden');
+    
+    document.getElementById('lbl-item-code').innerText = item.code || '---';
+    document.getElementById('lbl-item-desc').innerText = item.description || 'Sem descrição';
+    
+    // Renderizar tabela de taxas base
+    const tbody = document.getElementById('table-base-duties');
     tbody.innerHTML = '';
-
-    let subFreightMzn = 0;
-    let subClearanceMzn = 0;
-
-    const formatCurr = (v) => new Intl.NumberFormat('pt-MZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
-
-    // 1. Transporte
-    if (type === 'TRANSPORTE' || type === 'GLOBAL') {
-        const transMargin = parseFloat(document.getElementById('input-trans-margin')?.value) || 0;
-        const freight = parseFloat(document.getElementById('input-trans-freight-cost')?.value) || 0;
-        const originFees = parseFloat(document.getElementById('input-trans-origin-fees')?.value) || 0;
-        const localFees = parseFloat(document.getElementById('input-trans-local-fees')?.value) || 0;
-        const agentFees = parseFloat(document.getElementById('input-trans-agent-fees')?.value) || 0;
-
-        const addRow = (desc, costUsd, costMzn, isMzn = false) => {
-            const baseCost = isMzn ? costMzn : costUsd * rate;
-            const finalCost = baseCost * (1 + transMargin / 100);
-            const marginValue = finalCost - baseCost;
-            subFreightMzn += finalCost;
-
+    
+    if (item.duties && item.duties.length > 0) {
+        item.duties.forEach(d => {
+            const name = d['Nome da Taxa'] || d['Taxa Description'] || 'N/A';
+            const val = d['Taxa'] || d['Value'] || 'N/A';
             tbody.innerHTML += `
                 <tr>
-                    <td class="py-2 px-3 font-semibold text-gray-800">${desc}</td>
-                    <td class="py-2 px-3 text-right text-gray-500">${isMzn ? `MZN ${formatCurr(costMzn)}` : `USD ${formatCurr(costUsd)}`}</td>
-                    <td class="py-2 px-3 text-right text-gray-500">MZN ${formatCurr(marginValue)}</td>
-                    <td class="py-2 px-3 text-right font-black text-gray-900">MZN ${formatCurr(finalCost)}</td>
+                    <td class="px-4 py-2 text-xs font-bold text-gray-700">${name}</td>
+                    <td class="px-4 py-2 text-center">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-100">${val}</span>
+                    </td>
                 </tr>
             `;
-        };
-
-        if (freight > 0) addRow("Frete Internacional", freight, 0);
-        if (originFees > 0) addRow("Taxas de Origem / Porto", originFees, 0);
-        if (localFees > 0) addRow("Taxas Locais no Destino", 0, localFees, true);
-        if (agentFees > 0) addRow("Tarifa de Manuseamento/Agente", agentFees, 0);
+        });
+    } else {
+        tbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-center text-xs font-bold text-gray-400 italic">Nenhuma taxa definida.</td></tr>`;
     }
+    
+    // Reset inputs
+    document.getElementById('input-sim-fob').value = '';
+    document.getElementById('input-sim-freight').value = '';
+    document.getElementById('input-sim-insurance').value = '';
+    document.getElementById('input-sim-other').value = '';
+    
+    document.getElementById('btn-save-quote').disabled = false;
+    
+    window.calculateSimulation();
+};
 
-    // 2. Importação
-    if (type === 'IMPORTACAO' || type === 'GLOBAL') {
-        const impMargin = parseFloat(document.getElementById('input-imp-margin')?.value) || 0;
-        const cifCost = parseFloat(document.getElementById('input-imp-cif')?.value) || 0;
-        const dutiesPct = parseFloat(document.getElementById('input-imp-duties-pct')?.value) || 0;
-        const ivaPct = parseFloat(document.getElementById('input-imp-iva-pct')?.value) || 0;
-        const tspFees = parseFloat(document.getElementById('input-imp-tsp-fees')?.value) || 0;
-        const clearingFees = parseFloat(document.getElementById('input-imp-clearing-fees')?.value) || 0;
-        const portFees = parseFloat(document.getElementById('input-imp-port-fees')?.value) || 0;
+// --- QUOTE EDITOR LOGIC (Multi-Item Invoice) ---
 
-        const cifMzn = cifCost * rate;
-        const duties = cifMzn * (dutiesPct / 100);
-        const iva = (cifMzn + duties) * (ivaPct / 100);
-
-        // Taxas do governo (sem margem de lucro)
-        const addTaxRow = (desc, cost) => {
-            subClearanceMzn += cost;
-            tbody.innerHTML += `
-                <tr>
-                    <td class="py-2 px-3 font-semibold text-gray-800">${desc} <span class="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-1 py-0.5 rounded uppercase ml-1">Estado</span></td>
-                    <td class="py-2 px-3 text-right text-gray-500">MZN ${formatCurr(cost)}</td>
-                    <td class="py-2 px-3 text-right text-gray-500">MZN 0,00</td>
-                    <td class="py-2 px-3 text-right font-black text-gray-900">MZN ${formatCurr(cost)}</td>
-                </tr>
-            `;
-        };
-
-        // Serviços (com margem de lucro)
-        const addServiceRow = (desc, cost) => {
-            const finalCost = cost * (1 + impMargin / 100);
-            const marginValue = finalCost - cost;
-            subClearanceMzn += finalCost;
-
-            tbody.innerHTML += `
-                <tr>
-                    <td class="py-2 px-3 font-semibold text-gray-800">${desc}</td>
-                    <td class="py-2 px-3 text-right text-gray-500">MZN ${formatCurr(cost)}</td>
-                    <td class="py-2 px-3 text-right text-gray-500">MZN ${formatCurr(marginValue)}</td>
-                    <td class="py-2 px-3 text-right font-black text-gray-900">MZN ${formatCurr(finalCost)}</td>
-                </tr>
-            `;
-        };
-
-        if (duties > 0) addTaxRow("Direitos Alfandegários", duties);
-        if (iva > 0) addTaxRow("Imposto sobre Valor Acrescentado (IVA)", iva);
-        if (tspFees > 0) addTaxRow("Emolumentos Alfandegários (TSP/Exame)", tspFees);
-        if (clearingFees > 0) addServiceRow("Honorários de Despacho", clearingFees);
-        if (portFees > 0) addServiceRow("Taxas de Porto / Terminal", portFees);
+window.quoteEditorState = {
+    id: null,
+    currency: 'USD',
+    exchangeRate: 64.00,
+    items: [],
+    totals: {
+        fobForeign: 0,
+        freightForeign: 0,
+        insForeign: 0,
+        cifMzn: 0,
+        daMzn: 0,
+        iceMzn: 0,
+        ivaMzn: 0,
+        tsaMzn: 0,
+        grandTotalMzn: 0
     }
+};
 
-    const grandTotal = subFreightMzn + subClearanceMzn;
-    const grandTotalUsd = grandTotal / rate;
+window.openQuoteEditor = function() {
+    document.getElementById('quote-history-workspace').classList.add('hidden');
+    document.getElementById('quote-editor-workspace').classList.remove('hidden');
+    document.getElementById('quote-editor-workspace').classList.add('flex');
+    window.renderQuoteItemsTable();
+    window.calculateFullInvoice();
+};
 
-    // Atualizar resumos
-    const subFreightEl = document.getElementById('lbl-preview-sub-freight');
-    const subClearEl = document.getElementById('lbl-preview-sub-clear');
-    const grandTotalEl = document.getElementById('lbl-preview-grand-total');
-    const grandTotalUsdEl = document.getElementById('lbl-preview-grand-total-usd');
+window.closeQuoteEditor = function() {
+    document.getElementById('quote-editor-workspace').classList.add('hidden');
+    document.getElementById('quote-editor-workspace').classList.remove('flex');
+    document.getElementById('quote-history-workspace').classList.remove('hidden');
+};
 
-    if (subFreightEl) subFreightEl.innerText = `MZN ${formatCurr(subFreightMzn)}`;
-    if (subClearEl) subClearEl.innerText = `MZN ${formatCurr(subClearanceMzn)}`;
-    if (grandTotalEl) grandTotalEl.innerText = `MZN ${formatCurr(grandTotal)}`;
-    if (grandTotalUsdEl) grandTotalUsdEl.innerText = `(USD ${formatCurr(grandTotalUsd)})`;
+window.toggleQuoteSidebar = function() {
+    const sidebar = document.getElementById('quote-editor-sidebar');
+    const icon = document.getElementById('quote-sidebar-icon');
+    if (!sidebar) return;
+    
+    // Toggle the translate-x-full class to slide in/out
+    sidebar.classList.toggle('translate-x-full');
+    
+    // Update the arrow icon based on state
+    if (sidebar.classList.contains('translate-x-full')) {
+        // Closed state -> left arrow
+        icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />';
+    } else {
+        // Open state -> right arrow
+        icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />';
+    }
+};
 
-    const formEl = document.getElementById('view-quote-form');
-    if (formEl) formEl.dataset.computedTotal = grandTotal.toString();
+window.startNewQuote = function() {
+    window.quoteEditorState = {
+        id: null,
+        currency: 'USD',
+        exchangeRate: 64.00,
+        items: [],
+        totals: { fobForeign: 0, freightForeign: 0, insForeign: 0, cifMzn: 0, daMzn: 0, iceMzn: 0, ivaMzn: 0, tsaMzn: 0, grandTotalMzn: 0 }
+    };
+    
+    document.getElementById('input-quote-currency').value = 'USD';
+    document.getElementById('input-quote-exchange').value = '64.00';
+    document.getElementById('input-global-freight').value = '';
+    document.getElementById('input-global-insurance').value = '';
+    document.getElementById('input-global-others').value = '';
+    document.getElementById('lbl-quote-editor-title').innerText = "Nova Fatura / Cotação";
+    
+    window.calculateFullInvoice();
+    window.openQuoteEditor();
+};
+
+window.addQuoteRow = function() {
+    window.quoteEditorState.items.push({
+        id: Date.now() + Math.random(),
+        description: '',
+        hsCode: '',
+        qty: '',
+        unitPrice: '',
+        fob: 0,
+        freight: null,
+        insurance: null,
+        others: null,
+        cifMzn: 0,
+        daValue: 0,
+        iceValue: 0,
+        ivaValue: 0,
+        tsaValue: 0,
+        pauta: null
+    });
+    window.calculateFullInvoice();
+    window.renderQuoteItemsTable();
+};
+
+window.removeQuoteRow = function(id) {
+    window.quoteEditorState.items = window.quoteEditorState.items.filter(item => item.id !== id);
+    window.calculateFullInvoice();
+    window.renderQuoteItemsTable();
+};
+
+window.updateQuoteRow = function(id, field, value) {
+    const item = window.quoteEditorState.items.find(i => i.id === id);
+    if (!item) return;
+    
+    if (field === 'freight' || field === 'insurance' || field === 'others') {
+        item[field] = value === '' ? null : parseFloat(value);
+    } else if (field === 'qty' || field === 'unitPrice') {
+        item[field] = parseFloat(value) || 0;
+    } else {
+        item[field] = value;
+    }
+    
+    if (field === 'hsCode') {
+        if (value.length === 8 && state.pauta) {
+            // Find pauta manually from state to avoid full searchPauta DOM changes
+            const term = value.toLowerCase();
+            const results = state.pauta.filter(p => (p.code || '').toLowerCase().startsWith(term));
+            
+            if (results && results.length > 0) {
+                item.pauta = results[0];
+            } else {
+                item.pauta = null;
+            }
+        } else {
+            item.pauta = null;
+        }
+    }
+    
+    window.calculateFullInvoice();
+    window.updateRowDOM(item);
+};
+
+window.updateRowDOM = function(item) {
+    const tr = document.getElementById(`row-${item.id}`);
+    if (!tr) return;
+    
+    const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
+    const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
+    
+    tr.querySelector('.cell-fob').innerText = formatCurrencyVal(item.fob);
+    tr.querySelector('.cell-cif').innerText = formatCurrencyVal(item.cifMzn);
+    tr.querySelector('.cell-da').innerHTML = `${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${(daRate*100).toFixed(0)}%)</span>`;
+    tr.querySelector('.cell-iva').innerHTML = `${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${(ivaRate*100).toFixed(0)}%)</span>`;
+
+    const inFrt = tr.querySelector('.input-readonly-freight');
+    if (inFrt) inFrt.value = formatCurrencyVal(item.actualFreight || 0);
+    const inIns = tr.querySelector('.input-readonly-insurance');
+    if (inIns) inIns.value = formatCurrencyVal(item.actualInsurance || 0);
+    const inOth = tr.querySelector('.input-readonly-others');
+    if (inOth) inOth.value = formatCurrencyVal(item.actualOthers || 0);
+
+    const hsInput = tr.querySelector('.input-hscode');
+    if (hsInput) {
+        hsInput.classList.remove('text-indigo-700', 'text-emerald-600', 'text-red-500');
+        if (item.hsCode && item.hsCode.length === 8) {
+            hsInput.classList.add(item.pauta ? 'text-emerald-600' : 'text-red-500');
+        } else {
+            hsInput.classList.add('text-indigo-700');
+        }
+    }
+};
+
+function formatCurrencyVal(val) {
+    return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 }
+
+function getRateFromPauta(pautaItem, nameFragments) {
+    if (!pautaItem || !pautaItem.duties) return 0;
+    const duty = pautaItem.duties.find(d => {
+        const dutyName = (d['Nome da Taxa'] || d['Taxa Description'] || '').toLowerCase();
+        return nameFragments.some(frag => dutyName.includes(frag.toLowerCase()));
+    });
+    if (!duty) return 0;
+    const rateStr = duty['Taxa'] || duty['Value'] || '0';
+    if (rateStr.includes('%')) {
+        return parseFloat(rateStr.replace('%', '')) / 100;
+    }
+    return 0;
+}
+
+window.calculateFullInvoice = function() {
+    const curr = document.getElementById('input-quote-currency').value.toUpperCase() || 'USD';
+    const excRate = parseFloat(document.getElementById('input-quote-exchange').value) || 64.00;
+    
+    window.quoteEditorState.currency = curr;
+    window.quoteEditorState.exchangeRate = excRate;
+    
+    let tFob = 0, tFrt = 0, tIns = 0, tOth = 0;
+    let tCifMzn = 0, tDaMzn = 0, tIceMzn = 0, tIvaMzn = 0, tTsaMzn = 0;
+    
+    document.querySelectorAll('.lbl-currency').forEach(el => el.innerText = curr);
+    const printCaption = document.getElementById('print-currency-note');
+    if (printCaption) printCaption.innerText = `${curr} | ${excRate.toFixed(2)}`;
+    
+    const globalFreightInput = document.getElementById('input-global-freight').value;
+    const globalInsuranceInput = document.getElementById('input-global-insurance').value;
+    const globalOthersInput = document.getElementById('input-global-others').value;
+    
+    const globalFrt = globalFreightInput === '' ? null : parseFloat(globalFreightInput);
+    const globalIns = globalInsuranceInput === '' ? null : parseFloat(globalInsuranceInput);
+    const globalOth = globalOthersInput === '' ? null : parseFloat(globalOthersInput);
+    
+    let grandTotalFob = 0;
+    window.quoteEditorState.items.forEach(item => {
+        item.fob = (item.qty || 0) * (item.unitPrice || 0);
+        grandTotalFob += item.fob;
+    });
+    
+    window.quoteEditorState.items.forEach(item => {
+        const ratio = grandTotalFob > 0 ? (item.fob / grandTotalFob) : 0;
+        
+        let frt = globalFrt !== null ? (globalFrt * ratio) : (item.fob * 0.10);
+        let ins = globalIns !== null ? (globalIns * ratio) : ((item.fob + frt) * 0.02);
+        let oth = globalOth !== null ? (globalOth * ratio) : 0;
+        
+        item.actualFreight = frt;
+        item.actualInsurance = ins;
+        item.actualOthers = oth;
+        
+        const cifForeign = item.fob + frt + ins + oth;
+        const cifMzn = cifForeign * excRate;
+        item.cifMzn = cifMzn;
+        
+        const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
+        const iceRate = item.pauta ? getRateFromPauta(item.pauta, ['Consumo', 'Específico', 'ICE']) : 0;
+        const tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
+        const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
+        
+        item.daValue = cifMzn * daRate;
+        item.iceValue = cifMzn * iceRate;
+        item.tsaValue = cifMzn * tsaRate;
+        
+        const ivaBase = cifMzn + item.daValue + item.iceValue;
+        item.ivaValue = ivaBase * ivaRate;
+        
+        tFob += item.fob;
+        tFrt += frt;
+        tIns += ins;
+        tOth += oth;
+        
+        tCifMzn += cifMzn;
+        tDaMzn += item.daValue;
+        tIceMzn += item.iceValue;
+        tTsaMzn += item.tsaValue;
+        tIvaMzn += item.ivaValue;
+        
+        window.updateRowDOM(item);
+    });
+    
+    const grandTotal = tCifMzn + tDaMzn + tIceMzn + tIvaMzn + tTsaMzn;
+    
+    window.quoteEditorState.totals = {
+        fobForeign: tFob, freightForeign: tFrt, insForeign: tIns, othForeign: tOth,
+        cifMzn: tCifMzn, daMzn: tDaMzn, iceMzn: tIceMzn, ivaMzn: tIvaMzn, tsaMzn: tTsaMzn,
+        grandTotalMzn: grandTotal
+    };
+    const setTxt = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = val;
+    };
+    
+    setTxt('tot-fob-foreign', formatCurrencyVal(tFob));
+    setTxt('tot-freight-foreign', formatCurrencyVal(tFrt));
+    setTxt('tot-ins-foreign', formatCurrencyVal(tIns));
+    setTxt('tot-oth-foreign', formatCurrencyVal(tOth));
+    setTxt('tot-cif-foreign', formatCurrencyVal(tFob + tFrt + tIns + tOth));
+    
+    setTxt('tot-cif-mzn', formatMZN(tCifMzn));
+    setTxt('tot-da-mzn', formatMZN(tDaMzn));
+    setTxt('tot-ice-mzn', formatMZN(tIceMzn));
+    setTxt('tot-iva-mzn', formatMZN(tIvaMzn));
+    setTxt('tot-tsa-mzn', formatMZN(tTsaMzn));
+    
+    setTxt('tot-grand-mzn', formatMZN(grandTotal));
+    
+    // Table Footer Totals
+    setTxt('foot-tot-fob', formatCurrencyVal(tFob));
+    const gFrtInput = document.getElementById('input-global-freight');
+    if (gFrtInput) gFrtInput.placeholder = formatCurrencyVal(tFrt);
+    const gInsInput = document.getElementById('input-global-insurance');
+    if (gInsInput) gInsInput.placeholder = formatCurrencyVal(tIns);
+    const gOthInput = document.getElementById('input-global-others');
+    if (gOthInput) gOthInput.placeholder = formatCurrencyVal(tOth);
+    setTxt('foot-tot-cif', formatCurrencyVal(tCifMzn));
+    setTxt('foot-tot-da', formatCurrencyVal(tDaMzn));
+    setTxt('foot-tot-ice', formatCurrencyVal(tIceMzn));
+    setTxt('foot-tot-iva', formatCurrencyVal(tIvaMzn));
+};
+
+window.handleQuoteInputKeydown = function(e, element) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        const tbody = document.getElementById('quote-items-tbody');
+        if (!tbody) return;
+        const inputs = Array.from(tbody.querySelectorAll('input:not([disabled])'));
+        const index = inputs.indexOf(element);
+        if (index > -1) {
+            if (index < inputs.length - 1) {
+                inputs[index + 1].focus();
+                inputs[index + 1].select();
+            } else {
+                element.blur();
+            }
+        }
+    }
+};
+
+window.renderQuoteItemsTable = function() {
+    const tbody = document.getElementById('quote-items-tbody');
+    if (!tbody) return;
+    
+    const tfoot = document.getElementById('quote-items-tfoot');
+    
+    if (window.quoteEditorState.items.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="14" class="p-4 text-center text-gray-400 font-bold">Nenhum artigo adicionado.</td></tr>`;
+        if (tfoot) tfoot.classList.add('hidden');
+        return;
+    }
+    
+    if (tfoot) tfoot.classList.remove('hidden');
+    
+    tbody.innerHTML = window.quoteEditorState.items.map((item, index) => {
+        const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
+        const iceRate = item.pauta ? getRateFromPauta(item.pauta, ['ICE', 'Consumo Especifico', 'Consumo Específico']) : 0;
+        const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
+        
+        let hsColorClass = 'text-indigo-700';
+        if (item.hsCode && item.hsCode.length === 8) {
+            hsColorClass = item.pauta ? 'text-emerald-600' : 'text-red-500';
+        }
+        
+        return `
+        <tr id="row-${item.id}" class="hover:bg-gray-50/50 transition-colors h-7">
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-400">${index + 1}</td>
+            <td class="p-0 border-b border-r border-gray-100">
+                <input type="text" class="input-desc w-full text-xs py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6" value="${item.description}" onchange="window.updateQuoteRow(${item.id}, 'description', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Descrição">
+            </td>
+            <td class="p-0 border-b border-r border-gray-100">
+                <input type="text" maxlength="8" class="input-hscode w-full text-xs ${hsColorClass} py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 text-center" value="${item.hsCode}" oninput="this.value = this.value.replace(/[^0-9]/g, ''); window.updateQuoteRow(${item.id}, 'hsCode', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Ex: 8703">
+            </td>
+            <td class="p-0 border-b border-r border-gray-100">
+                <input type="number" class="w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.qty}" oninput="window.updateQuoteRow(${item.id}, 'qty', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0">
+            </td>
+            <td class="p-0 border-b border-r border-gray-100">
+                <input type="number" class="w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.unitPrice}" oninput="window.updateQuoteRow(${item.id}, 'unitPrice', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0.00">
+            </td>
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-xs text-gray-800 bg-indigo-50/30 cell-fob font-medium">
+                ${formatCurrencyVal(item.fob)}
+            </td>
+            <td class="p-0 border-b border-r border-gray-100">
+                <input type="text" readonly class="input-readonly-freight w-full text-xs text-center py-0.5 px-1 border-none outline-none focus:ring-0 rounded bg-gray-50/50 text-gray-500 cursor-not-allowed h-6" value="${formatCurrencyVal(item.actualFreight || 0)}" title="Rateio Automático">
+            </td>
+            <td class="p-0 border-b border-r border-gray-100">
+                <input type="text" readonly class="input-readonly-insurance w-full text-xs text-center py-0.5 px-1 border-none outline-none focus:ring-0 rounded bg-gray-50/50 text-gray-500 cursor-not-allowed h-6" value="${formatCurrencyVal(item.actualInsurance || 0)}" title="Rateio Automático">
+            </td>
+            <td class="p-0 border-b border-r border-gray-100">
+                <input type="text" readonly class="input-readonly-others w-full text-xs text-center py-0.5 px-1 border-none outline-none focus:ring-0 rounded bg-gray-50/50 text-gray-500 cursor-not-allowed h-6" value="${formatCurrencyVal(item.actualOthers || 0)}" title="Rateio Automático">
+            </td>
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-xs text-indigo-700 bg-indigo-50/30 cell-cif font-medium">
+                ${formatCurrencyVal(item.cifMzn)}
+            </td>
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-da leading-tight whitespace-nowrap">
+                ${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${(daRate*100).toFixed(0)}%)</span>
+            </td>
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-ice leading-tight whitespace-nowrap">
+                ${formatCurrencyVal(item.iceValue)} <span class="text-[9px] text-gray-400">(${(iceRate*100).toFixed(0)}%)</span>
+            </td>
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-iva leading-tight whitespace-nowrap">
+                ${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${(ivaRate*100).toFixed(0)}%)</span>
+            </td>
+            <td class="p-0 border-gray-100 text-center">
+                <button onclick="window.removeQuoteRow(${item.id})" class="btn-action-scale btn-delete text-gray-300 p-0.5 rounded-md inline-flex items-center justify-center hover:text-red-500" title="Remover Artigo">
+                    <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                </button>
+            </td>
+        </tr>
+        `;
+    }).join('') + '<tr class="h-full"><td colspan="14" class="border-none bg-transparent p-0 m-0"></td></tr>';
+};
+
+window.saveQuoteSimulation = function() {
+    if (window.quoteEditorState.items.length === 0) {
+        toast("A fatura não contém artigos.", "error");
+        return;
+    }
+    
+    const modal = document.getElementById('modal-save-quote');
+    if (modal) {
+        document.getElementById('input-save-quote-name').value = '';
+        document.getElementById('hidden-quote-id').value = window.quoteEditorState.id || '';
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        setTimeout(() => {
+            modal.classList.remove('opacity-0');
+            modal.querySelector('div').classList.remove('scale-95');
+        }, 10);
+    }
+};
+
+window.closeSaveQuoteModal = function() {
+    const modal = document.getElementById('modal-save-quote');
+    if (modal) {
+        modal.classList.add('opacity-0');
+        modal.querySelector('div').classList.add('scale-95');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }, 300);
+    }
+};
+
+window.confirmSaveQuote = async function() {
+    const name = document.getElementById('input-save-quote-name').value.trim();
+    if (!name) {
+        toast("Por favor, insira o nome da cotação.", "error");
+        return;
+    }
+    
+    const quoteId = document.getElementById('hidden-quote-id').value;
+    const btn = document.querySelector('#modal-save-quote button:nth-child(2)');
+    btn.disabled = true;
+    btn.innerHTML = 'A guardar...';
+    
+    try {
+        const quoteData = {
+            id: quoteId || null,
+            client_name: name,
+            type: 'IMPORTACAO',
+            status: 'RASCUNHO',
+            total_amount: window.quoteEditorState.totals.grandTotalMzn,
+            cargo_description: window.quoteEditorState.items[0]?.description || 'Múltiplos Artigos',
+            payload: window.quoteEditorState
+        };
+        
+        const saved = await api.saveQuote(quoteData);
+        window.quoteEditorState.id = saved.id;
+        
+        toast("Fatura guardada com sucesso!", "success");
+        window.closeSaveQuoteModal();
+        window.closeQuoteEditor();
+        renderQuoteDashboard(); 
+    } catch (err) {
+        console.error(err);
+        toast("Erro ao guardar cotação.", "error");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            Guardar
+        `;
+    }
+};
+
+window.loadSavedQuote = function(id) {
+    const quote = (state.quotes || []).find(q => q.id === id);
+    if (!quote || !quote.payload) {
+        toast("Esta cotação não possui dados simulados válidos.", "error");
+        return;
+    }
+    
+    if (quote.payload.items) {
+        // Formato Novo (Multi-Item)
+        window.quoteEditorState = quote.payload;
+        window.quoteEditorState.id = quote.id; // ensure ID is set for editing
+        
+        document.getElementById('input-quote-currency').value = window.quoteEditorState.currency || 'USD';
+        document.getElementById('input-quote-exchange').value = window.quoteEditorState.exchangeRate || 64.00;
+        
+        document.getElementById('lbl-quote-editor-title').innerText = `Cotação: ${quote.client_name}`;
+        
+        window.openQuoteEditor();
+    } else {
+        // Formato Antigo (Single Item) -> Migrar dinamicamente para o novo
+        const old = quote.payload;
+        window.quoteEditorState = {
+            id: quote.id,
+            currency: 'MT', // Old simulator was purely in MT
+            exchangeRate: 1, // 1 to 1 mapping
+            items: [
+                {
+                    id: Date.now(),
+                    description: old.item.description,
+                    hsCode: old.item.code,
+                    qty: 1,
+                    unitPrice: old.inputs.fob,
+                    fob: old.inputs.fob,
+                    freight: old.inputs.freight,
+                    insurance: old.inputs.ins,
+                    cif: 0, daValue: 0, iceValue: 0, ivaValue: 0, tsaValue: 0, pauta: old.item
+                }
+            ],
+            totals: { fobForeign: 0, freightForeign: 0, insForeign: 0, cifMzn: 0, daMzn: 0, iceMzn: 0, ivaMzn: 0, tsaMzn: 0, grandTotalMzn: 0 }
+        };
+        
+        document.getElementById('input-quote-currency').value = 'MT';
+        document.getElementById('input-quote-exchange').value = '1';
+        document.getElementById('lbl-quote-editor-title').innerText = `Cotação Migrada: ${quote.client_name}`;
+        
+        window.openQuoteEditor();
+    }
+};
 
 // ==========================================
 // FREIGHT MODAL LOGIC

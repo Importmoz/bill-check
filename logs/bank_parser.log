@@ -4301,3 +4301,99 @@ DEBUG: Banco detetado via conte�do global: BCI
 DEBUG: Banco Detetado: BCI
 DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
 
+2026-06-12T08:20:26.315Z - INFO: Arquivo extraído bank_78ac48e2-460c-445c-b157-083f8b3f33ba_Movimentos_de_Conta_-_1086059371008__3_.xlsx
+STDOUT: []
+...
+STDERR: C:\Users\Henriques Arrone\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\openpyxl\styles\stylesheet.py:237: UserWarning: Workbook contains no default style, apply openpyxl's default
+  warn("Workbook contains no default style, apply openpyxl's default")
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: DATA, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: REFERENCIA
+
+2026-06-12T08:20:41.246Z - INFO: Arquivo extraído bank_751d9a81-7328-4862-8a9d-cbf3c65462d2_Movimentos_de_Conta_-_1086059371008__3_.xlsx
+STDOUT: []
+...
+STDERR: C:\Users\Henriques Arrone\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\openpyxl\styles\stylesheet.py:237: UserWarning: Workbook contains no default style, apply openpyxl's default
+  warn("Workbook contains no default style, apply openpyxl's default")
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: DATA, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: REFERENCIA
+
+2026-06-12T08:21:18.676Z - INFO: Arquivo extraído bank_f7e5e92c-535d-43e7-8a32-95832011fed7_Extrato_75470366_11-06-26_12-06-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-06-12 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 207646349Ref. 260612091127814C\u00f3digo do Canal SCI MBNome do Canal SCI MOBILEC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 10486.0,
+    "balance": 10486.8,
+    "signature": "eca2e3a25670df230c79912a18a40372340e9c1dc01e0504fa88e235190d0494",
+    "order_id": "",
+    "reconciled": false...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-06-12T08:21:26.275Z - INFO: Arquivo extraído bank_601c4b40-b39e-45c6-a643-348a278631de_Extrato_330788916_11-06-26_12-06-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-06-11 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "TRF eMola 877150660 4164383998Ref. 260611175853768C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 3000.0,
+    "balance": 14571.11,
+    "signature": "2b0b20c80ab198a7707803544f65ebebacf8f23fe7d15b34d934774fd17d573d",
+    "order_id": "",
+    "reconcil...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-06-12T08:21:34.278Z - INFO: Arquivo extraído bank_f882c7a1-f8fb-474d-bd6d-1ffae82d5cce_1c4eb44e-55da-4c84-802b-b6a28465a540.xls
+STDOUT: [
+  {
+    "date": "2026-06-11 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "P24-Transf.Rec. 0878109680",
+    "reference": "286273770",
+    "amount": 9016.0,
+    "balance": 11164.15,
+    "signature": "089796e515897abbd763201eeffe076028132df5bbcfdec6c737e04554f84e1a",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-06-11 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILI...
+STDERR: DEBUG: Diagn�stico de bank_f882c7a1-f8fb-474d-bd6d-1ffae82d5cce_1c4eb44e-55da-4c84-802b-b6a28465a540.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-06-12T08:21:39.958Z - INFO: Arquivo extraído bank_251595f6-f98d-4c38-8c97-7da0e3c81b49_1e052078-e6f8-45ef-a07c-75987266cf8a.xls
+STDOUT: [
+  {
+    "date": "2026-06-12 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cred.295658526",
+    "reference": "295658526",
+    "amount": 1180.0,
+    "balance": 200048.58,
+    "signature": "7039f32d595e7e5633b6b1172b624c2df8aa608748a211aa042c6e4bb715e205",
+    "order_id": "",
+    "reconciled": false
+  }
+]
+...
+STDERR: DEBUG: Diagn�stico de bank_251595f6-f98d-4c38-8c97-7da0e3c81b49_1e052078-e6f8-45ef-a07c-75987266cf8a.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
