@@ -4913,6 +4913,7 @@ export function closeUserModal() {
 export function renderCambioSelect() {
     const select = document.getElementById('input-quote-currency');
     const inputEx = document.getElementById('input-quote-exchange');
+    const lblDate = document.getElementById('lbl-quote-exchange-date');
     if (!select || !inputEx) return;
 
     // Se existirem dados, populamos o dropdown
@@ -4923,17 +4924,24 @@ export function renderCambioSelect() {
             opt.value = c.moeda;
             opt.text = c.moeda;
             opt.dataset.taxa = c.taxa;
+            if (c.today) {
+                // Formata a data se existir
+                const d = new Date(c.today);
+                opt.dataset.date = d.toLocaleDateString('pt-PT');
+            } else {
+                opt.dataset.date = '';
+            }
             select.appendChild(opt);
         });
 
         // Tentar manter o USD selecionado se existir, senão usa o primeiro
         const usdOpt = Array.from(select.options).find(o => o.value === 'USD');
-        if (usdOpt) {
-            select.value = 'USD';
-            inputEx.value = parseFloat(usdOpt.dataset.taxa).toFixed(2);
-        } else {
-            select.selectedIndex = 0;
-            inputEx.value = parseFloat(select.options[0].dataset.taxa).toFixed(2);
+        const defaultOpt = usdOpt || select.options[0];
+        
+        select.value = defaultOpt.value;
+        inputEx.value = parseFloat(defaultOpt.dataset.taxa).toFixed(2);
+        if (lblDate && defaultOpt.dataset.date) {
+            lblDate.innerText = `Data: ${defaultOpt.dataset.date}`;
         }
     }
 }
@@ -4941,11 +4949,15 @@ export function renderCambioSelect() {
 window.handleCurrencyChange = function() {
     const select = document.getElementById('input-quote-currency');
     const inputEx = document.getElementById('input-quote-exchange');
+    const lblDate = document.getElementById('lbl-quote-exchange-date');
     if (!select || !inputEx) return;
 
     const opt = select.options[select.selectedIndex];
     if (opt && opt.dataset.taxa) {
         inputEx.value = parseFloat(opt.dataset.taxa).toFixed(2);
+        if (lblDate) {
+            lblDate.innerText = opt.dataset.date ? `Data: ${opt.dataset.date}` : '';
+        }
     }
     
     // Atualizar a fatura com a nova taxa
