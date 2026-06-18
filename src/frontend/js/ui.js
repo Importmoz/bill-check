@@ -4913,7 +4913,7 @@ export function closeUserModal() {
 export function renderCambioSelect() {
     const select = document.getElementById('input-quote-currency');
     const inputEx = document.getElementById('input-quote-exchange');
-    const lblDate = document.getElementById('lbl-quote-exchange-date');
+    const wrapper = document.getElementById('wrapper-quote-currency');
     if (!select || !inputEx) return;
 
     // Se existirem dados, populamos o dropdown
@@ -4940,8 +4940,8 @@ export function renderCambioSelect() {
         
         select.value = defaultOpt.value;
         inputEx.value = parseFloat(defaultOpt.dataset.taxa).toFixed(2);
-        if (lblDate && defaultOpt.dataset.date) {
-            lblDate.innerText = `Data: ${defaultOpt.dataset.date}`;
+        if (wrapper && defaultOpt.dataset.date) {
+            wrapper.title = `Atualizado a: ${defaultOpt.dataset.date}`;
         }
     }
 }
@@ -4949,14 +4949,14 @@ export function renderCambioSelect() {
 window.handleCurrencyChange = function() {
     const select = document.getElementById('input-quote-currency');
     const inputEx = document.getElementById('input-quote-exchange');
-    const lblDate = document.getElementById('lbl-quote-exchange-date');
+    const wrapper = document.getElementById('wrapper-quote-currency');
     if (!select || !inputEx) return;
 
     const opt = select.options[select.selectedIndex];
     if (opt && opt.dataset.taxa) {
         inputEx.value = parseFloat(opt.dataset.taxa).toFixed(2);
-        if (lblDate) {
-            lblDate.innerText = opt.dataset.date ? `Data: ${opt.dataset.date}` : '';
+        if (wrapper) {
+            wrapper.title = opt.dataset.date ? `Atualizado a: ${opt.dataset.date}` : 'Câmbio';
         }
     }
     
