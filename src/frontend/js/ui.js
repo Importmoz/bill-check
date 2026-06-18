@@ -4913,25 +4913,46 @@ export function closeUserModal() {
 export function renderCambioSelect() {
     const select = document.getElementById('input-quote-currency');
     const inputEx = document.getElementById('input-quote-exchange');
-    const wrapper = document.getElementById('wrapper-quote-currency');
+    const txtDate = document.getElementById('txt-quote-exchange-date');
+    const customList = document.getElementById('custom-quote-currency-options');
+    const customLabel = document.getElementById('custom-quote-currency-label');
+    
     if (!select || !inputEx) return;
 
     // Se existirem dados, populamos o dropdown
     if (state.cambios && state.cambios.length > 0) {
         select.innerHTML = '';
+        if (customList) customList.innerHTML = '';
+        
         state.cambios.forEach(c => {
+            // Opção nativa oculta
             const opt = document.createElement('option');
             opt.value = c.moeda;
             opt.text = c.moeda;
             opt.dataset.taxa = c.taxa;
             if (c.today) {
-                // Formata a data se existir
                 const d = new Date(c.today);
                 opt.dataset.date = d.toLocaleDateString('pt-PT');
             } else {
                 opt.dataset.date = '';
             }
             select.appendChild(opt);
+            
+            // Opção Customizada
+            if (customList) {
+                const divOpt = document.createElement('div');
+                // Added data-moeda for easy filtering
+                divOpt.dataset.moeda = c.moeda.toUpperCase();
+                divOpt.className = 'currency-option-item px-3 py-1.5 mx-1 my-0.5 rounded-lg text-xs font-bold text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 cursor-pointer flex justify-between items-center transition-colors';
+                divOpt.innerHTML = `<span>${c.moeda}</span> <span class="text-[10px] text-gray-400 font-medium">${parseFloat(c.taxa).toFixed(2)}</span>`;
+                divOpt.onclick = () => {
+                    select.value = c.moeda;
+                    if (customLabel) customLabel.innerText = c.moeda;
+                    window.closeCurrencyDropdown();
+                    window.handleCurrencyChange();
+                };
+                customList.appendChild(divOpt);
+            }
         });
 
         // Tentar manter o USD selecionado se existir, senão usa o primeiro
@@ -4939,24 +4960,80 @@ export function renderCambioSelect() {
         const defaultOpt = usdOpt || select.options[0];
         
         select.value = defaultOpt.value;
+        if (customLabel) customLabel.innerText = defaultOpt.value;
         inputEx.value = parseFloat(defaultOpt.dataset.taxa).toFixed(2);
-        if (wrapper && defaultOpt.dataset.date) {
-            wrapper.title = `Atualizado a: ${defaultOpt.dataset.date}`;
+        if (txtDate && defaultOpt.dataset.date) {
+            txtDate.innerText = defaultOpt.dataset.date;
         }
     }
 }
 
+window.toggleCurrencyDropdown = function(e) {
+    if (e) e.stopPropagation();
+    const list = document.getElementById('custom-quote-currency-list');
+    const searchInput = document.getElementById('custom-quote-currency-search');
+    if (list) {
+        list.classList.toggle('hidden');
+        if (!list.classList.contains('hidden') && searchInput) {
+            searchInput.value = '';
+            window.filterCurrencyDropdown();
+            // Focus com pequeno delay para garantir que está visível
+            setTimeout(() => searchInput.focus(), 50);
+        }
+    }
+};
+
+window.closeCurrencyDropdown = function() {
+    const list = document.getElementById('custom-quote-currency-list');
+    if (list && !list.classList.contains('hidden')) {
+        list.classList.add('hidden');
+    }
+};
+
+window.filterCurrencyDropdown = function() {
+    const searchInput = document.getElementById('custom-quote-currency-search');
+    if (!searchInput) return;
+    const query = searchInput.value.toUpperCase().trim();
+    const items = document.querySelectorAll('.currency-option-item');
+    
+    items.forEach(item => {
+        const moeda = item.dataset.moeda || '';
+        if (moeda.includes(query)) {
+            item.style.display = 'flex';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+};
+
+// Global click listener para fechar dropdown clicando fora
+document.addEventListener('click', (e) => {
+    const btn = document.getElementById('custom-quote-currency-btn');
+    const list = document.getElementById('custom-quote-currency-list');
+    if (btn && list) {
+        if (!btn.contains(e.target) && !list.contains(e.target)) {
+            window.closeCurrencyDropdown();
+        }
+    }
+    
+    // Antigo comportamento do pauta search
+    if (!e.target.closest('#input-pauta-search') && !e.target.closest('#pauta-search-results')) {
+        const res = document.getElementById('pauta-search-results');
+        if (res) res.classList.add('hidden');
+    }
+});
+
 window.handleCurrencyChange = function() {
     const select = document.getElementById('input-quote-currency');
     const inputEx = document.getElementById('input-quote-exchange');
-    const wrapper = document.getElementById('wrapper-quote-currency');
+    const txtDate = document.getElementById('txt-quote-exchange-date');
     if (!select || !inputEx) return;
 
     const opt = select.options[select.selectedIndex];
     if (opt && opt.dataset.taxa) {
         inputEx.value = parseFloat(opt.dataset.taxa).toFixed(2);
-        if (wrapper) {
-            wrapper.title = opt.dataset.date ? `Atualizado a: ${opt.dataset.date}` : 'Câmbio';
+        if (txtDate) {
+            txtDate.innerText = opt.dataset.date || '';
         }
     }
     
@@ -5055,13 +5132,6 @@ document.addEventListener('input', (e) => {
     }
 });
 
-// Fechar dropdown ao clicar fora
-document.addEventListener('click', (e) => {
-    if (!e.target.closest('#input-pauta-search') && !e.target.closest('#pauta-search-results')) {
-        const res = document.getElementById('pauta-search-results');
-        if (res) res.classList.add('hidden');
-    }
-});
 
 function renderPautaSearchResults(results) {
     const container = document.getElementById('pauta-search-results');
@@ -5210,7 +5280,8 @@ window.addQuoteRow = function() {
         id: Date.now() + Math.random(),
         description: '',
         hsCode: '',
-        qty: '',
+        qty: 1,
+        qtyFisica: 1,
         unitPrice: '',
         fob: 0,
         freight: null,
@@ -5239,7 +5310,14 @@ window.updateQuoteRow = function(id, field, value) {
     
     if (field === 'freight' || field === 'insurance' || field === 'others') {
         item[field] = value === '' ? null : parseFloat(value);
-    } else if (field === 'qty' || field === 'unitPrice') {
+    } else if (field === 'qty') {
+        item.qty = parseFloat(value) || 0;
+        // Auto-sync qty to qtyFisica se a unidade física for Peças/Unidades (PST)
+        const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+        if (iceData && iceData.specificUnit && iceData.specificUnit.includes('PST')) {
+            item.qtyFisica = item.qty;
+        }
+    } else if (field === 'unitPrice' || field === 'qtyFisica') {
         item[field] = parseFloat(value) || 0;
     } else {
         item[field] = value;
@@ -5278,14 +5356,13 @@ window.updateRowDOM = function(item) {
     if (!tr) return;
     
     const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
-    const iceRate = item.pauta ? getRateFromPauta(item.pauta, ['ICE', 'Consumo Espec']) : 0;
     const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
     
     tr.querySelector('.cell-fob').innerText = formatCurrencyVal(item.fob);
     tr.querySelector('.cell-cif').innerText = formatCurrencyVal(item.cifMzn);
     tr.querySelector('.cell-da').innerHTML = `${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${(daRate*100).toFixed(0)}%)</span>`;
     if (tr.querySelector('.cell-ice')) {
-        tr.querySelector('.cell-ice').innerHTML = `${formatCurrencyVal(item.iceValue || 0)} <span class="text-[9px] text-gray-400">(${(iceRate*100).toFixed(0)}%)</span>`;
+        tr.querySelector('.cell-ice').innerHTML = `${formatCurrencyVal(item.iceValue || 0)} <span class="text-[9px] text-gray-400">(${item.iceLabel || '0%'})</span>`;
     }
     tr.querySelector('.cell-iva').innerHTML = `${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${(ivaRate*100).toFixed(0)}%)</span>`;
 
@@ -5295,6 +5372,16 @@ window.updateRowDOM = function(item) {
     if (inIns) inIns.value = formatCurrencyVal(item.actualInsurance || 0);
     const inOth = tr.querySelector('.input-readonly-others');
     if (inOth) inOth.value = formatCurrencyVal(item.actualOthers || 0);
+
+    const inputs = tr.querySelectorAll('input[type="number"]');
+    if (inputs.length >= 3) {
+        inputs[0].value = item.qty;
+        // The qtyFisica input is at index 1, if it exists and is enabled
+        if (!inputs[1].disabled) {
+            inputs[1].value = item.qtyFisica;
+        }
+        inputs[2].value = item.unitPrice;
+    }
 
     const hsInput = tr.querySelector('.input-hscode');
     if (hsInput) {
@@ -5323,6 +5410,43 @@ function getRateFromPauta(pautaItem, nameFragments) {
         return parseFloat(rateStr.replace('%', '')) / 100;
     }
     return 0;
+}
+
+function parseTaxPart(part, resultObj) {
+    if (part.includes('%')) {
+        resultObj.adValorem = parseFloat(part.replace('%', '')) / 100;
+    } else if (part.includes(' per ')) {
+        const parts = part.split(' per ');
+        const amountStr = parts[0].trim();
+        const unitStr = parts[1].trim();
+        const match = amountStr.match(/([0-9.]+)/);
+        if (match) {
+            resultObj.specificAmount = parseFloat(match[1]);
+        }
+        resultObj.specificUnit = unitStr.toUpperCase();
+    }
+}
+
+function getComplexRateFromPauta(pautaItem, nameFragments) {
+    if (!pautaItem || !pautaItem.duties) return null;
+    const duty = pautaItem.duties.find(d => {
+        const dutyName = (d['Nome da Taxa'] || d['Taxa Description'] || '').toLowerCase();
+        return nameFragments.some(frag => dutyName.includes(frag.toLowerCase()));
+    });
+    if (!duty) return null;
+    const rateStr = (duty['Taxa'] || duty['Value'] || '0').toLowerCase();
+    
+    let result = { adValorem: 0, specificAmount: 0, specificUnit: '', operator: 'none', raw: rateStr };
+
+    if (rateStr.includes(' or ')) {
+        result.operator = 'or';
+        const parts = rateStr.split(' or ');
+        parts.forEach(p => parseTaxPart(p.trim(), result));
+    } else {
+        parseTaxPart(rateStr, result);
+    }
+    
+    return result;
 }
 
 window.calculateFullInvoice = function() {
@@ -5369,12 +5493,39 @@ window.calculateFullInvoice = function() {
         item.cifMzn = cifMzn;
         
         const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
-        const iceRate = item.pauta ? getRateFromPauta(item.pauta, ['Consumo', 'Específico', 'ICE']) : 0;
         const tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
+        
+        // NEW ICE Calculation Logic
+        const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+        let iceAdValorem = 0;
+        let iceSpecific = 0;
+        let appliedIceRateLabel = '0%';
+
+        if (iceData) {
+            iceAdValorem = cifMzn * iceData.adValorem;
+            iceSpecific = (item.qtyFisica || 0) * iceData.specificAmount;
+
+            if (iceData.operator === 'or') {
+                item.iceValue = Math.max(iceAdValorem, iceSpecific);
+                appliedIceRateLabel = iceAdValorem > iceSpecific 
+                    ? `${(iceData.adValorem*100).toFixed(0)}%` 
+                    : `${iceData.specificAmount} MT/${iceData.specificUnit}`;
+            } else {
+                item.iceValue = iceSpecific || iceAdValorem;
+                appliedIceRateLabel = iceSpecific > 0 
+                    ? `${iceData.specificAmount} MT/${iceData.specificUnit}` 
+                    : `${(iceData.adValorem*100).toFixed(0)}%`;
+            }
+        } else {
+            item.iceValue = 0;
+        }
+
+        // Keep label in item for UI rendering
+        item.iceLabel = appliedIceRateLabel;
+        
         const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
         
         item.daValue = cifMzn * daRate;
-        item.iceValue = cifMzn * iceRate;
         item.tsaValue = cifMzn * tsaRate;
         
         const ivaBase = cifMzn + item.daValue + item.iceValue;
@@ -5432,6 +5583,40 @@ window.calculateFullInvoice = function() {
     setTxt('foot-tot-da', formatCurrencyVal(tDaMzn));
     setTxt('foot-tot-ice', formatCurrencyVal(tIceMzn));
     setTxt('foot-tot-iva', formatCurrencyVal(tIvaMzn));
+
+    window.toggleIceColumnsVisibility();
+};
+
+window.toggleIceColumnsVisibility = function() {
+    let hasAnyIce = false;
+    let hasSpecificIce = false;
+    window.quoteEditorState.items.forEach(item => {
+        const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+        if (iceData) {
+            hasAnyIce = true;
+            if (iceData.specificUnit) hasSpecificIce = true;
+        }
+    });
+
+    const thQtyFis = document.getElementById('th-qty-fis');
+    if (thQtyFis) thQtyFis.classList.toggle('hidden', !hasSpecificIce);
+    const thIce = document.getElementById('th-ice');
+    if (thIce) thIce.classList.toggle('hidden', !hasAnyIce);
+    const tfootTotIce = document.getElementById('foot-tot-ice');
+    if (tfootTotIce) tfootTotIce.classList.toggle('hidden', !hasAnyIce);
+    const tfootTotalsLabel = document.getElementById('tfoot-totals-label');
+    if (tfootTotalsLabel) tfootTotalsLabel.colSpan = hasSpecificIce ? 6 : 5;
+
+    const tbody = document.getElementById('quote-items-tbody');
+    if (tbody) {
+        Array.from(tbody.children).forEach(tr => {
+            const qtyFisTd = tr.querySelector('.cell-qty-fis');
+            if (qtyFisTd) qtyFisTd.classList.toggle('hidden', !hasSpecificIce);
+            
+            const iceTd = tr.querySelector('.cell-ice');
+            if (iceTd) iceTd.classList.toggle('hidden', !hasAnyIce);
+        });
+    }
 };
 
 window.handleQuoteInputKeydown = function(e, element) {
@@ -5459,17 +5644,42 @@ window.renderQuoteItemsTable = function() {
     const tfoot = document.getElementById('quote-items-tfoot');
     
     if (window.quoteEditorState.items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="14" class="p-4 text-center text-gray-400 font-bold">Nenhum artigo adicionado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="15" class="p-4 text-center text-gray-400 font-bold">Nenhum artigo adicionado.</td></tr>`;
         if (tfoot) tfoot.classList.add('hidden');
         return;
     }
     
     if (tfoot) tfoot.classList.remove('hidden');
     
+    let hasAnyIce = false;
+    let hasSpecificIce = false;
+    window.quoteEditorState.items.forEach(item => {
+        const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+        if (iceData) {
+            hasAnyIce = true;
+            if (iceData.specificUnit) hasSpecificIce = true;
+        }
+    });
+
+    const thQtyFis = document.getElementById('th-qty-fis');
+    const thIce = document.getElementById('th-ice');
+    const tfootTotalsLabel = document.getElementById('tfoot-totals-label');
+    const tfootTotIce = document.getElementById('foot-tot-ice');
+
+    if (thQtyFis) thQtyFis.classList.toggle('hidden', !hasSpecificIce);
+    if (thIce) thIce.classList.toggle('hidden', !hasAnyIce);
+    if (tfootTotIce) tfootTotIce.classList.toggle('hidden', !hasAnyIce);
+    if (tfootTotalsLabel) tfootTotalsLabel.colSpan = hasSpecificIce ? 6 : 5;
+    
     tbody.innerHTML = window.quoteEditorState.items.map((item, index) => {
         const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
-        const iceRate = item.pauta ? getRateFromPauta(item.pauta, ['ICE', 'Consumo Especifico', 'Consumo Específico']) : 0;
+        const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
         const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
+        
+        let qtyFisicaInput = `<input type="text" disabled class="w-full text-xs text-center py-0.5 px-1 border-none bg-gray-50/50 text-gray-300 h-6 cursor-not-allowed" value="N/A" title="Não aplicável">`;
+        if (iceData && iceData.specificUnit) {
+            qtyFisicaInput = `<input type="number" class="w-full text-xs text-center py-0.5 px-1 border-none hover:bg-yellow-50 bg-yellow-50/30 text-yellow-800 font-bold outline-none focus:ring-0 h-6 placeholder-yellow-300" value="${item.qtyFisica || ''}" oninput="window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" placeholder="Uni: ${iceData.specificUnit}">`;
+        }
         
         let hsColorClass = 'text-indigo-700';
         if (item.hsCode && item.hsCode.length === 8) {
@@ -5487,6 +5697,9 @@ window.renderQuoteItemsTable = function() {
             </td>
             <td class="p-0 border-b border-r border-gray-100">
                 <input type="number" class="w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.qty}" oninput="window.updateQuoteRow(${item.id}, 'qty', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0">
+            </td>
+            <td class="p-0 border-b border-r border-gray-100 cell-qty-fis ${hasSpecificIce ? '' : 'hidden'}">
+                ${qtyFisicaInput}
             </td>
             <td class="p-0 border-b border-r border-gray-100">
                 <input type="number" class="w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.unitPrice}" oninput="window.updateQuoteRow(${item.id}, 'unitPrice', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0.00">
@@ -5509,8 +5722,8 @@ window.renderQuoteItemsTable = function() {
             <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-da leading-tight whitespace-nowrap">
                 ${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${(daRate*100).toFixed(0)}%)</span>
             </td>
-            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-ice leading-tight whitespace-nowrap">
-                ${formatCurrencyVal(item.iceValue)} <span class="text-[9px] text-gray-400">(${(iceRate*100).toFixed(0)}%)</span>
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-ice leading-tight whitespace-nowrap ${hasAnyIce ? '' : 'hidden'}">
+                ${formatCurrencyVal(item.iceValue)} <span class="text-[9px] text-gray-400">(${item.iceLabel || '0%'})</span>
             </td>
             <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-iva leading-tight whitespace-nowrap">
                 ${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${(ivaRate*100).toFixed(0)}%)</span>
@@ -5522,7 +5735,7 @@ window.renderQuoteItemsTable = function() {
             </td>
         </tr>
         `;
-    }).join('') + '<tr class="h-full"><td colspan="14" class="border-none bg-transparent p-0 m-0"></td></tr>';
+    }).join('') + '<tr class="h-full"><td colspan="15" class="border-none bg-transparent p-0 m-0"></td></tr>';
 };
 
 window.saveQuoteSimulation = function() {
