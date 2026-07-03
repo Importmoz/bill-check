@@ -2,11 +2,56 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients } from './api.js';
 
+export function getPaymentBankDisplay(payment) {
+    let rawBank = payment.bank;
+    if (Array.isArray(rawBank)) rawBank = rawBank[0];
+    let bankDisplay = String(rawBank || '—').toUpperCase();
+    
+    if (payment.account_owner) {
+        const ownerUpper = String(payment.account_owner).toUpperCase();
+        if (!bankDisplay.includes('BOSS') && !bankDisplay.includes('JUPITER')) {
+            if (ownerUpper.includes('BOSS') || ownerUpper.includes('FILIPE')) {
+                bankDisplay += ' BOSS';
+            } else if (ownerUpper.includes('JUPITER')) {
+                bankDisplay += ' JUPITER';
+            }
+        }
+    }
+    return bankDisplay;
+}
 /**
  * Controla o indicador de carregamento
  */
+window.quoteIsDirty = false;
+window.updateQuoteActionsUI = function() {
+    const btnQuote = document.getElementById('btn-switch-to-quote');
+    const btnSave = document.getElementById('btn-save-simulation');
+    
+    if (btnQuote) {
+        if (window.quoteEditorState && window.quoteEditorState.id) {
+            btnQuote.style.display = 'flex';
+        } else {
+            btnQuote.style.display = 'none';
+        }
+    }
+    
+    if (btnSave) {
+        if (!window.quoteEditorState || !window.quoteEditorState.id) {
+            btnSave.style.display = 'flex';
+            btnSave.innerHTML = '<i class="fas fa-save"></i> Gravar';
+        } else {
+            if (window.quoteIsDirty) {
+                btnSave.style.display = 'flex';
+                btnSave.innerHTML = '<i class="fas fa-sync-alt"></i> Atualizar';
+            } else {
+                btnSave.style.display = 'none';
+            }
+        }
+    }
+};
+
 export function setLoader(show, message = 'A Processar') {
     const loader = document.getElementById('loader');
     if (loader) {
@@ -316,7 +361,7 @@ export function renderTableDetails(onEditContainer) {
             <td class="row-container">${c.container_id_str}</td>
             <td class="cell-data">${formatMZN(duty)}</td>
             <td class="cell-data">${formatMZN(freight)}</td>
-            <td class="cell-data font-bold">${formatMZN(diff)}</td>
+            <td class="cell-data font-normal">${formatMZN(diff)}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -324,7 +369,7 @@ export function renderTableDetails(onEditContainer) {
     // Subtotal
     footer.innerHTML += `
         <tr class="h-8"><td></td><td></td><td></td><td></td></tr>
-        <tr class="font-bold bg-slate-50 text-[0.75rem]">
+        <tr class="font-normal bg-slate-50 text-[0.75rem]">
             <td class="text-center uppercase py-4">Total Bruto</td>
             <td class="text-center">${formatMZN(totalDuty)}</td>
             <td class="text-center">${formatMZN(totalFreight)}</td>
@@ -339,9 +384,9 @@ export function renderTableDetails(onEditContainer) {
         totalPaid += absAmount;
         footer.innerHTML += `
             <tr class="paid-row-style">
-                <td class="text-center uppercase font-bold py-3 border-r-0">Paid ${idx + 1}</td>
+                <td class="text-center uppercase font-normal py-3 border-r-0">Paid ${idx + 1}</td>
                 <td colspan="2" class="text-right italic pr-4 text-[9px] border-l-0">Liquidação via Caixa em ${new Date(p.payment_date).toLocaleDateString('pt-PT')}</td>
-                <td class="text-center font-bold text-green-800">(${formatMZN(absAmount)})</td>
+                <td class="text-center font-normal text-green-800">(${formatMZN(absAmount)})</td>
             </tr>
         `;
     });
@@ -357,7 +402,7 @@ export function renderTableDetails(onEditContainer) {
             <td colspan="2" class="text-right text-[9px] pr-4 italic font-normal text-slate-700">
                 ${isCredit ? 'Crédito Disponível' : 'Saldo Pendente (A Liquidar)'}
             </td>
-            <td class="text-center font-bold">${formatMZN(currentBalance)}</td>
+            <td class="text-center font-normal">${formatMZN(currentBalance)}</td>
         </tr>
     `;
 }
@@ -448,7 +493,7 @@ function createFinanceTable(sheets, onRemove) {
 
     table.innerHTML = `
         <thead>
-            <tr class="bg-slate-50 text-[9px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-700">
+            <tr class="bg-slate-50 text-[9px] font-normal uppercase tracking-widest text-slate-500 border-b border-slate-700">
                 <th class="p-3">Documento</th>
                 <th class="p-3 w-32">Grupo</th>
                 <th class="p-3 text-center">Duty Prep</th>
@@ -463,20 +508,20 @@ function createFinanceTable(sheets, onRemove) {
                 <tr class="group hover:bg-slate-50 transition-colors">
                     <td class="p-3">
                         <div class="flex flex-col">
-                            <span class="font-bold text-[10px] uppercase text-gray-900 leading-tight">${s.title}</span>
-                            <a href="${s.sourceUrl}" target="_blank" class="text-[8px] text-gray-400 hover:text-blue-600 transition-all font-medium mt-0.5 truncate max-w-[150px]">Link Original</a>
+                            <span class="font-normal text-[10px] uppercase text-gray-900 leading-tight">${s.title}</span>
+                            <a href="${s.sourceUrl}" target="_blank" class="text-[8px] text-gray-400 hover:text-blue-600 transition-all font-normal mt-0.5 truncate max-w-[150px]">Link Original</a>
                         </div>
                     </td>
                     <td class="p-3">
-                        <select onchange="window.moveFinanceSheet('${s.id}', this.value)" class="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1 text-[8px] font-black uppercase outline-none focus:border-black transition-all">
+                        <select onchange="window.moveFinanceSheet('${s.id}', this.value)" class="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1 text-[8px] font-normal uppercase outline-none focus:border-black transition-all">
                             <option value="">Sem Grupo</option>
                             ${state.finance.groups.map(g => `<option value="${g.id}" ${s.groupId === g.id ? 'selected' : ''}>${g.name}</option>`).join('')}
                         </select>
                     </td>
-                    <td class="p-3 text-center font-bold text-[10px] text-gray-600">${formatMZN(s.dutyPrepaid)}</td>
-                    <td class="p-3 text-center font-bold text-[10px] text-gray-900">${formatMZN(s.amountDuty)}</td>
-                    <td class="p-3 text-center font-bold text-[10px] text-green-700">${formatMZN(s.paid)}</td>
-                    <td class="p-3 text-center font-black text-[10px] ${s.balance > 0 ? 'text-red-700' : 'text-blue-700'}">${formatMZN(s.balance)}</td>
+                    <td class="p-3 text-center font-normal text-[10px] text-gray-600">${formatMZN(s.dutyPrepaid)}</td>
+                    <td class="p-3 text-center font-normal text-[10px] text-gray-900">${formatMZN(s.amountDuty)}</td>
+                    <td class="p-3 text-center font-normal text-[10px] text-green-700">${formatMZN(s.paid)}</td>
+                    <td class="p-3 text-center font-normal text-[10px] ${s.balance > 0 ? 'text-red-700' : 'text-blue-700'}">${formatMZN(s.balance)}</td>
                     <td class="p-3 text-right">
                         <button onclick="window.removeFinanceSheet('${s.id}')" class="text-gray-200 hover:text-red-600 transition-all">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
@@ -667,14 +712,14 @@ export function renderTeamTable(onEditRecord) {
     renderTeamSummary(totalPendency, visibleGroupsCount, stats.totalRecords, stats.completedRecords);
 
     footer.innerHTML = `
-        <tr class="bg-yellow-400 text-black font-black uppercase text-xs">
+        <tr class="bg-yellow-400 text-black font-normal uppercase text-xs">
             <td class="py-2 px-4 border-2 border-gray-800 text-center">PENDENTE</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.interna)}</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.maputo)}</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.matola)}</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.termos)}</td>
         </tr>
-        <tr class="bg-orange-500 text-black font-black uppercase text-sm export-only">
+        <tr class="bg-orange-500 text-black font-normal uppercase text-sm export-only">
             <td colspan="7" class="py-2 px-4 text-center border-2 border-gray-800">TOTAL GERAL PENDENTE</td>
             <td colspan="2" class="py-2 px-4 text-center border-2 border-gray-800">${formatMZN(totalPendency)}</td>
         </tr>
@@ -721,7 +766,7 @@ function createTeamRow(r, onEdit) {
     const paidClass = "bg-green-300"; // Cor para células individuais pagas
 
     tr.innerHTML = `
-        <td class="py-1 px-2 border border-gray-400 font-bold text-xs text-center">${r.container_id_str}</td>
+        <td class="py-1 px-2 border border-gray-400 font-normal text-xs text-center">${r.container_id_str}</td>
         
         <td class="py-1 px-2 border border-gray-400 text-xs text-center ${r.interna_paid ? paidClass : ''}">${r.interna_val || ''}</td>
         <td class="py-1 px-2 border border-gray-400 text-[11px] text-center italic ${r.interna_paid ? paidClass : ''}">${formatDateDisplay(r.interna_month) || ''}</td>
@@ -816,14 +861,14 @@ export function renderTermTable(onEditRecord) {
         tr.onclick = () => onEditRecord(r);
 
         tr.innerHTML = `
-            <td class="py-1 px-2 border border-gray-600 font-bold text-xs text-center">${r.container_id_str}</td>
+            <td class="py-1 px-2 border border-gray-600 font-normal text-xs text-center">${r.container_id_str}</td>
             <td class="py-1 px-2 border border-gray-600 text-xs text-center">${r.eta ? formatDateDisplay(r.eta) : ''}</td>
-            <td class="py-1 px-2 border border-gray-600 text-xs text-center font-bold">${tcs}</td>
+            <td class="py-1 px-2 border border-gray-600 text-xs text-center font-normal">${tcs}</td>
             <td class="py-1 px-2 border border-gray-600 text-xs text-center">${unit}</td>
             <td class="py-1 px-2 border border-gray-600 text-xs text-center">${formatMZN(value)}</td>
-            <td class="py-1 px-2 border border-gray-600 text-xs text-center font-bold">${formatMZN(fiftyPercent)}</td>
-            <td class="py-1 px-2 border border-gray-600 text-[10px] text-center font-black uppercase">${r.status}</td>
-            <td class="py-1 px-2 border border-gray-600 text-xs text-center font-bold">${formatMZN(balance)}</td>
+            <td class="py-1 px-2 border border-gray-600 text-xs text-center font-normal">${formatMZN(fiftyPercent)}</td>
+            <td class="py-1 px-2 border border-gray-600 text-[10px] text-center font-normal uppercase">${r.status}</td>
+            <td class="py-1 px-2 border border-gray-600 text-xs text-center font-normal">${formatMZN(balance)}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -846,17 +891,17 @@ export function renderTermTable(onEditRecord) {
     }
 
     footer.innerHTML = `
-        <tr class="bg-orange-400 font-black text-xs text-black">
+        <tr class="bg-orange-400 font-normal text-xs text-black">
             <td colspan="6" class="border-2 border-gray-800"></td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center uppercase">PENDING</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center">${formatMZN(totals.pending)}</td>
         </tr>
-        <tr class="bg-blue-300 font-black text-xs text-black">
+        <tr class="bg-blue-300 font-normal text-xs text-black">
             <td colspan="6" class="border-2 border-gray-800"></td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center uppercase">NEXT AFTER (${pendingMonthLabel})</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center">${formatMZN(totals.next)}</td>
         </tr>
-        <tr class="bg-green-500 font-black text-sm text-black">
+        <tr class="bg-green-500 font-normal text-sm text-black">
             <td colspan="6" class="border-2 border-gray-800"></td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center uppercase">TOTAL</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center">${formatMZN(totals.global)}</td>
@@ -1421,16 +1466,16 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
 
             tableRowsHtml += `
                 <tr id="${trId}" class="hover:bg-slate-50 border-b border-gray-100 transition-all cursor-pointer group">
-                    <td class="p-3 text-center font-black text-xs text-slate-800">${client.no || '—'}</td>
-                    <td class="p-3 font-bold text-xs uppercase text-slate-700 group-hover:text-black transition-colors">${client.displayName || 'Cliente Sem Nome'} ${tableLockHtml}</td>
-                    <td class="p-3 text-center text-xs font-semibold text-slate-500">${rowCount}</td>
-                    <td class="p-3 text-right font-black text-xs text-slate-800">${formatMZN(clientDuty)}</td>
+                    <td class="p-3 text-center font-normal text-xs text-slate-800">${client.no || '—'}</td>
+                    <td class="p-3 font-normal text-xs uppercase text-slate-700 group-hover:text-black transition-colors">${client.displayName || 'Cliente Sem Nome'} ${tableLockHtml}</td>
+                    <td class="p-3 text-center text-xs font-normal text-slate-500">${rowCount}</td>
+                    <td class="p-3 text-right font-normal text-xs text-slate-800">${formatMZN(clientDuty)}</td>
                     <td class="p-3 text-center">
                         <div class="flex items-center justify-center gap-2">
                             ${client.hasResponse ? `
-                                <span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 border border-indigo-200 animate-pulse flex items-center gap-1" title="Cliente já respondeu à nota de confirmação">💬 RESPONDIDO</span>
+                                <span class="text-[8px] font-normal uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 border border-indigo-200 animate-pulse flex items-center gap-1" title="Cliente já respondeu à nota de confirmação">💬 RESPONDIDO</span>
                             ` : ''}
-                            <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
+                            <span class="text-[8px] font-normal uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
                         </div>
                     </td>
                     <td class="p-3 text-center">
@@ -1713,23 +1758,23 @@ export async function showConfirmDetail(client, clientIndex) {
             });
 
             const bankSelectHtml = `
-                <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${originalIndex}, this.value)" class="py-0.5 px-1 text-slate-700 bg-slate-50 border border-slate-200 rounded text-[10px] font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
+                <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${originalIndex}, this.value)" class="py-0.5 px-1 text-slate-700 bg-slate-50 border border-slate-200 rounded text-[10px] font-normal focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
                     ${optionsHtml}
                 </select>
             `;
 
             tbodyHtml += `
                 <tr data-original-index="${originalIndex}" class="row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer ${isLockedByOther ? 'opacity-50 pointer-events-none' : ''}" ${isLockedByOther ? `title="A ser editado por ${lockInfo.user}"` : ''} onclick="ui.openConfirmEditModal(${index})">
-                    <td class="py-0.5 px-4 font-bold text-slate-800 text-[11px]">${orderNumber}</td>
+                    <td class="py-0.5 px-4 font-normal text-slate-800 text-[11px]">${orderNumber}</td>
                     <td class="py-0.5 px-4 text-center text-slate-600 text-[11px]">${cbm.toFixed(2)}</td>
-                    <td class="py-0.5 px-4 text-center font-semibold text-blue-700 text-[11px]">${formatValue(amountDuty)}</td>
+                    <td class="py-0.5 px-4 text-center font-normal text-blue-700 text-[11px]">${formatValue(amountDuty)}</td>
                     <td class="py-0.5 px-4 text-center text-slate-500 text-[11px]">${formatValue(dutyPrepaid)}</td>
-                    <td class="py-0.5 px-4 text-center font-bold text-green-600 text-[11px]">${formatValue(paid)}</td>
-                    <td class="py-0.5 px-4 text-center font-bold text-[11px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
+                    <td class="py-0.5 px-4 text-center font-normal text-green-600 text-[11px]">${formatValue(paid)}</td>
+                    <td class="py-0.5 px-4 text-center font-normal text-[11px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
                     <td class="py-0.5 px-4 text-center">${bankSelectHtml}</td>
                     <td class="py-0.5 px-4 text-center">
                         <button onclick="event.stopPropagation(); window.onConfirmRow(${originalIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
-                            class="px-1.5 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}"
+                            class="px-1.5 py-0.5 rounded font-normal text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}"
                             ${isLockedByOther ? 'disabled' : ''}>
                             ${isLockedByOther ? '🔒 ' : ''}${rowStatus}
                         </button>
@@ -1804,7 +1849,7 @@ export async function showConfirmDetail(client, clientIndex) {
             pmts.forEach((payment, idx) => {
                 html += `
                     <div class="grid grid-cols-2 gap-2 text-[11px] text-${color}-900 ${idx !== pmts.length - 1 ? `border-b border-${color}-100 pb-3` : ''}">
-                        <div><span class="font-bold text-${color}-700">Banco:</span> ${payment.bank || '---'}</div>
+                        <div><span class="font-bold text-${color}-700">Banco:</span> ${getPaymentBankDisplay(payment)}</div>
                         <div><span class="font-bold text-${color}-700">Titular da Conta:</span> ${payment.account_owner || '---'}</div>
                         <div><span class="font-bold text-${color}-700">Valor (MZN):</span> ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount)}</div>
                         <div><span class="font-bold text-${color}-700">Data:</span> ${payment.date ? payment.date.split(' ')[0] : '---'}</div>
@@ -1964,14 +2009,14 @@ export async function showConfirmDetail(client, clientIndex) {
                 <table class="w-full text-left border-collapse">
                     <thead class="bg-slate-50 border-bottom border-slate-200 text-slate-500">
                         <tr>
-                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider border-b border-slate-200">Order Number</th>
-                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">CBM</th>
-                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Amount Duty</th>
-                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Duty Prepaid</th>
-                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Paid</th>
-                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Balance</th>
-                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Bank in Duty</th>
-                            <th class="py-1 px-4 text-[10px] font-bold uppercase tracking-wider text-center border-b border-slate-200">Confirmação</th>
+                            <th class="py-1 px-4 text-[10px] font-normal uppercase tracking-wider border-b border-slate-200">Order Number</th>
+                            <th class="py-1 px-4 text-[10px] font-normal uppercase tracking-wider text-center border-b border-slate-200">CBM</th>
+                            <th class="py-1 px-4 text-[10px] font-normal uppercase tracking-wider text-center border-b border-slate-200">Amount Duty</th>
+                            <th class="py-1 px-4 text-[10px] font-normal uppercase tracking-wider text-center border-b border-slate-200">Duty Prepaid</th>
+                            <th class="py-1 px-4 text-[10px] font-normal uppercase tracking-wider text-center border-b border-slate-200">Paid</th>
+                            <th class="py-1 px-4 text-[10px] font-normal uppercase tracking-wider text-center border-b border-slate-200">Balance</th>
+                            <th class="py-1 px-4 text-[10px] font-normal uppercase tracking-wider text-center border-b border-slate-200">Bank in Duty</th>
+                            <th class="py-1 px-4 text-[10px] font-normal uppercase tracking-wider text-center border-b border-slate-200">Confirmação</th>
                         </tr>
                     </thead>
                     <tbody id="orders-tbody" class="divide-y divide-slate-100">
@@ -2341,7 +2386,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     });
 
     const bankSelectHtml = `
-        <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${rowIndex}, this.value)" class="py-0.5 px-1 text-slate-700 bg-slate-50 border border-slate-200 rounded text-[10px] font-bold focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
+        <select onclick="event.stopPropagation();" onchange="ui.changeBankInDuty(${rowIndex}, this.value)" class="py-0.5 px-1 text-slate-700 bg-slate-50 border border-slate-200 rounded text-[10px] font-normal focus:outline-blue-500 focus:bg-white transition-all max-w-[130px] inline-block" ${isLockedByOther ? 'disabled' : ''}>
             ${optionsHtml}
         </select>
     `;
@@ -2357,12 +2402,12 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     tr.onclick = () => ui.openConfirmEditModal(indexInActiveClient);
 
     tr.innerHTML = `
-        <td class="py-0.5 px-4 font-bold text-slate-800 text-[11px]">${orderNumber}</td>
+        <td class="py-0.5 px-4 font-normal text-slate-800 text-[11px]">${orderNumber}</td>
         <td class="py-0.5 px-4 text-center text-slate-600 text-[11px]">${cbm.toFixed(2)}</td>
-        <td class="py-0.5 px-4 text-center font-semibold text-blue-700 text-[11px]">${formatValue(amountDuty)}</td>
+        <td class="py-0.5 px-4 text-center font-normal text-blue-700 text-[11px]">${formatValue(amountDuty)}</td>
         <td class="py-0.5 px-4 text-center text-slate-500 text-[11px]">${formatValue(dutyPrepaid)}</td>
-        <td class="py-0.5 px-4 text-center font-bold text-green-600 text-[11px]">${formatValue(paid)}</td>
-        <td class="py-0.5 px-4 text-center font-bold text-[11px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
+        <td class="py-0.5 px-4 text-center font-normal text-green-600 text-[11px]">${formatValue(paid)}</td>
+        <td class="py-0.5 px-4 text-center font-normal text-[11px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
         <td class="py-0.5 px-4 text-center">${bankSelectHtml}</td>
         <td class="py-0.5 px-4 text-center">
             <button onclick="event.stopPropagation(); window.onConfirmRow(${rowIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
@@ -3622,7 +3667,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
             const trId = `tr-proj-${p.id}`;
             tableRowsHtml += `
                 <tr id="${trId}" class="hover:bg-slate-50 border-b border-gray-100 transition-all cursor-pointer group">
-                    <td class="p-3 font-black text-xs uppercase text-slate-700 group-hover:text-black transition-colors flex items-center gap-2">
+                    <td class="p-3 font-normal text-xs uppercase text-slate-700 group-hover:text-black transition-colors flex items-center gap-2">
                         <div class="bg-yellow-400 text-black w-6 h-6 rounded-md flex items-center justify-center shrink-0 shadow-sm">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                         </div>
@@ -4045,7 +4090,7 @@ export function renderBankIncomes() {
     }
 
     let html = `
-        <table class="min-w-full text-left text-[10px] font-bold uppercase tracking-tighter">
+        <table class="min-w-full text-left text-[10px] font-normal uppercase tracking-tighter">
             <thead class="bg-gray-50 text-gray-400">
                 <tr>
                     <th class="py-3 px-4">Data</th>
@@ -4068,7 +4113,7 @@ export function renderBankIncomes() {
         html += `
             <tr class="hover:bg-gray-50 transition-colors">
                 <td class="py-3 px-4 text-gray-500 whitespace-nowrap">${item.date.split(' ')[0]}</td>
-                <td class="py-3 px-4"><span class="bg-gray-100 px-2 py-1 rounded">${item.bank}</span></td>
+                <td class="py-3 px-4"><span class="bg-gray-100 px-2 py-1 rounded">${getPaymentBankDisplay(item)}</span></td>
                 <td class="py-3 px-4 text-gray-900 max-w-xs truncate" title="${item.description}">${item.description}</td>
                 <td class="py-3 px-4 ${amountClass}">${formatMZN(item.amount)}</td>
                 <td class="py-3 px-4 text-gray-400">${formatMZN(item.balance)}</td>
@@ -4076,7 +4121,7 @@ export function renderBankIncomes() {
                     ${item.order_id ? `<span class="bg-purple-100 text-purple-700 px-2 py-1 rounded">${item.order_id}</span>` : '<span class="text-gray-200">---</span>'}
                 </td>
                 <td class="py-3 px-4 text-center">
-                    <span class="px-2 py-1 rounded-full text-[8px] font-black ${statusClass}">${statusText}</span>
+                    <span class="px-2 py-1 rounded-full text-[8px] font-normal ${statusClass}">${statusText}</span>
                 </td>
             </tr>
         `;
@@ -4294,14 +4339,16 @@ export async function searchPaymentMiniFilter() {
                 const dateStr = rec.date ? rec.date.split(' ')[0] : '—';
                 const amountFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(rec.amount);
 
+                const bankDisplay = getPaymentBankDisplay(rec);
+
                 tr.innerHTML = `
                     <td class="px-3 py-2 text-center" onclick="event.stopPropagation();">
                         <input type="checkbox" ${checkedAttr} onchange="ui.togglePaymentSelection('${rec.id}', '${rec.date}', '${refText.replace(/'/g, "\\'")}', parseFloat('${rec.amount}'))" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
                     </td>
                     <td class="px-4 py-3 whitespace-nowrap">${dateStr}</td>
-                    <td class="px-4 py-3 font-semibold text-slate-700">${rec.bank || '—'}</td>
+                    <td class="px-4 py-3 font-normal text-slate-700">${bankDisplay}</td>
                     <td class="px-4 py-3 text-slate-600 truncate max-w-xs" title="${rec.description}">${rec.description || rec.reference || '—'}</td>
-                    <td class="px-4 py-3 text-right font-bold text-green-600">${amountFormatted}</td>
+                    <td class="px-4 py-3 text-right font-normal text-green-600">${amountFormatted}</td>
                 `;
                 tbody.appendChild(tr);
             });
@@ -4566,8 +4613,8 @@ export async function confirmPaymentSelection() {
                         rowData[statusIdx] = newStatus;
                     }
 
-                    if (newStatus !== 'CONFIRMADO' && !isFreight && notaDutyIdx !== -1) {
-                        // Se o status for diferente de Confirmado, limpar a Nota Duty (resposta do operador)
+                    if (!isFreight && notaDutyIdx !== -1) {
+                        // Limpar a Nota Duty (resposta do operador) sempre que um pagamento é vinculado
                         rowData[notaDutyIdx] = '';
                     }
 
@@ -4603,7 +4650,7 @@ export async function confirmPaymentSelection() {
                     if (statusIdx !== -1 && !isFreight) {
                         batchUpdates.push({ range: `${prefixClean}${getColLetter(statusIdx)}${sheetRowNumber}`, values: [[rowData[statusIdx]]] });
                     }
-                    if (newStatus !== 'CONFIRMADO' && !isFreight && notaDutyIdx !== -1) {
+                    if (!isFreight && notaDutyIdx !== -1) {
                         batchUpdates.push({ range: `${prefixClean}${getColLetter(notaDutyIdx)}${sheetRowNumber}`, values: [['']] });
                     }
                     if (isFreight && !firstRowPassed) {
@@ -4787,14 +4834,14 @@ export async function loadSettingsUsers() {
     const tbody = document.getElementById('settings-users-tbody');
     if (!tbody) return;
     
-    tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-gray-500 font-bold">A carregar utilizadores...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-gray-500 font-normal">A carregar utilizadores...</td></tr>';
     
     try {
         const users = await getSettingsUsers();
         tbody.innerHTML = '';
         
         if (users.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-gray-400 font-bold">Nenhum utilizador encontrado.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="p-6 text-center text-gray-400 font-normal">Nenhum utilizador encontrado.</td></tr>';
             return;
         }
         
@@ -4817,7 +4864,7 @@ export async function loadSettingsUsers() {
             const tr = document.createElement('tr');
             tr.className = 'border-b-2 border-gray-100 hover:bg-gray-50 transition-colors';
             tr.innerHTML = `
-                <td class="px-6 py-4 font-bold text-gray-900">${user.name || '---'}</td>
+                <td class="px-6 py-4 font-normal text-gray-900">${user.name || '---'}</td>
                 <td class="px-6 py-4 text-gray-600">${user.email || '<span class="text-gray-400 italic">Oculto</span>'}</td>
                 <td class="px-6 py-4">${roleBadge}</td>
                 <td class="px-6 py-4 flex flex-wrap gap-1">${permsHtml}</td>
@@ -4840,7 +4887,7 @@ export async function loadSettingsUsers() {
         
     } catch (err) {
         console.error(err);
-        tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-red-500 font-bold">Erro: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-red-500 font-normal">Erro: ${err.message}</td></tr>`;
     }
 }
 
@@ -5069,31 +5116,51 @@ export function renderQuoteDashboard() {
 
     filtered.forEach(q => {
         const payload = q.payload || {};
-        const code = payload.itemCode || '---';
-        const fob = parseFloat(payload.fob) || 0;
-        const total = parseFloat(payload.results?.totalImport) || 0;
+        
+        let hsCodeText = 'Múltiplos';
+        let fob = 0;
+        let total = 0;
+        
+        if (payload.items && payload.items.length > 0) {
+            const hsCodes = payload.items.map(i => i.hsCode).filter(Boolean);
+            if (hsCodes.length > 0) {
+                hsCodeText = hsCodes.slice(0, 2).join(', ');
+                if (hsCodes.length > 2) hsCodeText += '...';
+            } else {
+                hsCodeText = 'S/ Pauta';
+            }
+            fob = payload.totals?.fobForeign || 0;
+            total = payload.totals?.grandTotalMzn || 0;
+        } else {
+            hsCodeText = payload.itemCode || '---';
+            fob = parseFloat(payload.fob) || 0;
+            total = parseFloat(payload.results?.totalImport) || 0;
+        }
         
         const card = document.createElement('div');
-        card.className = "bg-white p-4 rounded-2xl border-2 border-gray-100 hover:border-indigo-500 cursor-pointer transition-all relative group shadow-sm";
+        card.className = "bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group transition-all hover:shadow hover:border-gray-300 hover:bg-gray-50/50 cursor-pointer active:scale-[0.98] relative";
         card.onclick = () => window.loadSavedQuote(q.id);
 
         card.innerHTML = `
-            <div class="flex justify-between items-start mb-2">
-                <span class="text-[9px] font-black text-gray-400 uppercase tracking-wider">${q.quote_number || 'S/N'}</span>
-                <button onclick="event.stopPropagation(); window.handleDeleteQuote('${q.id}')" class="text-gray-300 hover:text-red-500 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            <div class="flex items-center gap-3 overflow-hidden w-full">
+                <div class="bg-gray-50 text-gray-400 w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-gray-100 group-hover:scale-105 group-hover:bg-gray-100 group-hover:text-gray-600 transition-all duration-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
                     </svg>
-                </button>
+                </div>
+                <div class="overflow-hidden pr-8 w-full">
+                    <h3 class="text-[13px] font-bold text-gray-700 tracking-tight leading-none truncate group-hover:text-black transition-colors" title="${q.client_name}">${q.client_name}</h3>
+                    <p class="text-[9px] text-gray-400 font-bold uppercase mt-1.5 leading-none tracking-wider">${q.quote_number || 'S/N'}</p>
+                </div>
             </div>
-            <h4 class="text-sm font-black text-gray-900 group-hover:text-indigo-600 truncate mb-1" title="${q.client_name}">${q.client_name}</h4>
-            <div class="flex items-center gap-2 mb-3">
-                <span class="text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-100">HS: ${code}</span>
-            </div>
-            <div class="flex justify-between items-end border-t border-gray-100 pt-2">
-                <span class="text-[9px] font-black text-gray-500 uppercase">Total Estimado</span>
-                <span class="text-xs font-black text-gray-900">${formatMZN(total)}</span>
-            </div>
+            
+            <button onclick="event.stopPropagation(); window.handleDeleteQuote('${q.id}')" class="absolute top-1/2 -translate-y-1/2 right-3 w-8 h-8 bg-white text-slate-300 rounded-xl flex items-center justify-center hover:bg-red-500 hover:text-white transition-all border border-slate-100 opacity-0 group-hover:opacity-100 active:scale-90 shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
         `;
         list.appendChild(card);
     });
@@ -5119,8 +5186,8 @@ document.addEventListener('input', (e) => {
                 if (res) res.classList.add('hidden');
                 return;
             }
-            if (api) {
-                api.searchPauta(val, 20).then(results => {
+            if (typeof searchPauta === 'function') {
+                searchPauta(val, 20).then(results => {
                     renderPautaSearchResults(results);
                 }).catch(err => console.error(err));
             }
@@ -5181,15 +5248,15 @@ window.selectPautaItem = function(item) {
             const val = d['Taxa'] || d['Value'] || 'N/A';
             tbody.innerHTML += `
                 <tr>
-                    <td class="px-4 py-2 text-xs font-bold text-gray-700">${name}</td>
+                    <td class="px-4 py-2 text-xs font-normal text-gray-700">${name}</td>
                     <td class="px-4 py-2 text-center">
-                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-100">${val}</span>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-normal bg-indigo-50 text-indigo-700 border border-indigo-100">${val}</span>
                     </td>
                 </tr>
             `;
         });
     } else {
-        tbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-center text-xs font-bold text-gray-400 italic">Nenhuma taxa definida.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="2" class="px-4 py-4 text-center text-xs font-normal text-gray-400 italic">Nenhuma taxa definida.</td></tr>`;
     }
     
     // Reset inputs
@@ -5219,6 +5286,8 @@ window.quoteEditorState = {
         iceMzn: 0,
         ivaMzn: 0,
         tsaMzn: 0,
+        mcnetMzn: 0,
+        tsaFixedMzn: 0,
         grandTotalMzn: 0
     }
 };
@@ -5229,6 +5298,16 @@ window.openQuoteEditor = function() {
     document.getElementById('quote-editor-workspace').classList.add('flex');
     window.renderQuoteItemsTable();
     window.calculateFullInvoice();
+    
+    // Assegura que o UI do cliente é atualizado com os dados carregados na quote
+    if (window.syncClientUIDisplay) {
+        window.syncClientUIDisplay();
+    }
+
+    // Inicializa abrindo a aba Draft por defeito
+    window.switchQuoteTab('draft');
+
+    if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
 };
 
 window.closeQuoteEditor = function() {
@@ -5255,17 +5334,59 @@ window.toggleQuoteSidebar = function() {
     }
 };
 
+window.handleQuoteModeChange = function() {
+    const mode = document.getElementById('input-quote-mode').value;
+    window.quoteEditorState.mode = mode;
+    window.quoteIsDirty = true;
+    
+    const subModeSelect = document.getElementById('input-quote-submode');
+    const subModeContainer = document.getElementById('container-quote-submode');
+    if (mode === 'Maritimo') {
+        if (subModeContainer) subModeContainer.classList.remove('hidden');
+        else subModeSelect.classList.remove('hidden');
+    } else {
+        if (subModeContainer) subModeContainer.classList.add('hidden');
+        else subModeSelect.classList.add('hidden');
+        subModeSelect.value = '';
+        window.quoteEditorState.subMode = '';
+    }
+    if (mode === 'Aereo') {
+        const freightInput = document.getElementById('input-global-freight');
+        const insuranceInput = document.getElementById('input-global-insurance');
+        if (freightInput) freightInput.value = '';
+        if (insuranceInput) insuranceInput.value = '';
+    }
+    
+    if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    if (typeof window.calculateFullInvoice === 'function') window.calculateFullInvoice();
+};
+
+window.handleQuoteSubModeChange = function() {
+    window.quoteEditorState.subMode = document.getElementById('input-quote-submode').value;
+    window.quoteIsDirty = true;
+    if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+};
+
 window.startNewQuote = function() {
+    window.quoteIsDirty = true;
     window.quoteEditorState = {
         id: null,
         currency: 'USD',
         exchangeRate: 64.00,
+        mode: '',
+        subMode: '',
         items: [],
-        totals: { fobForeign: 0, freightForeign: 0, insForeign: 0, cifMzn: 0, daMzn: 0, iceMzn: 0, ivaMzn: 0, tsaMzn: 0, grandTotalMzn: 0 }
+        totals: { fobForeign: 0, freightForeign: 0, insForeign: 0, cifMzn: 0, daMzn: 0, iceMzn: 0, ivaMzn: 0, tsaMzn: 0, mcnetMzn: 0, tsaFixedMzn: 0, grandTotalMzn: 0 }
     };
     
     document.getElementById('input-quote-currency').value = 'USD';
     document.getElementById('input-quote-exchange').value = '64.00';
+    document.getElementById('input-quote-mode').value = '';
+    document.getElementById('input-quote-submode').value = '';
+    const subModeCont = document.getElementById('container-quote-submode');
+    if (subModeCont) subModeCont.classList.add('hidden');
+    else document.getElementById('input-quote-submode').classList.add('hidden');
+    
     document.getElementById('input-global-freight').value = '';
     document.getElementById('input-global-insurance').value = '';
     document.getElementById('input-global-others').value = '';
@@ -5280,8 +5401,10 @@ window.addQuoteRow = function() {
         id: Date.now() + Math.random(),
         description: '',
         hsCode: '',
-        qty: 1,
-        qtyFisica: 1,
+        qty: '',
+        qtyFisica: '',
+        iceAlcoholPercent: '',
+        iceSugarGrams: '',
         unitPrice: '',
         fob: 0,
         freight: null,
@@ -5311,14 +5434,14 @@ window.updateQuoteRow = function(id, field, value) {
     if (field === 'freight' || field === 'insurance' || field === 'others') {
         item[field] = value === '' ? null : parseFloat(value);
     } else if (field === 'qty') {
-        item.qty = parseFloat(value) || 0;
+        item.qty = value;
         // Auto-sync qty to qtyFisica se a unidade física for Peças/Unidades (PST)
         const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
         if (iceData && iceData.specificUnit && iceData.specificUnit.includes('PST')) {
             item.qtyFisica = item.qty;
         }
-    } else if (field === 'unitPrice' || field === 'qtyFisica') {
-        item[field] = parseFloat(value) || 0;
+    } else if (field === 'unitPrice' || field === 'qtyFisica' || field === 'iceAlcoholPercent' || field === 'iceSugarGrams') {
+        item[field] = value;
     } else {
         item[field] = value;
     }
@@ -5351,20 +5474,80 @@ window.updateQuoteRow = function(id, field, value) {
     window.updateRowDOM(item);
 };
 
+window.getQtyFisicaModeAndHTML = function(item) {
+    const hsPrefix = (item.hsCode || '').substring(0, 4);
+    const isAlcohol = ['2203', '2204', '2205', '2206', '2208'].includes(hsPrefix);
+    const isSugar = hsPrefix === '2202';
+    const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+    
+    if (isAlcohol) {
+        return {
+            mode: 'alcohol',
+            html: `
+                <div class="flex flex-row gap-0.5 w-full">
+                    <div class="flex items-center bg-yellow-50/30 hover:bg-yellow-50 w-1/2 rounded overflow-hidden">
+                        <input type="number" step="any" class="input-qty-fisica w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-5 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Litros" title="Quantidade em Litros">
+                        <span class="text-[8px] text-yellow-600 pr-1 font-semibold select-none">L</span>
+                    </div>
+                    <div class="flex items-center bg-purple-50/30 hover:bg-purple-50 w-1/2 rounded overflow-hidden">
+                        <input type="number" step="any" class="input-ice-extra w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-purple-800 font-normal outline-none focus:ring-0 h-5 placeholder-purple-400" value="${item.iceAlcoholPercent || ''}" oninput="window.updateQuoteRow(${item.id}, 'iceAlcoholPercent', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Alc" title="Teor Alcoólico (%)">
+                        <span class="text-[8px] text-purple-600 pr-1 font-semibold select-none">%</span>
+                    </div>
+                </div>
+            `
+        };
+    } else if (isSugar) {
+        return {
+            mode: 'sugar',
+            html: `
+                <div class="flex flex-row gap-0.5 w-full">
+                    <div class="flex items-center bg-yellow-50/30 hover:bg-yellow-50 w-1/2 rounded overflow-hidden">
+                        <input type="number" step="any" class="input-qty-fisica w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-5 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Litros" title="Quantidade em Litros">
+                        <span class="text-[8px] text-yellow-600 pr-1 font-semibold select-none">L</span>
+                    </div>
+                    <div class="flex items-center bg-pink-50/30 hover:bg-pink-50 w-1/2 rounded overflow-hidden">
+                        <input type="number" step="any" class="input-ice-extra w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-pink-800 font-normal outline-none focus:ring-0 h-5 placeholder-pink-400" value="${item.iceSugarGrams || ''}" oninput="window.updateQuoteRow(${item.id}, 'iceSugarGrams', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Teor" title="Teor de Açúcar (gramas por 100ml)">
+                        <span class="text-[7px] text-pink-600 pr-0.5 font-semibold select-none leading-none">g/100m</span>
+                    </div>
+                </div>
+            `
+        };
+    } else if (iceData && iceData.specificUnit) {
+        return {
+            mode: 'specific',
+            html: `
+                <div class="flex items-center bg-yellow-50/30 hover:bg-yellow-50 w-full rounded overflow-hidden">
+                    <input type="number" step="any" class="input-qty-fisica w-full text-[10px] text-right py-0 px-1 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-6 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Qtd" title="Quantidade (${iceData.specificUnit})">
+                    <span class="text-[8px] text-yellow-600 pr-1 font-semibold select-none">${iceData.specificUnit}</span>
+                </div>
+            `
+        };
+    } else {
+        return {
+            mode: 'disabled',
+            html: `<input type="text" class="input-qty-fisica w-full text-xs text-center py-0.5 px-1 border-none bg-gray-50/50 text-gray-300 h-6 cursor-not-allowed" disabled value="N/A" title="Não aplicável">`
+        };
+    }
+};
+
 window.updateRowDOM = function(item) {
     const tr = document.getElementById(`row-${item.id}`);
     if (!tr) return;
     
     const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
+    const tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
     const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
     
     tr.querySelector('.cell-fob').innerText = formatCurrencyVal(item.fob);
     tr.querySelector('.cell-cif').innerText = formatCurrencyVal(item.cifMzn);
-    tr.querySelector('.cell-da').innerHTML = `${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${(daRate*100).toFixed(0)}%)</span>`;
+    tr.querySelector('.cell-da').innerHTML = `${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${parseFloat((daRate*100).toFixed(2))}%)</span>`;
+    if (tr.querySelector('.cell-tsa')) {
+        tr.querySelector('.cell-tsa').innerHTML = `${formatCurrencyVal(item.tsaValue || 0)} <span class="text-[9px] text-gray-400">(${parseFloat((tsaRate*100).toFixed(2))}%)</span>`;
+    }
     if (tr.querySelector('.cell-ice')) {
         tr.querySelector('.cell-ice').innerHTML = `${formatCurrencyVal(item.iceValue || 0)} <span class="text-[9px] text-gray-400">(${item.iceLabel || '0%'})</span>`;
     }
-    tr.querySelector('.cell-iva').innerHTML = `${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${(ivaRate*100).toFixed(0)}%)</span>`;
+    tr.querySelector('.cell-iva').innerHTML = `${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${parseFloat((ivaRate*100).toFixed(2))}%)</span>`;
 
     const inFrt = tr.querySelector('.input-readonly-freight');
     if (inFrt) inFrt.value = formatCurrencyVal(item.actualFreight || 0);
@@ -5373,15 +5556,30 @@ window.updateRowDOM = function(item) {
     const inOth = tr.querySelector('.input-readonly-others');
     if (inOth) inOth.value = formatCurrencyVal(item.actualOthers || 0);
 
-    const inputs = tr.querySelectorAll('input[type="number"]');
-    if (inputs.length >= 3) {
-        inputs[0].value = item.qty;
-        // The qtyFisica input is at index 1, if it exists and is enabled
-        if (!inputs[1].disabled) {
-            inputs[1].value = item.qtyFisica;
+    const qtyObj = window.getQtyFisicaModeAndHTML(item);
+    const qtyCell = tr.querySelector('.cell-qty-fis');
+    if (qtyCell) {
+        const currentMode = qtyCell.getAttribute('data-current-mode');
+        if (currentMode !== qtyObj.mode) {
+            qtyCell.innerHTML = qtyObj.html;
+            qtyCell.setAttribute('data-current-mode', qtyObj.mode);
         }
-        inputs[2].value = item.unitPrice;
     }
+
+    const inQty = tr.querySelector('.input-qty');
+    if (inQty && document.activeElement !== inQty) inQty.value = item.qty;
+    
+    const inQtyFis = tr.querySelector('.input-qty-fisica');
+    if (inQtyFis && !inQtyFis.disabled && document.activeElement !== inQtyFis) inQtyFis.value = item.qtyFisica;
+    
+    const inIceExtra = tr.querySelector('.input-ice-extra');
+    if (inIceExtra && document.activeElement !== inIceExtra) {
+        if (qtyObj.mode === 'alcohol') inIceExtra.value = item.iceAlcoholPercent;
+        else if (qtyObj.mode === 'sugar') inIceExtra.value = item.iceSugarGrams;
+    }
+    
+    const inUnitPrice = tr.querySelector('.input-unit-price');
+    if (inUnitPrice && document.activeElement !== inUnitPrice) inUnitPrice.value = item.unitPrice;
 
     const hsInput = tr.querySelector('.input-hscode');
     if (hsInput) {
@@ -5450,6 +5648,8 @@ function getComplexRateFromPauta(pautaItem, nameFragments) {
 }
 
 window.calculateFullInvoice = function() {
+    window.quoteIsDirty = true;
+    if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
     const curr = document.getElementById('input-quote-currency').value.toUpperCase() || 'USD';
     const excRate = parseFloat(document.getElementById('input-quote-exchange').value) || 64.00;
     
@@ -5495,26 +5695,56 @@ window.calculateFullInvoice = function() {
         const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
         const tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
         
+        const hsPrefix = item.hsCode.substring(0, 4);
+        const isAlcohol = ['2203', '2204', '2205', '2206', '2208'].includes(hsPrefix);
+        const isSugar = hsPrefix === '2202';
+
         // NEW ICE Calculation Logic
-        const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+        let iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+        
+        // --- INICIO: Fallbacks Manuais exigidos pelo cliente ---
+        if (!iceData) {
+            if (isAlcohol) {
+                let fbTax = 455;
+                if (hsPrefix === '2203') fbTax = 423;
+                else if (hsPrefix === '2204') fbTax = 610;
+                iceData = { adValorem: 0, specificAmount: fbTax, specificUnit: 'L', operator: 'none', raw: fbTax + ' MT / Alc 100%' };
+            } else if (isSugar) {
+                iceData = { adValorem: 0, specificAmount: 0.0133, specificUnit: 'L', operator: 'none', raw: '0.0133 MT / gr' };
+            }
+        }
+        // --- FIM Fallbacks Manuais ---
+        
         let iceAdValorem = 0;
         let iceSpecific = 0;
         let appliedIceRateLabel = '0%';
 
         if (iceData) {
             iceAdValorem = cifMzn * iceData.adValorem;
-            iceSpecific = (item.qtyFisica || 0) * iceData.specificAmount;
+            const qFis = parseFloat(String(item.qtyFisica).replace(',', '.')) || 0;
+            const alcPct = parseFloat(String(item.iceAlcoholPercent).replace(',', '.')) || 0;
+            const sugGr = parseFloat(String(item.iceSugarGrams).replace(',', '.')) || 0;
+
+            iceSpecific = qFis * iceData.specificAmount;
+            
+            if (isAlcohol) {
+                // ICE = Taxa (ice) X Qdt (litros) X Teor de álcool contido num litro
+                iceSpecific = iceData.specificAmount * qFis * (alcPct / 100);
+            } else if (isSugar) {
+                // ICE = Taxa X Teor de açúcar contido em 100 ml X 10 X Qdt.(litros)
+                iceSpecific = iceData.specificAmount * sugGr * 10 * qFis;
+            }
 
             if (iceData.operator === 'or') {
                 item.iceValue = Math.max(iceAdValorem, iceSpecific);
                 appliedIceRateLabel = iceAdValorem > iceSpecific 
-                    ? `${(iceData.adValorem*100).toFixed(0)}%` 
+                    ? `${parseFloat((iceData.adValorem*100).toFixed(2))}%` 
                     : `${iceData.specificAmount} MT/${iceData.specificUnit}`;
             } else {
                 item.iceValue = iceSpecific || iceAdValorem;
                 appliedIceRateLabel = iceSpecific > 0 
-                    ? `${iceData.specificAmount} MT/${iceData.specificUnit}` 
-                    : `${(iceData.adValorem*100).toFixed(0)}%`;
+                    ? (isAlcohol ? `${iceData.specificAmount} MT/Alc100%` : (isSugar ? `${iceData.specificAmount} MT/gr` : `${iceData.specificAmount} MT/${iceData.specificUnit}`)) 
+                    : `${parseFloat((iceData.adValorem*100).toFixed(2))}%`;
             }
         } else {
             item.iceValue = 0;
@@ -5528,7 +5758,7 @@ window.calculateFullInvoice = function() {
         item.daValue = cifMzn * daRate;
         item.tsaValue = cifMzn * tsaRate;
         
-        const ivaBase = cifMzn + item.daValue + item.iceValue;
+        const ivaBase = cifMzn + item.daValue + item.iceValue + item.tsaValue;
         item.ivaValue = ivaBase * ivaRate;
         
         tFob += item.fob;
@@ -5545,11 +5775,24 @@ window.calculateFullInvoice = function() {
         window.updateRowDOM(item);
     });
     
-    const grandTotal = tCifMzn + tDaMzn + tIceMzn + tIvaMzn + tTsaMzn;
+    let mcnetUsd = 0;
+    if (tFob < 500) {
+        mcnetUsd = 5;
+    } else if (tFob >= 500 && tFob <= 10000) {
+        mcnetUsd = 24;
+    } else if (tFob > 10000 && tFob <= 50000) {
+        mcnetUsd = 64;
+    } else if (tFob > 50000) {
+        mcnetUsd = tFob * 0.0085;
+    }
+    const tMcnetMzn = mcnetUsd * excRate;
+    const tsaFixedMzn = 1000;
+
+    const grandTotal = tCifMzn + tDaMzn + tIceMzn + tIvaMzn + tTsaMzn + tMcnetMzn + tsaFixedMzn;
     
     window.quoteEditorState.totals = {
         fobForeign: tFob, freightForeign: tFrt, insForeign: tIns, othForeign: tOth,
-        cifMzn: tCifMzn, daMzn: tDaMzn, iceMzn: tIceMzn, ivaMzn: tIvaMzn, tsaMzn: tTsaMzn,
+        cifMzn: tCifMzn, daMzn: tDaMzn, iceMzn: tIceMzn, ivaMzn: tIvaMzn, tsaMzn: tTsaMzn, mcnetMzn: tMcnetMzn, tsaFixedMzn: tsaFixedMzn,
         grandTotalMzn: grandTotal
     };
     const setTxt = (id, val) => {
@@ -5581,20 +5824,35 @@ window.calculateFullInvoice = function() {
     if (gOthInput) gOthInput.placeholder = formatCurrencyVal(tOth);
     setTxt('foot-tot-cif', formatCurrencyVal(tCifMzn));
     setTxt('foot-tot-da', formatCurrencyVal(tDaMzn));
+    setTxt('foot-tot-tsa', formatCurrencyVal(tTsaMzn));
     setTxt('foot-tot-ice', formatCurrencyVal(tIceMzn));
     setTxt('foot-tot-iva', formatCurrencyVal(tIvaMzn));
+    
+    const tTotalTaxas = tDaMzn + tTsaMzn + tIceMzn + tIvaMzn + tMcnetMzn + tsaFixedMzn;
+    setTxt('global-tot-imposicoes', formatCurrencyVal(tTotalTaxas) + ' MT');
 
-    window.toggleIceColumnsVisibility();
+    window.toggleDynamicColumnsVisibility();
+    window.syncInvoiceLinesFromDraft();
 };
 
-window.toggleIceColumnsVisibility = function() {
+window.toggleDynamicColumnsVisibility = function() {
     let hasAnyIce = false;
     let hasSpecificIce = false;
+    let hasAnyTsa = false;
     window.quoteEditorState.items.forEach(item => {
-        const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
-        if (iceData) {
+        let iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+        let tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
+        const hsPrefix = item.hsCode.substring(0, 4);
+        const isAlcohol = ['2203', '2204', '2205', '2206', '2208'].includes(hsPrefix);
+        const isSugar = hsPrefix === '2202';
+        
+        if (tsaRate > 0) hasAnyTsa = true;
+        
+        if (iceData || isAlcohol || isSugar) {
             hasAnyIce = true;
-            if (iceData.specificUnit) hasSpecificIce = true;
+            if ((iceData && iceData.specificUnit) || isAlcohol || isSugar) {
+                hasSpecificIce = true;
+            }
         }
     });
 
@@ -5602,8 +5860,12 @@ window.toggleIceColumnsVisibility = function() {
     if (thQtyFis) thQtyFis.classList.toggle('hidden', !hasSpecificIce);
     const thIce = document.getElementById('th-ice');
     if (thIce) thIce.classList.toggle('hidden', !hasAnyIce);
+    const thTsa = document.getElementById('th-tsa');
+    if (thTsa) thTsa.classList.toggle('hidden', !hasAnyTsa);
     const tfootTotIce = document.getElementById('foot-tot-ice');
     if (tfootTotIce) tfootTotIce.classList.toggle('hidden', !hasAnyIce);
+    const tfootTotTsa = document.getElementById('foot-tot-tsa');
+    if (tfootTotTsa) tfootTotTsa.classList.toggle('hidden', !hasAnyTsa);
     const tfootTotalsLabel = document.getElementById('tfoot-totals-label');
     if (tfootTotalsLabel) tfootTotalsLabel.colSpan = hasSpecificIce ? 6 : 5;
 
@@ -5615,6 +5877,9 @@ window.toggleIceColumnsVisibility = function() {
             
             const iceTd = tr.querySelector('.cell-ice');
             if (iceTd) iceTd.classList.toggle('hidden', !hasAnyIce);
+            
+            const tsaTd = tr.querySelector('.cell-tsa');
+            if (tsaTd) tsaTd.classList.toggle('hidden', !hasAnyTsa);
         });
     }
 };
@@ -5644,7 +5909,7 @@ window.renderQuoteItemsTable = function() {
     const tfoot = document.getElementById('quote-items-tfoot');
     
     if (window.quoteEditorState.items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="15" class="p-4 text-center text-gray-400 font-bold">Nenhum artigo adicionado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="15" class="p-4 text-center text-gray-400 font-normal">Nenhum artigo adicionado.</td></tr>`;
         if (tfoot) tfoot.classList.add('hidden');
         return;
     }
@@ -5653,33 +5918,58 @@ window.renderQuoteItemsTable = function() {
     
     let hasAnyIce = false;
     let hasSpecificIce = false;
+    let hasAnyTsa = false;
     window.quoteEditorState.items.forEach(item => {
         const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
         if (iceData) {
             hasAnyIce = true;
             if (iceData.specificUnit) hasSpecificIce = true;
         }
+        const tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
+        if (tsaRate > 0) hasAnyTsa = true;
     });
 
     const thQtyFis = document.getElementById('th-qty-fis');
     const thIce = document.getElementById('th-ice');
+    const thTsa = document.getElementById('th-tsa');
+    
+    const thFreight = document.getElementById('th-quote-freight');
+    const thInsurance = document.getElementById('th-quote-insurance');
+    const tfootTdFreight = document.getElementById('tfoot-td-freight');
+    const tfootTdInsurance = document.getElementById('tfoot-td-insurance');
+
     const tfootTotalsLabel = document.getElementById('tfoot-totals-label');
     const tfootTotIce = document.getElementById('foot-tot-ice');
+    const tfootTotTsa = document.getElementById('foot-tot-tsa');
+    
+    const isAereo = window.quoteEditorState.mode === 'Aereo';
 
     if (thQtyFis) thQtyFis.classList.toggle('hidden', !hasSpecificIce);
     if (thIce) thIce.classList.toggle('hidden', !hasAnyIce);
+    if (thTsa) thTsa.classList.toggle('hidden', !hasAnyTsa);
     if (tfootTotIce) tfootTotIce.classList.toggle('hidden', !hasAnyIce);
-    if (tfootTotalsLabel) tfootTotalsLabel.colSpan = hasSpecificIce ? 6 : 5;
+    if (tfootTotTsa) tfootTotTsa.classList.toggle('hidden', !hasAnyTsa);
+    
+    if (thFreight) thFreight.classList.toggle('hidden', isAereo);
+    if (thInsurance) thInsurance.classList.toggle('hidden', isAereo);
+    if (tfootTdFreight) tfootTdFreight.classList.toggle('hidden', isAereo);
+    if (tfootTdInsurance) tfootTdInsurance.classList.toggle('hidden', isAereo);
+    
+    // adjust colspan for totals label
+    let baseColSpan = 5;
+    if (hasSpecificIce) baseColSpan++;
+    if (isAereo) baseColSpan -= 2; // removed frete and seguro columns from the left side
+    
+    if (tfootTotalsLabel) tfootTotalsLabel.colSpan = Math.max(1, baseColSpan);
     
     tbody.innerHTML = window.quoteEditorState.items.map((item, index) => {
         const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
+        const tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
         const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
         const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
         
-        let qtyFisicaInput = `<input type="text" disabled class="w-full text-xs text-center py-0.5 px-1 border-none bg-gray-50/50 text-gray-300 h-6 cursor-not-allowed" value="N/A" title="Não aplicável">`;
-        if (iceData && iceData.specificUnit) {
-            qtyFisicaInput = `<input type="number" class="w-full text-xs text-center py-0.5 px-1 border-none hover:bg-yellow-50 bg-yellow-50/30 text-yellow-800 font-bold outline-none focus:ring-0 h-6 placeholder-yellow-300" value="${item.qtyFisica || ''}" oninput="window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" placeholder="Uni: ${iceData.specificUnit}">`;
-        }
+        const qtyObj = window.getQtyFisicaModeAndHTML(item);
+        let qtyFisicaInput = qtyObj.html;
         
         let hsColorClass = 'text-indigo-700';
         if (item.hsCode && item.hsCode.length === 8) {
@@ -5696,37 +5986,40 @@ window.renderQuoteItemsTable = function() {
                 <input type="text" maxlength="8" class="input-hscode w-full text-xs ${hsColorClass} py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 text-center" value="${item.hsCode}" oninput="this.value = this.value.replace(/[^0-9]/g, ''); window.updateQuoteRow(${item.id}, 'hsCode', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Ex: 8703">
             </td>
             <td class="p-0 border-b border-r border-gray-100">
-                <input type="number" class="w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.qty}" oninput="window.updateQuoteRow(${item.id}, 'qty', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0">
+                <input type="number" step="any" class="input-qty w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.qty}" oninput="window.updateQuoteRow(${item.id}, 'qty', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0">
             </td>
-            <td class="p-0 border-b border-r border-gray-100 cell-qty-fis ${hasSpecificIce ? '' : 'hidden'}">
+            <td class="p-0 border-b border-r border-gray-100 cell-qty-fis ${hasSpecificIce ? '' : 'hidden'}" data-current-mode="${qtyObj.mode}">
                 ${qtyFisicaInput}
             </td>
             <td class="p-0 border-b border-r border-gray-100">
-                <input type="number" class="w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.unitPrice}" oninput="window.updateQuoteRow(${item.id}, 'unitPrice', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0.00">
+                <input type="number" step="any" class="input-unit-price w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.unitPrice}" oninput="window.updateQuoteRow(${item.id}, 'unitPrice', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0.00">
             </td>
-            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-xs text-gray-800 bg-indigo-50/30 cell-fob font-medium">
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-xs text-gray-800 bg-indigo-50/30 cell-fob font-normal">
                 ${formatCurrencyVal(item.fob)}
             </td>
-            <td class="p-0 border-b border-r border-gray-100">
+            <td class="p-0 border-b border-r border-gray-100 ${isAereo ? 'hidden' : ''}">
                 <input type="text" readonly class="input-readonly-freight w-full text-xs text-center py-0.5 px-1 border-none outline-none focus:ring-0 rounded bg-gray-50/50 text-gray-500 cursor-not-allowed h-6" value="${formatCurrencyVal(item.actualFreight || 0)}" title="Rateio Automático">
             </td>
-            <td class="p-0 border-b border-r border-gray-100">
+            <td class="p-0 border-b border-r border-gray-100 ${isAereo ? 'hidden' : ''}">
                 <input type="text" readonly class="input-readonly-insurance w-full text-xs text-center py-0.5 px-1 border-none outline-none focus:ring-0 rounded bg-gray-50/50 text-gray-500 cursor-not-allowed h-6" value="${formatCurrencyVal(item.actualInsurance || 0)}" title="Rateio Automático">
             </td>
             <td class="p-0 border-b border-r border-gray-100">
                 <input type="text" readonly class="input-readonly-others w-full text-xs text-center py-0.5 px-1 border-none outline-none focus:ring-0 rounded bg-gray-50/50 text-gray-500 cursor-not-allowed h-6" value="${formatCurrencyVal(item.actualOthers || 0)}" title="Rateio Automático">
             </td>
-            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-xs text-indigo-700 bg-indigo-50/30 cell-cif font-medium">
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-xs text-indigo-700 bg-indigo-50/30 cell-cif font-normal">
                 ${formatCurrencyVal(item.cifMzn)}
             </td>
             <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-da leading-tight whitespace-nowrap">
-                ${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${(daRate*100).toFixed(0)}%)</span>
+                ${formatCurrencyVal(item.daValue)} <span class="text-[9px] text-gray-400">(${parseFloat((daRate*100).toFixed(2))}%)</span>
+            </td>
+            <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-tsa leading-tight whitespace-nowrap ${hasAnyTsa ? '' : 'hidden'}">
+                ${formatCurrencyVal(item.tsaValue)} <span class="text-[9px] text-gray-400">(${parseFloat((tsaRate*100).toFixed(2))}%)</span>
             </td>
             <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-ice leading-tight whitespace-nowrap ${hasAnyIce ? '' : 'hidden'}">
                 ${formatCurrencyVal(item.iceValue)} <span class="text-[9px] text-gray-400">(${item.iceLabel || '0%'})</span>
             </td>
             <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-[10px] text-gray-700 cell-iva leading-tight whitespace-nowrap">
-                ${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${(ivaRate*100).toFixed(0)}%)</span>
+                ${formatCurrencyVal(item.ivaValue)} <span class="text-[9px] text-gray-400">(${parseFloat((ivaRate*100).toFixed(2))}%)</span>
             </td>
             <td class="p-0 border-gray-100 text-center">
                 <button onclick="window.removeQuoteRow(${item.id})" class="btn-action-scale btn-delete text-gray-300 p-0.5 rounded-md inline-flex items-center justify-center hover:text-red-500" title="Remover Artigo">
@@ -5738,53 +6031,18 @@ window.renderQuoteItemsTable = function() {
     }).join('') + '<tr class="h-full"><td colspan="15" class="border-none bg-transparent p-0 m-0"></td></tr>';
 };
 
-window.saveQuoteSimulation = function() {
+window.saveQuoteSimulation = async function(preventClose = false) {
     if (window.quoteEditorState.items.length === 0) {
         toast("A fatura não contém artigos.", "error");
         return;
     }
     
-    const modal = document.getElementById('modal-save-quote');
-    if (modal) {
-        document.getElementById('input-save-quote-name').value = '';
-        document.getElementById('hidden-quote-id').value = window.quoteEditorState.id || '';
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        setTimeout(() => {
-            modal.classList.remove('opacity-0');
-            modal.querySelector('div').classList.remove('scale-95');
-        }, 10);
-    }
-};
-
-window.closeSaveQuoteModal = function() {
-    const modal = document.getElementById('modal-save-quote');
-    if (modal) {
-        modal.classList.add('opacity-0');
-        modal.querySelector('div').classList.add('scale-95');
-        setTimeout(() => {
-            modal.classList.add('hidden');
-            modal.classList.remove('flex');
-        }, 300);
-    }
-};
-
-window.confirmSaveQuote = async function() {
-    const name = document.getElementById('input-save-quote-name').value.trim();
-    if (!name) {
-        toast("Por favor, insira o nome da cotação.", "error");
-        return;
-    }
-    
-    const quoteId = document.getElementById('hidden-quote-id').value;
-    const btn = document.querySelector('#modal-save-quote button:nth-child(2)');
-    btn.disabled = true;
-    btn.innerHTML = 'A guardar...';
-    
     try {
         const quoteData = {
-            id: quoteId || null,
-            client_name: name,
+            id: window.quoteEditorState.id || null,
+            client_name: window.quoteEditorState.invoiceData?.clientName || '',
+            quote_number: window.quoteEditorState.invoiceData?.docNumber || '',
+            date: window.quoteEditorState.invoiceData?.dateIssue || '',
             type: 'IMPORTACAO',
             status: 'RASCUNHO',
             total_amount: window.quoteEditorState.totals.grandTotalMzn,
@@ -5792,24 +6050,35 @@ window.confirmSaveQuote = async function() {
             payload: window.quoteEditorState
         };
         
-        const saved = await api.saveQuote(quoteData);
+        const saved = await saveQuote(quoteData);
         window.quoteEditorState.id = saved.id;
         
-        toast("Fatura guardada com sucesso!", "success");
-        window.closeSaveQuoteModal();
-        window.closeQuoteEditor();
-        renderQuoteDashboard(); 
+        // Sync generated fields back into state
+        window.quoteEditorState.invoiceData = window.quoteEditorState.invoiceData || {};
+        if (saved.quote_number) window.quoteEditorState.invoiceData.docNumber = saved.quote_number;
+        if (saved.date) window.quoteEditorState.invoiceData.dateIssue = saved.date;
+        
+        // Sync DOM inputs immediately
+        const elNum = document.getElementById('inv-doc-number');
+        if (elNum && saved.quote_number) elNum.value = saved.quote_number;
+        const elDate = document.getElementById('inv-date-issue');
+        if (elDate && saved.date) elDate.value = saved.date.substring(0, 10);
+        
+        window.quoteIsDirty = false;
+        if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+        
+        // Se a cotação foi gravada agora, e o cliente estava vazio, nós definimos o client_name como o número
+        // Isso acontecerá dentro de saveQuote, mas podemos deixar como está para que no dashboard apareça sem nome
+        
+        if (!preventClose) {
+            toast("Fatura guardada com sucesso!", "success");
+            window.closeQuoteEditor();
+            await listQuotes(); // Refresh the state.quotes with the newly saved quote
+            renderQuoteDashboard(); 
+        }
     } catch (err) {
         console.error(err);
         toast("Erro ao guardar cotação.", "error");
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-            </svg>
-            Guardar
-        `;
     }
 };
 
@@ -5825,12 +6094,41 @@ window.loadSavedQuote = function(id) {
         window.quoteEditorState = quote.payload;
         window.quoteEditorState.id = quote.id; // ensure ID is set for editing
         
+        // Merge client data if available from relation
+        if (quote.client_data) {
+            window.quoteEditorState.invoiceData = window.quoteEditorState.invoiceData || {};
+            window.quoteEditorState.invoiceData.clientName = quote.client_data.name || '';
+            window.quoteEditorState.invoiceData.clientNuit = quote.client_data.nuit || '';
+            window.quoteEditorState.invoiceData.clientAddress = quote.client_data.address || '';
+            window.quoteEditorState.invoiceData.clientPhone = quote.client_data.phone || '';
+            window.quoteEditorState.invoiceData.clientEmail = quote.client_data.email || '';
+        }
+        
+        // Load generated or saved fields
+        window.quoteEditorState.invoiceData = window.quoteEditorState.invoiceData || {};
+        if (quote.quote_number) window.quoteEditorState.invoiceData.docNumber = quote.quote_number;
+        if (quote.date) window.quoteEditorState.invoiceData.dateIssue = quote.date.substring(0, 10);
+        
         document.getElementById('input-quote-currency').value = window.quoteEditorState.currency || 'USD';
         document.getElementById('input-quote-exchange').value = window.quoteEditorState.exchangeRate || 64.00;
+        
+        const modeVal = window.quoteEditorState.mode || '';
+        document.getElementById('input-quote-mode').value = modeVal;
+        document.getElementById('input-quote-submode').value = window.quoteEditorState.subMode || '';
+        const subModeContainer = document.getElementById('container-quote-submode');
+        if (modeVal === 'Maritimo') {
+            if (subModeContainer) subModeContainer.classList.remove('hidden');
+            else document.getElementById('input-quote-submode').classList.remove('hidden');
+        } else {
+            if (subModeContainer) subModeContainer.classList.add('hidden');
+            else document.getElementById('input-quote-submode').classList.add('hidden');
+        }
         
         document.getElementById('lbl-quote-editor-title').innerText = `Cotação: ${quote.client_name}`;
         
         window.openQuoteEditor();
+        window.quoteIsDirty = false;
+        if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
     } else {
         // Formato Antigo (Single Item) -> Migrar dinamicamente para o novo
         const old = quote.payload;
@@ -5851,7 +6149,7 @@ window.loadSavedQuote = function(id) {
                     cif: 0, daValue: 0, iceValue: 0, ivaValue: 0, tsaValue: 0, pauta: old.item
                 }
             ],
-            totals: { fobForeign: 0, freightForeign: 0, insForeign: 0, cifMzn: 0, daMzn: 0, iceMzn: 0, ivaMzn: 0, tsaMzn: 0, grandTotalMzn: 0 }
+            totals: { fobForeign: 0, freightForeign: 0, insForeign: 0, cifMzn: 0, daMzn: 0, iceMzn: 0, ivaMzn: 0, tsaMzn: 0, mcnetMzn: 0, tsaFixedMzn: 0, grandTotalMzn: 0 }
         };
         
         document.getElementById('input-quote-currency').value = 'MT';
@@ -5859,6 +6157,8 @@ window.loadSavedQuote = function(id) {
         document.getElementById('lbl-quote-editor-title').innerText = `Cotação Migrada: ${quote.client_name}`;
         
         window.openQuoteEditor();
+        window.quoteIsDirty = false;
+        if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
     }
 };
 
@@ -6201,6 +6501,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
         const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
         const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
+        const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
         const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
         const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
         const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
@@ -6283,6 +6584,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
         const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
         const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
+        const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? (firstRowData[motivoIsencaoIdx] || '') : '';
         const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
         const deliveredVal = deliveredIdx !== -1 ? String(firstRowData[deliveredIdx] || '').trim().toUpperCase() : 'NAO';
         const isDelivered = (deliveredVal === 'SIM' || deliveredVal === 'ENTREGUE' || deliveredVal === 'YES');
@@ -6572,36 +6874,42 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Descarregado</label>
                         <input type="number" name="discharge" value="${dischargeVal}" placeholder="Qtd" 
                             ${!isEditable ? 'disabled' : ''}
-                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
                     <div>
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue</label>
                         <input type="number" name="deliver" value="${deliverVal}" placeholder="Qtd" 
                             ${!isEditable ? 'disabled' : ''}
-                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
                     <div>
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Data Entrega</label>
                         <input type="date" name="deliverDate" value="${formatDateForInput(deliverDateVal)}" 
                             ${!isEditable ? 'disabled' : ''}
-                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
                     <div>
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue A</label>
                         <input type="text" name="deliverTo" value="${deliverToVal}" placeholder="Nome" 
                             ${!isEditable ? 'disabled' : ''}
-                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
                     <div>
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Contacto</label>
                         <input type="text" name="contacto" value="${contactoVal}" placeholder="Contacto" 
                             ${!isEditable ? 'disabled' : ''}
-                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Motivo Isenção</label>
+                        <input type="text" name="motivoIsencao" value="${motivoIsencaoVal}" placeholder="Motivo Isenção" 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
                     <div class="${storageCost === 0 ? 'hidden' : ''}">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Armazenagem</label>
                         <select name="storagePaid" ${!isEditable ? 'disabled' : ''}
-                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                             <option value="NAO" ${storageCost > 0 && storagePaidVal === 'NAO' ? 'selected' : ''}>❌ PENDENTE</option>
                             <option value="SIM" ${storageCost === 0 || storagePaidVal === 'SIM' ? 'selected' : ''}>✅ PAGO</option>
                         </select>
@@ -6636,6 +6944,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateInput = container.querySelector('input[name="deliverDate"]');
     const deliverToInput = container.querySelector('input[name="deliverTo"]');
     const contactoInput = container.querySelector('input[name="contacto"]');
+    const motivoIsencaoInput = container.querySelector('input[name="motivoIsencao"]');
     const storagePaidInput = container.querySelector('select[name="storagePaid"]');
 
     const formatDateForSheet = (dateStr) => {
@@ -6654,6 +6963,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateVal = formatDateForSheet(deliverDateValRaw);
     const deliverToVal = deliverToInput ? deliverToInput.value.trim() : '';
     const contactoVal = contactoInput ? contactoInput.value.trim() : '';
+    const motivoIsencaoVal = motivoIsencaoInput ? motivoIsencaoInput.value.trim() : '';
     const storagePaidVal = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
 
     const columns = state.confirm.columns || [];
@@ -6683,6 +6993,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateIdx = findCol(['DELIVER DATE']);
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+    const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
     const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
 
@@ -6768,6 +7079,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
         if (contactoIdx !== -1) {
             rowData[contactoIdx] = contactoVal;
             batchUpdates.push({ range: `${prefixClean}${getColLetter(contactoIdx)}${rowNum}`, values: [[contactoVal]] });
+        }
+        if (motivoIsencaoIdx !== -1) {
+            rowData[motivoIsencaoIdx] = motivoIsencaoVal;
+            batchUpdates.push({ range: `${prefixClean}${getColLetter(motivoIsencaoIdx)}${rowNum}`, values: [[motivoIsencaoVal]] });
         }
         if (storagePaidIdx !== -1) {
             rowData[storagePaidIdx] = storagePaidVal;
@@ -7356,3 +7671,692 @@ export function showSyncConflict(conflictData) {
         }
     };
 }
+
+
+
+// --- INVOICE GENERATOR LOGIC ---
+
+window.currentWizardStep = 1;
+
+window.switchQuoteTab = async function(tabName) {
+    if (tabName === 'quote') {
+        if (!window.quoteEditorState.id) {
+            toast("Guarde a simulação primeiro antes de avançar para a Cotação.", "error");
+            return;
+        }
+    }
+
+    const tabDraftBtn = document.getElementById('tab-btn-draft');
+    const tabQuoteBtn = document.getElementById('tab-btn-quote');
+    const contentSim = document.getElementById('tab-content-simulation');
+    const contentQuote = document.getElementById('tab-content-quote');
+    const btnBackWrapper = document.getElementById('btn-back-to-draft-wrapper');
+    const contentInv = document.getElementById('tab-content-invoice');
+
+    if (tabName === 'draft') {
+        if (tabDraftBtn) tabDraftBtn.className = "px-5 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg bg-white shadow-sm text-indigo-600 transition-all border border-gray-200/50 flex items-center gap-2";
+        if (tabQuoteBtn) tabQuoteBtn.className = "px-5 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg text-gray-400 hover:text-gray-700 transition-all flex items-center gap-2";
+        
+        if (contentSim) {
+            contentSim.classList.remove('hidden');
+            contentSim.classList.add('flex');
+        }
+        if (contentQuote) {
+            contentQuote.classList.add('hidden');
+            contentQuote.classList.remove('flex');
+        }
+        if (btnBackWrapper) {
+            btnBackWrapper.classList.add('hidden');
+            btnBackWrapper.classList.remove('flex');
+        }
+    } else if (tabName === 'quote') {
+        if (tabQuoteBtn) tabQuoteBtn.className = "px-5 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg bg-white shadow-sm text-indigo-600 transition-all border border-gray-200/50 flex items-center gap-2";
+        if (tabDraftBtn) tabDraftBtn.className = "px-5 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg text-gray-400 hover:text-gray-700 transition-all flex items-center gap-2";
+        
+        if (contentSim) {
+            contentSim.classList.add('hidden');
+            contentSim.classList.remove('flex');
+        }
+        if (contentQuote) {
+            contentQuote.classList.remove('hidden');
+            contentQuote.classList.add('flex');
+        }
+        if (btnBackWrapper) {
+            btnBackWrapper.classList.remove('hidden');
+            btnBackWrapper.classList.add('flex');
+        }
+        
+        if (contentInv) {
+            contentInv.classList.remove('hidden');
+            contentInv.classList.add('flex');
+            window.initInvoiceData();
+            window.renderInvoiceLines();
+        }
+
+        if (!window.quoteEditorState.invoiceData || !window.quoteEditorState.invoiceData.clientName || window.quoteEditorState.invoiceData.clientName.trim() === '') {
+            if (window.openClientModal) window.openClientModal();
+        }
+    }
+};
+
+window.syncInvoiceHeaderToState = function() {
+    window.quoteEditorState.invoiceData = window.quoteEditorState.invoiceData || {};
+    window.quoteEditorState.invoiceData.docType = document.getElementById('inv-doc-type').value;
+    window.quoteEditorState.invoiceData.docNumber = document.getElementById('inv-doc-number').value;
+    window.quoteEditorState.invoiceData.dateIssue = document.getElementById('inv-date-issue').value;
+    window.quoteEditorState.invoiceData.dateDue = document.getElementById('inv-date-due').value;
+    if(document.getElementById('inv-doc-ref')) window.quoteEditorState.invoiceData.reference = document.getElementById('inv-doc-ref').value;
+    
+    window.quoteIsDirty = true;
+    if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+};
+
+
+
+window.initInvoiceData = function() {
+    window.quoteEditorState.invoiceData = window.quoteEditorState.invoiceData || {};
+    const d = window.quoteEditorState.invoiceData;
+    
+    d.docType = d.docType || 'COTAÇÃO';
+    d.docNumber = d.docNumber || '';
+    d.dateIssue = d.dateIssue || new Date().toISOString().split('T')[0];
+    d.dateDue = d.dateDue || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    d.reference = d.reference || '';
+    d.issuerName = d.issuerName || 'JUPITER LOGISTICS LDA';
+    d.issuerNuit = d.issuerNuit || '400574472';
+    d.issuerAddress = d.issuerAddress || 'Av. do Trabalho nº 1412, 3º Andar\nMaputo, Moçambique';
+    d.issuerContact = d.issuerContact || 'Tel.: +258 21401334, Cel:+25884 0485 691';
+    d.clientName = d.clientName || '';
+    d.clientNuit = d.clientNuit || '';
+    d.clientAddress = d.clientAddress || '';
+    d.clientContact = d.clientContact || '';
+    d.lines = d.lines || [];
+    d.discount = d.discount || 0;
+    d.bankDetails = d.bankDetails || 'NIB: 00000000000\nBanco: Millennium Bim\nTitular: Sua Empresa Lda\n\nM-Pesa: 84 000 0000';
+    d.observations = d.observations || 'Validade da cotação: 30 dias.';
+    
+    // Auto-fill from quote state if available
+    const quote = (state.quotes || []).find(q => q.id === window.quoteEditorState.id);
+    if (quote) {
+        if (!d.clientName) d.clientName = quote.client_name;
+        if (!d.docNumber) d.docNumber = quote.quote_number;
+    }
+    
+    window.syncInvoiceLinesFromDraft();
+    
+    // Fill the DOM with state data
+    document.getElementById('inv-doc-type').value = d.docType;
+    document.getElementById('inv-doc-number').value = d.docNumber || '';
+    document.getElementById('inv-date-issue').value = d.dateIssue;
+    document.getElementById('inv-date-due').value = d.dateDue;
+    if(document.getElementById('inv-doc-ref')) document.getElementById('inv-doc-ref').value = d.reference;
+    
+    // Emitente is now static in the UI, so we don't need to populate inputs for it
+    
+    window.syncClientUIDisplay();
+    
+    document.getElementById('inv-val-discount').value = d.discount;
+    document.getElementById('inv-bank-details').value = d.bankDetails;
+    document.getElementById('inv-observations').value = d.observations;
+    
+    // Add event listeners to sync DOM back to state
+    const inputs = ['doc-type', 'doc-number', 'date-issue', 'date-due', 'doc-ref', 'issuer-name', 'issuer-nuit', 'issuer-address', 'issuer-contact', 'client-name', 'client-nuit', 'client-address', 'client-contact', 'bank-details', 'observations'];
+    inputs.forEach(id => {
+        const el = document.getElementById('inv-' + id);
+        if (el) {
+            el.onchange = (e) => {
+                const keyParts = id.split('-');
+                const key = keyParts[0] + keyParts[1].charAt(0).toUpperCase() + keyParts[1].slice(1) + (keyParts[2] ? keyParts[2].charAt(0).toUpperCase() + keyParts[2].slice(1) : '');
+                
+                if (keyParts.length > 1) {
+                   const finalKey = keyParts[0] + keyParts.slice(1).map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('');
+                   if (window.quoteEditorState.invoiceData[finalKey] !== undefined) {
+                        window.quoteEditorState.invoiceData[finalKey] = e.target.value;
+                   }
+                }
+            };
+            
+            // Explicit overrides
+            if(id === 'doc-type') el.onchange = (e) => window.quoteEditorState.invoiceData.docType = e.target.value;
+            if(id === 'doc-number') el.onchange = (e) => window.quoteEditorState.invoiceData.docNumber = e.target.value;
+            if(id === 'date-issue') el.onchange = (e) => window.quoteEditorState.invoiceData.dateIssue = e.target.value;
+            if(id === 'date-due') el.onchange = (e) => window.quoteEditorState.invoiceData.dateDue = e.target.value;
+            if(id === 'doc-ref') el.onchange = (e) => window.quoteEditorState.invoiceData.reference = e.target.value;
+            if(id === 'issuer-name') el.onchange = (e) => window.quoteEditorState.invoiceData.issuerName = e.target.value;
+            if(id === 'issuer-nuit') el.onchange = (e) => window.quoteEditorState.invoiceData.issuerNuit = e.target.value;
+            if(id === 'issuer-address') el.onchange = (e) => window.quoteEditorState.invoiceData.issuerAddress = e.target.value;
+            if(id === 'issuer-contact') el.onchange = (e) => window.quoteEditorState.invoiceData.issuerContact = e.target.value;
+            if(id === 'client-name') el.onchange = (e) => window.quoteEditorState.invoiceData.clientName = e.target.value;
+            if(id === 'client-nuit') el.onchange = (e) => window.quoteEditorState.invoiceData.clientNuit = e.target.value;
+            if(id === 'client-address') el.onchange = (e) => window.quoteEditorState.invoiceData.clientAddress = e.target.value;
+            if(id === 'bank-details') el.onchange = (e) => window.quoteEditorState.invoiceData.bankDetails = e.target.value;
+            if(id === 'observations') el.onchange = (e) => window.quoteEditorState.invoiceData.observations = e.target.value;
+        }
+    });
+};
+
+
+window.numeroParaExtenso = function(valor) {
+    const unidades = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez", "onze", "doze", "treze", "catorze", "quinze", "dezasseis", "dezassete", "dezoito", "dezanove"];
+    const dezenas = ["", "", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
+    const centenas = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
+
+    function converterGrupo(n) {
+        let texto = "";
+        let c = Math.floor(n / 100);
+        let d = Math.floor((n % 100) / 10);
+        let u = n % 10;
+
+        if (c === 1 && d === 0 && u === 0) return "cem";
+        if (c > 0) texto += centenas[c] + ((d > 0 || u > 0) ? " e " : "");
+
+        if (d === 1) {
+            texto += unidades[10 + u];
+        } else {
+            if (d > 1) texto += dezenas[d] + (u > 0 ? " e " : "");
+            if (u > 0 && d !== 1) texto += unidades[u];
+        }
+        return texto;
+    }
+
+    if (valor === 0) return "Zero meticais";
+
+    let mt = Math.floor(valor);
+    let cent = Math.round((valor - mt) * 100);
+
+    let textoMt = "";
+    if (mt > 0) {
+        let milhoes = Math.floor(mt / 1000000);
+        let milhares = Math.floor((mt % 1000000) / 1000);
+        let restos = mt % 1000;
+
+        if (milhoes > 0) {
+            textoMt += converterGrupo(milhoes) + (milhoes === 1 ? " milhão" : " milhões");
+            if (milhares > 0 || restos > 0) textoMt += (restos === 0 && milhares === 0 ? " e " : " ");
+        }
+        if (milhares > 0) {
+            if (milhares === 1) textoMt += "mil";
+            else textoMt += converterGrupo(milhares) + " mil";
+            if (restos > 0) textoMt += (restos < 100 || restos % 100 === 0 ? " e " : " ");
+        }
+        if (restos > 0) {
+            textoMt += converterGrupo(restos);
+        }
+    }
+
+    let textoFinal = "";
+    if (mt > 0) {
+        textoFinal += textoMt + (mt === 1 ? " metical" : " meticais");
+    }
+    if (cent > 0) {
+        let textoCent = converterGrupo(cent);
+        if (mt > 0) textoFinal += " e ";
+        textoFinal += textoCent + (cent === 1 ? " centavo" : " centavos");
+    }
+
+    return textoFinal.charAt(0).toUpperCase() + textoFinal.slice(1);
+};
+
+window.syncInvoiceLinesFromDraft = function() {
+    const totals = window.quoteEditorState.totals || {};
+    if (!window.quoteEditorState.invoiceData) {
+        window.quoteEditorState.invoiceData = {};
+    }
+    let lines = window.quoteEditorState.invoiceData.lines || [];
+    
+    // Check if lines are completely empty before syncing (so we can add default 'terceiros' and 'servicos' just once)
+    const isFirstTime = lines.length === 0;
+
+    // Filter out old 'alfandegas' lines because they must strictly come from the calculation table
+    lines = lines.filter(l => l.group !== 'alfandegas');
+    
+    // Add Alfandegas from totals
+    let addedAlfandegas = false;
+    if (totals.daMzn > 0) {
+        lines.push({ group: 'alfandegas', desc: 'Direitos', price: totals.daMzn, tax: 0 });
+        addedAlfandegas = true;
+    }
+    if (totals.ivaMzn > 0) {
+        lines.push({ group: 'alfandegas', desc: 'IVA', price: totals.ivaMzn, tax: 0 });
+        addedAlfandegas = true;
+    }
+    if (totals.tsaMzn > 0) {
+        lines.push({ group: 'alfandegas', desc: 'Sobretaxa', price: totals.tsaMzn, tax: 0 });
+        addedAlfandegas = true;
+    }
+    if (totals.iceMzn > 0) {
+        lines.push({ group: 'alfandegas', desc: 'ICE', price: totals.iceMzn, tax: 0 });
+        addedAlfandegas = true;
+    }
+    if (totals.mcnetMzn > 0) {
+        lines.push({ group: 'alfandegas', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 });
+        addedAlfandegas = true;
+    }
+    if (totals.tsaFixedMzn > 0) {
+        lines.push({ group: 'alfandegas', desc: 'Taxa de Serviço Aduaneiro (TSA)', price: totals.tsaFixedMzn, tax: 0 });
+        addedAlfandegas = true;
+    }
+    
+    if (!addedAlfandegas) {
+        lines.push({ group: 'alfandegas', desc: 'Despesas Aduaneiras', price: 0, tax: 0 });
+    }
+    
+    if (isFirstTime) {
+        // Terceiros globais 
+        let others = parseFloat(document.getElementById('input-global-others').value) || 0;
+        if (others > 0) {
+            lines.push({ group: 'terceiros', desc: 'Outros Serviços de Navegação / Agência', price: others, tax: 0 });
+        }
+        
+        // Servicos padrão
+        lines.push({
+            group: 'servicos',
+            desc: 'Desembaraço Moz',
+            price: 10850,
+            tax: 16
+        });
+    }
+
+    window.quoteEditorState.invoiceData.lines = lines;
+    window.renderInvoiceLines();
+};
+
+
+window.openLineModal = function(index, defaultGroup = 'servicos') {
+    const isEdit = index >= 0;
+    document.getElementById('modal-line-title').innerText = isEdit ? 'Editar Item' : 'Adicionar Item';
+    document.getElementById('modal-line-index').value = index;
+    
+    if (isEdit) {
+        const line = window.quoteEditorState.invoiceData.lines[index];
+        document.getElementById('modal-line-group').value = line.group || 'servicos';
+        document.getElementById('modal-line-desc').value = line.desc || '';
+        document.getElementById('modal-line-price').value = line.price || 0;
+        document.getElementById('modal-line-tax').value = line.tax || 0;
+    } else {
+        document.getElementById('modal-line-group').value = defaultGroup;
+        document.getElementById('modal-line-desc').value = '';
+        document.getElementById('modal-line-price').value = '';
+        document.getElementById('modal-line-tax').value = defaultGroup === 'servicos' ? 16 : 0;
+    }
+    
+    document.getElementById('modal-line-edit').classList.remove('hidden');
+    document.getElementById('modal-line-edit').classList.add('flex');
+};
+
+window.closeLineModal = function() {
+    document.getElementById('modal-line-edit').classList.add('hidden');
+    document.getElementById('modal-line-edit').classList.remove('flex');
+};
+
+window.saveLineModal = function() {
+    const index = parseInt(document.getElementById('modal-line-index').value);
+    const group = document.getElementById('modal-line-group').value;
+    const desc = document.getElementById('modal-line-desc').value;
+    const price = parseFloat(document.getElementById('modal-line-price').value) || 0;
+    const tax = parseFloat(document.getElementById('modal-line-tax').value) || 0;
+    
+    if (index >= 0) {
+        // Edit
+        window.quoteEditorState.invoiceData.lines[index] = { group, desc, price, tax };
+    } else {
+        // Add
+        window.quoteEditorState.invoiceData.lines.push({ group, desc, price, tax });
+    }
+    
+    window.renderInvoiceLines();
+    window.closeLineModal();
+};
+
+window.addCategoryFromDraft = function(groupName) {
+    const totals = window.quoteEditorState.totals;
+    let lines = window.quoteEditorState.invoiceData.lines || [];
+    
+    // Clear out existing lines of this group to prevent duplication!
+    lines = lines.filter(l => l.group !== groupName);
+    window.quoteEditorState.invoiceData.lines = lines;
+    
+    if (groupName === 'alfandegas') {
+        let added = false;
+        if (totals.daMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Direitos', price: totals.daMzn, tax: 0 }); added = true; }
+        if (totals.ivaMzn > 0) { lines.push({ group: 'alfandegas', desc: 'IVA', price: totals.ivaMzn, tax: 0 }); added = true; }
+        if (totals.tsaMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Sobretaxa', price: totals.tsaMzn, tax: 0 }); added = true; }
+        if (totals.iceMzn > 0) { lines.push({ group: 'alfandegas', desc: 'ICE', price: totals.iceMzn, tax: 0 }); added = true; }
+        if (totals.mcnetMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 }); added = true; }
+        if (totals.tsaFixedMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Taxa de Serviço Aduaneiro (TSA)', price: totals.tsaFixedMzn, tax: 0 }); added = true; }
+        if (!added) {
+            lines.push({ group: 'alfandegas', desc: 'Despesas Aduaneiras', price: 0, tax: 0 });
+        }
+    } else if (groupName === 'terceiros') {
+        lines.push({ group: 'terceiros', desc: 'Portagens / Parques', price: 1550, tax: 0 });
+        lines.push({ group: 'terceiros', desc: 'Taxas Portuárias / Kudumba', price: 2604, tax: 0 });
+    } else if (groupName === 'servicos') {
+        lines.push({ group: 'servicos', desc: 'Honorários de Desembaraço', price: 10850, tax: 16 });
+    }
+    
+    window.quoteIsDirty = true;
+    if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    window.renderInvoiceLines();
+};
+
+window.removeInvoiceLine = function(index) {
+    window.quoteEditorState.invoiceData.lines.splice(index, 1);
+    window.renderInvoiceLines();
+};
+
+window.updateInvoiceLine = function(index, field, value) {
+    window.quoteEditorState.invoiceData.lines[index][field] = value;
+    if (field === 'price' || field === 'tax') {
+        window.calculateInvoiceTotals();
+    }
+};
+
+window.renderInvoiceLines = function() {
+    const container = document.getElementById('inv-lines-container');
+    if (!container) return;
+    
+    let html = '';
+    
+    const lines = window.quoteEditorState.invoiceData.lines || [];
+    if (lines.length === 0) {
+        container.innerHTML = '<div class="p-8 text-center text-gray-400 font-bold">Nenhuma linha adicionada. Utilize a calculadora ou adicione manualmente.</div>';
+        window.calculateInvoiceTotals();
+        return;
+    }
+    
+    const groups = {
+        alfandegas: { title: 'Alfândegas', icon: 'fa-file-invoice', items: [], subtotal: 0 },
+        terceiros: { title: 'Terceiros', icon: 'fa-truck-loading', items: [], subtotal: 0 },
+        servicos: { title: 'Serviços', icon: 'fa-concierge-bell', items: [], subtotal: 0 }
+    };
+    
+    // Populate
+    lines.forEach((l, index) => {
+        if (!groups[l.group]) l.group = 'servicos'; // fallback
+        groups[l.group].items.push({ ...l, index });
+        groups[l.group].subtotal += parseFloat(l.price) || 0;
+    });
+    
+    Object.keys(groups).forEach(gKey => {
+        const group = groups[gKey];
+        // if (group.items.length === 0) return; // Always render
+        
+        // Group Container (Card)
+        html += `
+        <details class="group print:open border-b border-gray-100 last:border-0">
+            <summary class="flex justify-between items-center bg-gray-50/50 px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors list-none print:hidden [&::-webkit-details-marker]:hidden">
+                <span class="text-[10px] font-black uppercase tracking-widest text-indigo-900"><i class="fas ${group.icon} mr-2"></i>${group.title}</span>
+                <span class="text-gray-400 group-open:rotate-180 transition-transform duration-300">
+                    <i class="fas fa-chevron-down"></i>
+                </span>
+            </summary>
+            
+            <div class="px-4 pb-2 pt-2">
+                <table class="w-full text-left border-collapse mb-2">
+                    <thead class="bg-red-100/60 border-y border-red-200">
+                        <tr>
+                            <th class="py-1 px-3 text-[10px] font-normal text-gray-800 uppercase tracking-wider w-1/2">DESCRIÇÃO</th>
+                            <th class="py-1 px-3 text-[10px] font-normal text-gray-800 uppercase tracking-wider text-right w-1/4">VALOR</th>
+                            <th class="py-1 px-3 text-[10px] font-normal text-gray-800 uppercase tracking-wider text-right w-1/4">SUB-TOTAL</th>
+                            <th class="py-1 px-2 w-8 print:hidden"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="text-sm">
+        `;
+        
+        // Group Items
+        group.items.forEach((item, i) => {
+            html += `
+                        <tr class="group/row hover:bg-indigo-50/30 transition-colors border-b border-gray-50 last:border-0">
+                            <td class="py-1 px-3 pl-6">
+                                <span class="text-xs font-normal text-gray-700">${item.desc}</span>
+                                ${item.tax > 0 ? `<span class="text-[9px] font-normal bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded ml-2" title="Sujeito a IVA">IVA ${item.tax}%</span>` : ''}
+                            </td>
+                            <td class="py-1 px-3 text-right">
+                                <span class="text-xs font-normal text-gray-800">${formatCurrencyVal(item.price)}</span>
+                            </td>
+                            <td class="py-1 px-3 text-right">
+                                <span class="text-xs font-normal text-gray-400">—</span>
+                            </td>
+                            <td class="py-1 px-2 text-center print:hidden w-16">
+                                <div class="flex items-center justify-center gap-3 opacity-0 group-hover/row:opacity-100 transition-all">
+                                    ${gKey !== 'alfandegas' ? `
+                                    <button type="button" onclick="window.openLineModal(${item.index})" class="text-gray-400 hover:text-indigo-600 transition-colors" title="Editar">
+                                        <i class="fas fa-edit text-xs"></i>
+                                    </button>
+                                    <button type="button" onclick="window.removeInvoiceLine(${item.index})" class="text-gray-400 hover:text-red-500 transition-colors" title="Remover">
+                                        <i class="fas fa-trash-alt text-xs"></i>
+                                    </button>
+                                    ` : `
+                                    <span class="text-[9px] text-gray-300 italic">Auto</span>
+                                    `}
+                                </div>
+                            </td>
+                        </tr>
+            `;
+        });
+        
+        // Group Subtotal
+        html += `
+                        <tr class="bg-white">
+                            <td class="py-2.5 px-3">
+                                ${gKey !== 'alfandegas' ? `
+                                <button type="button" onclick="window.openLineModal(-1, '${gKey}')" class="text-[10px] font-normal text-indigo-500 hover:text-indigo-700 uppercase tracking-widest print:hidden flex items-center gap-1 transition-all hover:scale-105"><i class="fas fa-plus-circle"></i> Adicionar Item</button>
+                                ` : ''}
+                            </td>
+                            <td class="py-2.5 px-3 text-right font-normal text-gray-400 text-[9px] uppercase tracking-widest">Sub-Total ${group.title}</td>
+                            <td class="py-2.5 px-3 text-right font-normal text-indigo-900 text-sm border-t-2 border-indigo-100">${formatCurrencyVal(group.subtotal)}</td>
+                            <td class="py-2.5 px-2 print:hidden"></td>
+                        </tr>
+                    </tbody>
+                </table>
+        `;
+        
+        if (gKey === 'servicos') {
+            html += `
+                    <div class="mt-8 flex flex-col md:flex-row justify-between items-end gap-4 border-t border-gray-100 pt-6">
+                        <div class="flex-1 w-full relative h-full flex flex-col justify-end">
+                            <div class="border-b border-gray-800 pb-1 inline-block min-w-[70%] max-w-full">
+                                <p class="text-xs font-bold text-gray-800 italic" id="inv-val-extenso">Zero meticais</p>
+                            </div>
+                        </div>
+                        
+                        <div class="w-full md:w-[350px]">
+                            <table class="w-full text-sm border-collapse">
+                                <tbody>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-1.5 px-4 font-normal text-gray-600 text-right uppercase text-[11px] tracking-wider">TOTAL SEM IVA</td>
+                                        <td class="py-1.5 px-4 text-right font-normal text-gray-900" id="inv-val-subtotal">0.00</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-1.5 px-4 font-normal text-gray-600 text-right uppercase text-[11px] tracking-wider">TAXA DE IVA</td>
+                                        <td class="py-1.5 px-4 text-right font-normal text-gray-900">16.00%</td>
+                                    </tr>
+                                    <tr class="border-b border-gray-200">
+                                        <td class="py-1.5 px-4 font-normal text-gray-600 text-right uppercase text-[11px] tracking-wider">IVA</td>
+                                        <td class="py-1.5 px-4 text-right font-normal text-gray-900" id="inv-val-tax">0.00</td>
+                                    </tr>
+                                    <tr class="bg-red-200/50 border-y border-red-300">
+                                        <td class="py-2.5 px-4 font-normal text-gray-900 text-right uppercase tracking-wider text-sm">TOTAL</td>
+                                        <td class="py-2.5 px-4 text-right font-normal text-gray-900 text-[16px]" id="inv-val-total">0.00</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+            `;
+        }
+        
+        html += `
+            </div>
+        </details>
+        `;
+    });
+    
+    container.innerHTML = html;
+    window.calculateInvoiceTotals();
+};
+
+window.calculateInvoiceTotals = function() {
+    const lines = window.quoteEditorState.invoiceData.lines;
+    
+    let subtotalGeral = 0;
+    let totalIva = 0;
+    
+    lines.forEach(line => {
+        const val = parseFloat(line.price) || 0;
+        subtotalGeral += val;
+        
+        // Calcular IVA apenas nas linhas que têm tax (neste caso, "servicos" com 16%)
+        if (line.tax > 0) {
+            totalIva += val * (line.tax / 100);
+        }
+    });
+    
+    const finalTotal = subtotalGeral + totalIva;
+    
+    // Update HTML
+    const subEl = document.getElementById('inv-val-subtotal');
+    if (subEl) subEl.innerText = formatCurrencyVal(subtotalGeral);
+    
+    const taxEl = document.getElementById('inv-val-tax');
+    if (taxEl) taxEl.innerText = formatCurrencyVal(totalIva);
+    
+    const totalEl = document.getElementById('inv-val-total');
+    if (totalEl) totalEl.innerText = formatCurrencyVal(finalTotal);
+    
+    const extEl = document.getElementById('inv-val-extenso');
+    if (extEl) extEl.innerText = window.numeroParaExtenso(finalTotal);
+};
+window.openClientModal = async function() {
+    const d = window.quoteEditorState.invoiceData;
+    document.getElementById('modal-client-name').value = d.clientName || '';
+    document.getElementById('modal-client-nuit').value = d.clientNuit || '';
+    document.getElementById('modal-client-address').value = d.clientAddress || '';
+    document.getElementById('modal-client-phone').value = d.clientPhone || '';
+    document.getElementById('modal-client-email').value = d.clientEmail || '';
+    
+    document.getElementById('modal-client-edit').classList.remove('hidden');
+    document.getElementById('modal-client-edit').classList.add('flex');
+
+    const datalistEl = document.getElementById('modal-client-datalist');
+    const searchEl = document.getElementById('modal-client-search');
+    if (datalistEl && searchEl) {
+        searchEl.value = '';
+        datalistEl.innerHTML = '';
+        try {
+            window.availableClients = await getAllClients();
+            let html = '';
+            window.availableClients.forEach((c) => {
+                const displayName = c.name + (c.nuit ? ` (NUIT: ${c.nuit})` : '');
+                html += `<option value="${displayName}"></option>`;
+            });
+            datalistEl.innerHTML = html;
+        } catch(err) {
+            console.error('Erro ao carregar clientes:', err);
+            datalistEl.innerHTML = '';
+        }
+    }
+};
+
+window.handleClientSelection = function() {
+    const searchEl = document.getElementById('modal-client-search');
+    if (!searchEl || !searchEl.value || searchEl.value === "") return;
+    
+    const val = searchEl.value;
+    const client = window.availableClients && window.availableClients.find(c => {
+        const displayName = c.name + (c.nuit ? ` (NUIT: ${c.nuit})` : '');
+        return displayName === val;
+    });
+
+    if (client) {
+        document.getElementById('modal-client-name').value = client.name || '';
+        document.getElementById('modal-client-nuit').value = client.nuit || '';
+        document.getElementById('modal-client-address').value = client.address || '';
+        document.getElementById('modal-client-phone').value = client.phone || '';
+        document.getElementById('modal-client-email').value = client.email || '';
+        // Clear search so it doesn't stay there confusingly
+        searchEl.value = '';
+        searchEl.blur();
+    }
+};
+
+window.closeClientModal = function() {
+    document.getElementById('modal-client-edit').classList.add('hidden');
+    document.getElementById('modal-client-edit').classList.remove('flex');
+};
+
+window.syncClientUIDisplay = function() {
+    const d = window.quoteEditorState.invoiceData || {};
+    
+    const elName = document.getElementById('inv-client-name'); if (elName) elName.value = d.clientName || '';
+    const elNuit = document.getElementById('inv-client-nuit'); if (elNuit) elNuit.value = d.clientNuit || '';
+    const elAddress = document.getElementById('inv-client-address'); if (elAddress) elAddress.value = d.clientAddress || '';
+    const elPhone = document.getElementById('inv-client-phone'); if (elPhone) elPhone.value = d.clientPhone || '';
+    const elEmail = document.getElementById('inv-client-email'); if (elEmail) elEmail.value = d.clientEmail || '';
+    
+    const dispName = document.getElementById('inv-client-name-display'); if (dispName) dispName.innerText = d.clientName || '';
+    const dispNuit = document.getElementById('inv-client-nuit-display'); if (dispNuit) dispNuit.innerText = d.clientNuit || '';
+    const dispAddress = document.getElementById('inv-client-address-display'); if (dispAddress) dispAddress.innerText = d.clientAddress || '';
+    const dispPhone = document.getElementById('inv-client-phone-display'); if (dispPhone) dispPhone.innerText = d.clientPhone ? 'Tel: ' + d.clientPhone : '';
+    const dispEmail = document.getElementById('inv-client-email-display'); if (dispEmail) dispEmail.innerText = d.clientEmail ? 'Email: ' + d.clientEmail : '';
+    
+    const wrapperDetails = document.getElementById('inv-client-details-wrapper');
+    const wrapperBody = document.getElementById('inv-body-wrapper');
+    const wrapperFooter = document.getElementById('inv-footer-wrapper');
+    const hasClient = !!d.clientName && d.clientName.trim().length > 0;
+    
+    if (wrapperDetails) {
+        wrapperDetails.style.display = hasClient ? '' : 'none';
+    }
+    if (wrapperBody) {
+        wrapperBody.style.display = hasClient ? '' : 'none';
+    }
+    if (wrapperFooter) {
+        wrapperFooter.style.display = hasClient ? '' : 'none';
+    }
+};
+
+window.saveClientModal = async function() {
+    const name = document.getElementById('modal-client-name').value.trim();
+    const nuit = document.getElementById('modal-client-nuit').value.trim();
+    const address = document.getElementById('modal-client-address').value.trim();
+    const phone = document.getElementById('modal-client-phone').value.trim();
+    const email = document.getElementById('modal-client-email').value.trim();
+    
+    // Check if quote is saved, if not save it first
+    if (!window.quoteEditorState.id) {
+        // Remove window.closeQuoteEditor() from saveQuoteSimulation to prevent closing the editor
+        await window.saveQuoteSimulation(true); 
+        if (!window.quoteEditorState.id) {
+            toast("Erro: Não foi possível criar o Rascunho da Fatura para anexar o Cliente.", "error");
+            return; // Save failed
+        }
+    }
+
+    try {
+        await saveQuoteClient(window.quoteEditorState.id, {
+            name,
+            nuit,
+            address,
+            phone,
+            email
+        });
+        toast("Cliente guardado com sucesso", "success");
+        
+        // Update state
+        window.quoteEditorState.invoiceData.clientName = name;
+        window.quoteEditorState.invoiceData.clientNuit = nuit;
+        window.quoteEditorState.invoiceData.clientAddress = address;
+        window.quoteEditorState.invoiceData.clientPhone = phone;
+        window.quoteEditorState.invoiceData.clientEmail = email;
+        
+        // Update UI and visibility
+        window.syncClientUIDisplay();
+        
+        window.closeClientModal();
+    } catch(e) {
+        console.error(e);
+        toast("Erro ao guardar dados do cliente. Verifique a consola.", "error");
+    }
+};

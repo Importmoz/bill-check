@@ -1355,12 +1355,15 @@ export async function listQuotes() {
         // Tentar obter do PocketBase
         const records = await pb.collection('quotes').getFullList({
             sort: '-created',
+            expand: 'client_ref',
             requestKey: null
         });
         
         // Normalizar
         const normalized = records.map(r => ({
             id: r.id,
+            client_ref: r.client_ref,
+            client_data: r.expand?.client_ref || null,
             client_name: r.client_name,
             cargo_description: r.cargo_description,
             type: r.type,
@@ -1396,6 +1399,38 @@ export async function saveQuote(quoteData) {
         quoteData.created = now.toISOString();
     }
     
+    let number = quoteData.quote_number;
+    if (!number) {
+        const dd = String(now.getDate()).padStart(2, '0');
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const yy = String(now.getFullYear()).slice(-2);
+        const prefix = `${dd}`;
+        const suffix = `/${mm}/${yy}`;
+        
+        let highestCode = 64; 
+        
+        if (state.quotes && state.quotes.length > 0) {
+            state.quotes.forEach(q => {
+                const qn = q.quote_number || '';
+                if (qn.startsWith(prefix) && qn.endsWith(suffix)) {
+                    const letterStr = qn.substring(prefix.length, qn.length - suffix.length);
+                    if (letterStr.length === 1) {
+                        const code = letterStr.charCodeAt(0);
+                        if (code > highestCode && code <= 90) { 
+                            highestCode = code;
+                        }
+                    }
+                }
+            });
+        }
+        
+        let nextLetter = String.fromCharCode(highestCode + 1);
+        if (highestCode === 64) nextLetter = 'A';
+        else if (highestCode >= 90) nextLetter = 'Z';
+        
+        number = `${prefix}${nextLetter}${suffix}`;
+    }
+    
     // Preparar objeto
     const normalizedQuote = {
         id: quoteData.id,
@@ -1403,7 +1438,7 @@ export async function saveQuote(quoteData) {
         cargo_description: quoteData.cargo_description || '',
         type: quoteData.type || 'TRANSPORTE',
         status: quoteData.status || 'RASCUNHO',
-        quote_number: quoteData.quote_number || '',
+        quote_number: number,
         date: quoteData.date || now.toISOString().split('T')[0],
         total_amount: Number(quoteData.total_amount) || 0,
         payload: quoteData.payload || {},
@@ -1453,6 +1488,63 @@ function updateLocalQuotesCache(quote) {
         list.unshift(quote);
     }
     localStorage.setItem('quotes', JSON.stringify(list));
+}
+
+export async function getAllClients() {
+    try {
+        const records = await pb.collection('quotes_clients').getFullList({
+            sort: '-created',
+        });
+        
+        // Filter out duplicates by name or nuit
+        const uniqueClients = [];
+        const seen = new Set();
+        
+        for (const record of records) {
+            const key = (record.name || '').trim().toLowerCase() + '|' + (record.nuit || '').trim();
+            if (key !== '|' && !seen.has(key)) {
+                seen.add(key);
+                uniqueClients.push(record);
+            }
+        }
+        
+        return uniqueClients;
+    } catch (err) {
+        console.error("[QUOTE CLIENT API] Erro ao obter lista de clientes:", err);
+        return [];
+    }
+}
+
+export async function getQuoteClient(quoteId) {
+    try {
+        const quote = await pb.collection('quotes').getOne(quoteId, { expand: 'client_ref' });
+        return quote.expand?.client_ref || null;
+    } catch (err) {
+        console.warn("[QUOTE CLIENT API] Não foi possível obter o cliente ou a cotação não existe:", err);
+        return null;
+    }
+}
+
+export async function saveQuoteClient(quoteId, clientData) {
+    try {
+        const quote = await pb.collection('quotes').getOne(quoteId);
+        
+        let clientRecord;
+        if (quote.client_ref) {
+            // Update existing client record
+            clientRecord = await pb.collection('quotes_clients').update(quote.client_ref, clientData);
+        } else {
+            // Create new client record
+            clientRecord = await pb.collection('quotes_clients').create(clientData);
+            // Link it to the quote
+            await pb.collection('quotes').update(quoteId, { client_ref: clientRecord.id, client_name: clientData.name || quote.client_name });
+        }
+        
+        return clientRecord;
+    } catch (err) {
+        console.error("[QUOTE CLIENT API] Erro ao gravar cliente da cotação:", err);
+        throw err;
+    }
 }
 
 export async function deleteQuote(id) {

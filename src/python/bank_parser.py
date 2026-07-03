@@ -71,12 +71,12 @@ def process_file(filepath):
     fn_upper = filename.upper()
     
     accounts = {
-        "75470366": ("BIM", "FILIPE CHITOFO"),
-        "330788916": ("BIM", "JUPITER LOGISTICS LDA"),
-        "9244900": ("NEDBANK", "JUPITER LOGISTICS LDA"),
-        "1086059371008": ("STB", "JUPITER LOGISTICS LDA"),
-        "18909451710002": ("BCI", "FILIPE CHITOFO"),
-        "15466194210001": ("BCI", "JUPITER LOGISTICS LDA")
+        "75470366": ("BIM BOSS", "FILIPE CHITOFO"),
+        "330788916": ("BIM JUPITER", "JUPITER LOGISTICS LDA"),
+        "9244900": ("NEDBANK JUPITER", "JUPITER LOGISTICS LDA"),
+        "1086059371008": ("STB JUPITER", "JUPITER LOGISTICS LDA"),
+        "18909451710002": ("BCI BOSS", "FILIPE CHITOFO"),
+        "15466194210001": ("BCI JUPITER", "JUPITER LOGISTICS LDA")
     }
     
     for acc, (b, o) in accounts.items():

@@ -235,3 +235,9 @@ input[type=number] {
         margin: 10mm;
     }
 }
+
+
+/* Override to ensure table content is never bold as requested */
+table td, table td *, table td input, table td select, table td textarea, table td div, table td span, table td a, table td p, table td button, table input {
+    font-weight: 400 !important;
+}
