@@ -64,8 +64,142 @@ def extract_order_id(desc):
     if match: return match.group(1).upper()
     return ""
 
+def parse_mt940(filepath):
+    results = []
+    
+    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+        content = f.read()
+        
+    bank = "UNKNOWN"
+    owner = "UNKNOWN"
+    acc_num = ""
+    
+    accounts = {
+        "75470366": ("BIM", "FILIPE CHITOFO"),
+        "330788916": ("BIM", "JUPITER LOGISTICS LDA"),
+        "9244900": ("NEDBANK", "JUPITER LOGISTICS LDA"),
+        "1086059371008": ("STB", "JUPITER LOGISTICS LDA"),
+        "18909451710002": ("BCI", "FILIPE CHITOFO"),
+        "15466194210001": ("BCI", "JUPITER LOGISTICS LDA")
+    }
+    
+    match_25 = re.search(r'^:25:/?([A-Z0-9]+)', content, re.MULTILINE)
+    if match_25:
+        acc_num_candidate = match_25.group(1).replace(' ', '')
+        for acc, (b, o) in accounts.items():
+            if acc in acc_num_candidate:
+                bank, owner, acc_num = b, o, acc
+                break
+                
+    if bank == "UNKNOWN":
+        fn_upper = os.path.basename(filepath).upper()
+        all_vals_str = (content + " " + fn_upper).upper()
+        for acc, (b, o) in accounts.items():
+            if acc in all_vals_str:
+                bank, owner, acc_num = b, o, acc
+                break
+                
+    if bank == "UNKNOWN":
+        all_vals_str = (content + " " + fn_upper).upper()
+        if "BCI" in all_vals_str: bank, owner = "BCI", "UNKNOWN"
+        elif "BIM" in all_vals_str: bank, owner = "BIM", "UNKNOWN"
+        elif "NEDBANK" in all_vals_str: bank, owner = "NEDBANK", "UNKNOWN"
+        elif "STANDARD" in all_vals_str or "STB" in all_vals_str: bank, owner = "STB", "UNKNOWN"
+
+    print(f"DEBUG: MT940 Parser detetou Banco: {bank}, Conta: {acc_num}", file=sys.stderr)
+    
+    running_balance = 0.0
+    ob_match = re.search(r'^:60[FM]:([CD])\d{6}[A-Z]{3}([\d,]+)', content, re.MULTILINE)
+    if ob_match:
+        sign = 1 if ob_match.group(1) == 'C' else -1
+        val_str = ob_match.group(2).replace(',', '.')
+        try: running_balance = float(val_str) * sign
+        except: pass
+
+    lines = content.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith(':61:'):
+            line_content = line[4:]
+            m = re.match(r'^(\d{6})(\d{4})?(C|D|RC|RD)([a-zA-Z])?([\d,]+)', line_content)
+            if m:
+                val_date = m.group(1)
+                cd = m.group(3)
+                amount_str = m.group(5)
+                
+                year = "20" + val_date[0:2]
+                month = val_date[2:4]
+                day = val_date[4:6]
+                date_formatted = f"{year}-{month}-{day} 00:00:00"
+                
+                amount_val = float(amount_str.replace(',', '.'))
+                if cd in ('D', 'RD'):
+                    amount_val = -amount_val
+                    running_balance -= abs(amount_val)
+                else:
+                    running_balance += abs(amount_val)
+                
+                reference = ""
+                rest = line_content[m.end():]
+                if '//' in rest:
+                    reference = rest.split('//', 1)[1].strip()
+                else:
+                    reference = rest.strip()
+                    
+                j = i + 1
+                while j < len(lines) and not lines[j].startswith(':'):
+                    if lines[j].strip():
+                        reference += " " + lines[j].strip()
+                    j += 1
+                    
+                desc_lines = []
+                if j < len(lines) and lines[j].startswith(':86:'):
+                    desc_lines.append(lines[j][4:].strip())
+                    j += 1
+                    while j < len(lines) and not lines[j].startswith(':'):
+                        if lines[j].strip():
+                            desc_lines.append(lines[j].strip())
+                        j += 1
+                        
+                description = " ".join(desc_lines)
+                if not description: description = reference
+                
+                if amount_val > 0: 
+                    if not is_bank_fee(description):
+                        sig = build_signature(bank, date_formatted, amount_val, running_balance, reference, description)
+                        order_id = extract_order_id(description)
+                        
+                        results.append({
+                            "date": date_formatted,
+                            "bank": bank,
+                            "account_owner": owner,
+                            "account_number": acc_num,
+                            "description": description,
+                            "reference": reference,
+                            "amount": amount_val,
+                            "balance": round(running_balance, 2),
+                            "signature": sig,
+                            "order_id": order_id,
+                            "reconciled": False
+                        })
+                i = j - 1
+        i += 1
+        
+    if not results:
+        print(json.dumps({"error": "Nenhum movimento de crédito encontrado no MT940 ou o formato não foi reconhecido."}))
+        sys.exit(1)
+        
+    print(json.dumps(results, indent=2))
+    sys.exit(0)
+
 def process_file(filepath):
     filename = os.path.basename(filepath)
+    
+    if filename.lower().endswith(('.txt', '.sta', '.mt940')):
+        parse_mt940(filepath)
+        return
+
     results = []
     bank, owner, acc_num = "UNKNOWN", "UNKNOWN", ""
     fn_upper = filename.upper()
