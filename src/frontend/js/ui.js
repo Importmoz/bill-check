@@ -1515,6 +1515,8 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             }
         });
     }
+
+    return groups;
 }
 
 export async function showConfirmDetail(client, clientIndex) {
@@ -1620,7 +1622,14 @@ export async function showConfirmDetail(client, clientIndex) {
 
     if (nameEl) nameEl.innerText = client.displayName || 'Cliente Sem Nome';
     if (idEl) idEl.innerText = `ID CODE: ${client.displayIdCode || '---'}`;
-    if (body) body.innerHTML = '';
+    if (body && !isSameClient) {
+        body.innerHTML = `
+            <div class="flex flex-col items-center justify-center p-12 text-slate-400">
+                <svg class="animate-spin h-8 w-8 text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <span class="text-xs font-bold uppercase tracking-widest animate-pulse">A carregar detalhes...</span>
+            </div>
+        `;
+    }
 
     const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
     const cbmIdx = findCol(['CBM', 'M3', 'VOLUME', 'VOL']);
@@ -1747,7 +1756,7 @@ export async function showConfirmDetail(client, clientIndex) {
 
             // Construir o select de banco
             const cleanCurrent = String(bankDuty || '').trim();
-            const options = ['?', 'BIM', 'BCI', 'STB', 'NEDBANK', 'EMOLA'];
+            const options = ['?', 'BCI BOSS', 'BIM BOSS', 'BCI JUPITER', 'BIM JUPITER', 'STB JUPITER', 'NED JUPITER', 'PAID IN CHINA', 'REPOSIÇÃO', 'COTACAO', 'EMOLA BOSS'];
             if (cleanCurrent && cleanCurrent !== '—' && !options.includes(cleanCurrent)) {
                 options.push(cleanCurrent);
             }
@@ -2375,7 +2384,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
 
     // Atualizar HTML interno da linha
     const cleanCurrent = String(bankDuty || '').trim();
-    const options = ['?', 'BIM', 'BCI', 'STB', 'NEDBANK', 'EMOLA'];
+    const options = ['?', 'BCI BOSS', 'BIM BOSS', 'BCI JUPITER', 'BIM JUPITER', 'STB JUPITER', 'NED JUPITER', 'PAID IN CHINA', 'REPOSIÇÃO', 'COTACAO', 'EMOLA BOSS'];
     if (cleanCurrent && cleanCurrent !== '—' && !options.includes(cleanCurrent)) {
         options.push(cleanCurrent);
     }
@@ -2636,46 +2645,33 @@ export function handleConfirmRealtimeEvent(e) {
         if (payload.rowData) {
             console.log(`[SSE-FASE-4][DADOS-ATUALIZADOS] Atualizando dados da linha ${row} com:`, payload.rowData);
             state.confirm.data[row] = payload.rowData;
-            
-            if (window.currentActiveClient && window.currentActiveClient.rows) {
-                const foundRow = window.currentActiveClient.rows.find(r => r.originalIndex === row);
-                if (foundRow) {
-                    console.log("[SSE-FASE-4][DETALHE-RE-RENDER] Linha em edição encontrada nos dados do cliente ativo.");
-                    foundRow.originalRow = payload.rowData;
-                    
-                    // Apenas atualiza visualmente o detalhe se o usuário estiver de facto na tela de detalhes
-                    const detailView = document.getElementById('view-confirm-client-detail');
-                    if (detailView && !detailView.classList.contains('hidden')) {
-                        console.log("[SSE-FASE-4][DETALHE-RE-RENDER] O ecrã de detalhe está ativo e visível. Atualizando linha suavemente...");
-                        updateConfirmDetailRow(row, payload.rowData);
-                    }
-                }
-            }
-            
-            const viewEl = document.getElementById('view-confirm-table');
-            if (viewEl && !viewEl.classList.contains('hidden')) {
-                console.log("[SSE-FASE-4][TABELA-RE-RENDER] Re-renderizando tabela principal...");
-                const filterEl = document.getElementById('confirm-status-filter');
-                const statusFilter = filterEl?.value || 'PENDENTE';
-                const searchEl = document.getElementById('input-confirm-search');
-                const searchText = searchEl?.value || '';
-                renderConfirmList(state.confirm.data, searchText, statusFilter);
-            }
         }
         delete window.activeConfirmLocks[row];
         console.log(`[SSE-FASE-4][UPDATE-COMPLETO] Dados da linha ${row} atualizados. Lock removido.`);
     }
     
-    // Atualizar UI dos Locks
-    console.log("[SSE-FASE-5][REDESENHAR-UI] Atualizando locks visuais na lista de ordens (detalhe)...");
-    updateLocksUI();
-    
-    // Re-renderizar lista principal para atualizar cadeados e estados visuais
+    // Re-renderizar lista principal para atualizar cadeados e estados visuais, e capturar os novos grupos
     const filterEl = document.getElementById('confirm-status-filter');
     const statusFilter = filterEl?.value || 'PENDENTE';
     const searchEl = document.getElementById('input-confirm-search');
     const searchText = searchEl?.value || '';
-    renderConfirmList(state.confirm.data, searchText, statusFilter);
+    const groups = renderConfirmList(state.confirm.data, searchText, statusFilter);
+
+    // Se o painel de detalhe do cliente estiver aberto, atualizar a vista completa
+    const detailView = document.getElementById('view-confirm-client-detail');
+    if (detailView && !detailView.classList.contains('hidden') && window.currentActiveClient) {
+        // Usa state.confirm.groupedClients para evitar que o cliente suma se o status mudar e for filtrado
+        const allGroups = state.confirm.groupedClients || groups;
+        const activeGroup = allGroups.find(g => String(g.no || '—') === String(window.currentActiveClientIndex || window.currentActiveClient.no));
+        if (activeGroup) {
+            console.log("[SSE-FASE-5][DETALHE-RE-RENDER] Atualizando o painel de detalhe completo do cliente em tempo real.");
+            showConfirmDetail(activeGroup, window.currentActiveClientIndex);
+        }
+    }
+    
+    // Atualizar UI dos Locks
+    console.log("[SSE-FASE-6][REDESENHAR-UI] Atualizando locks visuais na lista de ordens (detalhe)...");
+    updateLocksUI();
 }
 
 export function handleBankRealtimeEvent(e) {
@@ -7522,7 +7518,7 @@ export function checkAndShowNewsIcon(version) {
     const btn = document.createElement('button');
     btn.id = 'btn-global-news';
     btn.className = 'fixed top-3.5 right-16 z-[9990] bg-indigo-600 text-white p-2 rounded-full shadow-lg hover:shadow-indigo-500/20 active:scale-95 transition-all animate-bounce cursor-pointer flex items-center justify-center border border-indigo-400';
-    btn.title = 'Novidades da Versão (V1.2.0)';
+    btn.title = 'Novidades da Versão (V1.3.0)';
     btn.onclick = () => showChangelogModal();
     btn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
@@ -7566,27 +7562,27 @@ export function showChangelogModal() {
                     <!-- Coluna 1 -->
                     <div class="space-y-3">
                         <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
-                            <span class="text-[8px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Confirm & Infraestrutura</span>
-                            <p class="font-bold text-[10px] text-slate-800">🛡️ Modo Offline e Sincronização Automática:</p>
-                            <p class="text-[10px] text-slate-500 font-medium mt-1">O sistema agora tem tolerância a falhas do GSheet. Se a planilha cair, o <code>Modo Backup Ativo</code> entra em ação permitindo continuar o trabalho. As alterações ficam no PocketBase e são injetadas no GSheet quando a ligação voltar.</p>
+                            <span class="text-[8px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Colaboração em Tempo Real</span>
+                            <p class="font-bold text-[10px] text-slate-800">⚡ Sincronização Perfeita (Zero Ecrã Branco):</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">A atualização remota de ordens agora é instantânea e muito mais fluída. Removido o piscar e o carregamento forçado do ecrã quando vários utilizadores editam clientes em simultâneo. A sua vista mantém-se intacta e só atualiza os dados quando prontos.</p>
                         </div>
                         <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
-                            <span class="text-[8px] bg-red-100 text-red-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Prevenção de Perdas</span>
-                            <p class="font-bold text-[10px] text-slate-800">⚖️ Resolução de Conflitos:</p>
-                            <p class="text-[10px] text-slate-500 font-medium mt-1">Se alguém alterar o GSheet em casa enquanto o armazém trabalhava em Modo Offline, o sistema deteta e exibe o "Modal de Conflito de Sincronização", permitindo escolher entre a versão do Sistema ou a versão GSheet para evitar perda de dados.</p>
+                            <span class="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Inteligência de Filtros</span>
+                            <p class="font-bold text-[10px] text-slate-800">🔍 Continuidade Visual:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Antes, se estivesse a olhar para um cliente e ele fosse confirmado noutro PC, a tela congelava porque o filtro "Pendente" o ocultava. Agora, o sistema tem tolerância visual, forçando sempre a atualização do que o utilizador está a visualizar.</p>
                         </div>
                     </div>
                     <!-- Coluna 2 -->
                     <div class="space-y-3">
                         <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
-                            <span class="text-[8px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Reconciliação</span>
-                            <p class="font-bold text-[10px] text-slate-800">🧮 Preservação de Fórmulas (Duty & Frete):</p>
-                            <p class="text-[10px] text-slate-500 font-medium mt-1">Ações em massa e reconciliações individuais deixaram de exportar valores fixos para as colunas de <code>BALANCE</code>. Agora o sistema apenas atualiza pagamentos e datas, permitindo que a fórmula nativa do Google Sheets continue a operar de forma inteligente.</p>
+                            <span class="text-[8px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Extratos Bancários</span>
+                            <p class="font-bold text-[10px] text-slate-800">🏦 Busca Dinâmica de Bancos:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">O menu rápido de Extratos foi simplificado. Os bancos agora aparecem pelo nome raiz (BCI, BIM, STB), mas o sistema faz o cruzamento automático com as contas (BOSS, JUPITER) mantendo todo o histórico acessível de forma limpa.</p>
                         </div>
                         <div class="p-3.5 bg-white border border-slate-100 rounded-2xl shadow-xs">
-                            <span class="text-[8px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Módulo Armazém</span>
-                            <p class="font-bold text-[10px] text-slate-800">📅 Atualizações Estáveis:</p>
-                            <p class="text-[10px] text-slate-500 font-medium mt-1">Mantido o calendário nativo (datepicker) que salva no GSheet em formato standard e a ocultação de botões redundantes. O sistema geral está mais robusto contra latência da Google API.</p>
+                            <span class="text-[8px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-black uppercase tracking-wider block w-fit mb-1.5">Design de Interface</span>
+                            <p class="font-bold text-[10px] text-slate-800">✨ Minimalismo e Compactação:</p>
+                            <p class="text-[10px] text-slate-500 font-medium mt-1">Elementos visuais não essenciais (como textos descritivos extra na vinculação) foram removidos. As tabelas assumem a altura mínima essencial (auto-wrap), e menus suspensos ajustam-se à largura máxima do ecrã com opções como "TODOS".</p>
                         </div>
                     </div>
                 </div>
@@ -7608,7 +7604,7 @@ export function closeChangelogModal(markAsViewed = false) {
     if (modal) modal.remove();
 
     if (markAsViewed) {
-        const version = window.__SYSTEM_VERSION__ || 'v1.2.0';
+        const version = window.__SYSTEM_VERSION__ || 'v1.3.0';
         localStorage.setItem('viewed-version-' + version, 'true');
         const btn = document.getElementById('btn-global-news');
         if (btn) btn.remove();
