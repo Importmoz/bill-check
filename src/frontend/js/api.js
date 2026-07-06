@@ -18,8 +18,69 @@ export function buildSearchFilter(term) {
         if (!kw) continue;
         
         let escapedKw = kw.replace(/"/g, '\\"');
+
+        // Advanced Search Prefixes (novas formas de pesquisa para MT940)
+        let isAdvanced = false;
+        const lowerKw = kw.toLowerCase();
         
-        // 1. Tratar formato de data dd/mm/yyyy para permitir busca flexível (ex: MT940 extrai datas perfeitamente)
+        const advancedPrefixes = {
+            'banco:': 'bank',
+            'valor:': 'amount',
+            'data:': 'date',
+            'ref:': 'reference',
+            'desc:': 'description',
+            'conta:': 'account_number',
+            'titular:': 'account_owner',
+            'ordem:': 'order_id'
+        };
+
+        for (const [prefix, field] of Object.entries(advancedPrefixes)) {
+            if (lowerKw.startsWith(prefix)) {
+                let val = kw.substring(prefix.length).trim();
+                if (!val) continue;
+
+                if (field === 'amount') {
+                    // check for operator (>, <, >=, <=, =)
+                    let op = '=';
+                    let numStr = val;
+                    if (val.match(/^(>=|<=|>|<|=)/)) {
+                        const match = val.match(/^(>=|<=|>|<|=)(.*)/);
+                        op = match[1];
+                        numStr = match[2].trim();
+                    }
+                    
+                    let cleanNum = numStr;
+                    if (/^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/.test(numStr)) {
+                        cleanNum = numStr.replace(/\./g, '').replace(',', '.');
+                    } else if (/^-?\d+(?:,\d+)?$/.test(numStr)) { 
+                        cleanNum = numStr.replace(',', '.');
+                    }
+                    const numVal = parseFloat(cleanNum);
+                    if (!isNaN(numVal)) {
+                        filters.push(`(${field} ${op} ${numVal})`);
+                    }
+                } else if (field === 'date') {
+                    let searchDate = val;
+                    const dateMatch = val.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+                    if (dateMatch) {
+                        if (dateMatch[3]) {
+                            searchDate = `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
+                        } else {
+                            searchDate = `-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
+                        }
+                    }
+                    filters.push(`(${field} ~ "${searchDate.replace(/"/g, '\\"')}")`);
+                } else {
+                    filters.push(`(${field} ~ "${val.replace(/"/g, '\\"')}")`);
+                }
+                isAdvanced = true;
+                break;
+            }
+        }
+
+        if (isAdvanced) continue;
+        
+        // 1. Tratar formato de data dd/mm/yyyy para permitir busca flexível
         let searchDate = escapedKw;
         const dateMatch = kw.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
         if (dateMatch) {
@@ -30,10 +91,10 @@ export function buildSearchFilter(term) {
             }
         }
         
-        // Combina todas as colunas relevantes que o MT940 extrai perfeitamente
+        // Combina todas as colunas relevantes que o MT940 extrai perfeitamente (forma de pesquisa antiga mantida e melhorada)
         let kwFilter = `description ~ "${escapedKw}" || reference ~ "${escapedKw}" || date ~ "${searchDate}" || order_id ~ "${escapedKw}" || info ~ "${escapedKw}" || account_owner ~ "${escapedKw}" || account_number ~ "${escapedKw}" || bank ~ "${escapedKw}"`;
         
-        // 2. Tratar valores monetários pt-BR/pt-PT (MT940 lida com , e . corretamente, a busca deve seguir)
+        // 2. Tratar valores monetários pt-BR/pt-PT
         let cleanNum = kw;
         if (/^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/.test(kw)) {
              cleanNum = kw.replace(/\./g, '').replace(',', '.');
