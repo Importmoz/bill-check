@@ -1754,12 +1754,12 @@ async function saveConfirmToSheet() {
                 values: [[updatedRow[paidIdx]]]
             });
         }
-        if (balanceIdx !== -1) {
-            batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
-                values: [[updatedRow[balanceIdx]]]
-            });
-        }
+        // if (balanceIdx !== -1) {
+        //     batchUpdates.push({
+        //         range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+        //         values: [[updatedRow[balanceIdx]]]
+        //     });
+        // }
         if (statusIdx !== -1) {
             batchUpdates.push({
                 range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
