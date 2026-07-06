@@ -375,15 +375,13 @@
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 md:gap-4 mb-4 md:mb-6 shrink-0">
                         <div>
                             <label class="block text-[8px] md:text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Banco</label>
-                            <select id="mini-filter-bank" class="w-full p-2 md:p-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" onchange="ui.searchPaymentMiniFilter()">
-                                <option value="">Qualquer Banco</option>
-                                <option value="BIM BOSS">BIM BOSS</option>
-                                <option value="BIM JUPITER">BIM JUPITER</option>
-                                <option value="BCI BOSS">BCI BOSS</option>
-                                <option value="BCI JUPITER">BCI JUPITER</option>
+                            <select id="mini-filter-bank" class="w-max p-2 md:p-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" onchange="ui.searchPaymentMiniFilter()">
+                                <option value="">Todos</option>
+                                <option value="BIM">BIM</option>
+                                <option value="BCI">BCI</option>
                                 <option value="STB">STB</option>
                                 <option value="NEDBANK">NEDBANK</option>
-                                <option value="M-PESA">M-PESA</option>
+                                <option value="EMOLA">EMOLA</option>
                             </select>
                         </div>
                         <div>
@@ -648,16 +646,11 @@
                         <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Banco Reconciliado (Bank)</label>
                         <select id="edit-bankDuty" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all">
                             <option value="?">?</option>
-                            <option value="BCI BOSS">BCI BOSS</option>
-                            <option value="BIM BOSS">BIM BOSS</option>
-                            <option value="BCI JUPITER">BCI JUPITER</option>
-                            <option value="BIM JUPITER">BIM JUPITER</option>
-                            <option value="STB JUPITER">STB JUPITER</option>
-                            <option value="NED JUPITER">NED JUPITER</option>
-                            <option value="PAID IN CHINA">PAID IN CHINA</option>
-                            <option value="REPOSIÇÃO">REPOSIÇÃO</option>
-                            <option value="COTACAO">COTACAO</option>
-                            <option value="EMOLA BOSS">EMOLA BOSS</option>
+                            <option value="BIM">BIM</option>
+                            <option value="BCI">BCI</option>
+                            <option value="STB">STB</option>
+                            <option value="NEDBANK">NEDBANK</option>
+                            <option value="EMOLA">EMOLA</option>
                         </select>
                     </div>
                     <div>
@@ -713,13 +706,11 @@
                     <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Banco de Destino</label>
                     <select id="select-freight-bank" class="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all cursor-pointer">
                         <option value="">Selecionar Banco...</option>
-                        <option value="BCI BOSS">BCI BOSS</option>
-                        <option value="BIM BOSS">BIM BOSS</option>
-                        <option value="BCI JUPITER">BCI JUPITER</option>
-                        <option value="BIM JUPITER">BIM JUPITER</option>
-                        <option value="STB JUPITER">STB JUPITER</option>
-                        <option value="NED JUPITER">NED JUPITER</option>
-                        <option value="EMOLA BOSS">EMOLA BOSS</option>
+                        <option value="BIM">BIM</option>
+                        <option value="BCI">BCI</option>
+                        <option value="STB">STB</option>
+                        <option value="NEDBANK">NEDBANK</option>
+                        <option value="EMOLA">EMOLA</option>
                     </select>
                 </div>
                 <div class="bg-blue-50/50 border border-blue-100 rounded-xl p-3 flex items-start gap-2">

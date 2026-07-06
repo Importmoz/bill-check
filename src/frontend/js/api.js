@@ -99,7 +99,7 @@ export function buildSearchFilter(term) {
         }
         
         // Combina colunas, usando a versão sem acentos para maior tolerância!
-        let kwFilter = `description ~ "${escapedCleanKw}" || reference ~ "${escapedCleanKw}" || date ~ "${searchDate}" || order_id ~ "${escapedCleanKw}" || info ~ "${escapedCleanKw}" || account_owner ~ "${escapedCleanKw}" || account_number ~ "${escapedCleanKw}" || bank ~ "${escapedCleanKw}"`;
+        let kwFilter = `description ~ "${escapedCleanKw}" || reference ~ "${escapedCleanKw}" || date ~ "${searchDate}" || order_id ~ "${escapedCleanKw}" || account_owner ~ "${escapedCleanKw}" || account_number ~ "${escapedCleanKw}" || bank ~ "${escapedCleanKw}"`;
         
         // 2. Tratar valores monetários pt-BR/pt-PT
         let cleanNum = kw;
@@ -285,17 +285,8 @@ export async function searchPayments(bank, amount, term) {
     let filter = `reconciled != true`;
     
     if (bank) {
-        if (bank === 'BIM BOSS') {
-            filter += ` && bank = "BIM" && (account_owner ~ "FILIPE" || account_owner ~ "BOSS")`;
-        } else if (bank === 'BIM JUPITER') {
-            filter += ` && bank = "BIM" && account_owner ~ "JUPITER"`;
-        } else if (bank === 'BCI BOSS') {
-            filter += ` && bank = "BCI" && (account_owner ~ "FILIPE" || account_owner ~ "BOSS")`;
-        } else if (bank === 'BCI JUPITER') {
-            filter += ` && bank = "BCI" && account_owner ~ "JUPITER"`;
-        } else {
-            filter += ` && bank ~ "${bank}"`;
-        }
+        let cleanBank = bank.replace(' BOSS', '').replace(' JUPITER', '').trim();
+        filter += ` && bank ~ "${cleanBank}"`;
     }
     
     if (amount) {

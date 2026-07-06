@@ -1747,7 +1747,7 @@ export async function showConfirmDetail(client, clientIndex) {
 
             // Construir o select de banco
             const cleanCurrent = String(bankDuty || '').trim();
-            const options = ['?', 'BCI BOSS', 'BIM BOSS', 'BCI JUPITER', 'BIM JUPITER', 'STB JUPITER', 'NED JUPITER', 'PAID IN CHINA', 'REPOSIÇÃO', 'COTACAO', 'EMOLA BOSS'];
+            const options = ['?', 'BIM', 'BCI', 'STB', 'NEDBANK', 'EMOLA'];
             if (cleanCurrent && cleanCurrent !== '—' && !options.includes(cleanCurrent)) {
                 options.push(cleanCurrent);
             }
@@ -2375,7 +2375,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
 
     // Atualizar HTML interno da linha
     const cleanCurrent = String(bankDuty || '').trim();
-    const options = ['?', 'BCI BOSS', 'BIM BOSS', 'BCI JUPITER', 'BIM JUPITER', 'STB JUPITER', 'NED JUPITER', 'PAID IN CHINA', 'REPOSIÇÃO', 'COTACAO', 'EMOLA BOSS'];
+    const options = ['?', 'BIM', 'BCI', 'STB', 'NEDBANK', 'EMOLA'];
     if (cleanCurrent && cleanCurrent !== '—' && !options.includes(cleanCurrent)) {
         options.push(cleanCurrent);
     }
@@ -3998,17 +3998,8 @@ export async function refreshBankData() {
 
     let filters = [];
     if (bankFilter) {
-        if (bankFilter === 'BIM BOSS') {
-            filters.push(`bank = "BIM" && (account_owner ~ "FILIPE" || account_owner ~ "BOSS")`);
-        } else if (bankFilter === 'BIM JUPITER') {
-            filters.push(`bank = "BIM" && account_owner ~ "JUPITER"`);
-        } else if (bankFilter === 'BCI BOSS') {
-            filters.push(`bank = "BCI" && (account_owner ~ "FILIPE" || account_owner ~ "BOSS")`);
-        } else if (bankFilter === 'BCI JUPITER') {
-            filters.push(`bank = "BCI" && account_owner ~ "JUPITER"`);
-        } else {
-            filters.push(`bank ~ "${bankFilter}"`);
-        }
+        let cleanBank = bankFilter.replace(' BOSS', '').replace(' JUPITER', '').trim();
+        filters.push(`bank ~ "${cleanBank}"`);
     }
 
     if (searchTerm) {
@@ -4099,7 +4090,11 @@ export function renderBankIncomes() {
         let matchesSearch = true;
         if (searchTerms.length > 0) {
             matchesSearch = searchTerms.every(term => {
+                // Se for termo de busca avançada (contém ':', '>', '<', '=', ou formato de data '/'), confiamos no backend
+                if (term.includes(':') || term.includes('>') || term.includes('<') || term.includes('=') || term.includes('/')) return true;
+                
                 const amountStr = String(item.amount);
+                const dateStr = String(item.date); // Permitir match parcial na data literal
                 return normalizeStr(item.description).includes(term) ||
                        normalizeStr(item.order_id).includes(term) ||
                        normalizeStr(item.reference).includes(term) ||
@@ -4107,6 +4102,7 @@ export function renderBankIncomes() {
                        normalizeStr(item.account_owner).includes(term) ||
                        normalizeStr(item.account_number).includes(term) ||
                        normalizeStr(item.bank).includes(term) ||
+                       dateStr.includes(term) ||
                        amountStr.includes(term);
             });
         }
@@ -4227,6 +4223,9 @@ export function setMiniFilterSearch(value) {
 }
 
 export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmount = '', defaultTerm = '', clientName = '', phoneNumber = '', notaDuty = '') {
+    if (defaultBank) {
+        defaultBank = String(defaultBank).replace(' BOSS', '').replace(' JUPITER', '').trim();
+    }
     const role = pb.authStore.model?.role || 'USER';
     if (role === 'USER' || role === 'USER_L1') {
         toast("Acesso Negado: A vinculação de pagamentos exige nível de permissão Nível 2 ou superior.", "error");
@@ -4394,17 +4393,16 @@ export async function searchPaymentMiniFilter() {
                 const amountFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(rec.amount);
 
                 const bankDisplay = getPaymentBankDisplay(rec);
-                const extraInfo = [rec.info, rec.reference, rec.account_owner, rec.account_number].filter(Boolean).join(' | ');
-                const descHtml = extraInfo ? `${rec.description || '—'}<br><span class="text-[9px] text-purple-600 font-bold tracking-tight opacity-90">${extraInfo}</span>` : (rec.description || rec.reference || '—');
+                const descHtml = rec.description || rec.reference || '—';
 
                 tr.innerHTML = `
-                    <td class="px-3 py-2 text-center" onclick="event.stopPropagation();">
+                    <td class="px-3 py-1 text-center" onclick="event.stopPropagation();">
                         <input type="checkbox" ${checkedAttr} onchange="ui.togglePaymentSelection('${rec.id}', '${rec.date}', '${refText.replace(/'/g, "\\'")}', parseFloat('${rec.amount}'))" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
                     </td>
-                    <td class="px-4 py-3 whitespace-nowrap">${dateStr}</td>
-                    <td class="px-4 py-3 font-normal text-slate-700">${bankDisplay}</td>
-                    <td class="px-4 py-3 text-slate-600 truncate max-w-[250px]" title="${rec.description} | ${extraInfo}">${descHtml}</td>
-                    <td class="px-4 py-3 text-right font-normal text-green-600">${amountFormatted}</td>
+                    <td class="px-4 py-1 whitespace-nowrap">${dateStr}</td>
+                    <td class="px-4 py-1 font-normal text-slate-700">${bankDisplay}</td>
+                    <td class="px-4 py-1 text-slate-600 truncate max-w-[250px]" title="${descHtml}">${descHtml}</td>
+                    <td class="px-4 py-1 text-right font-normal text-green-600">${amountFormatted}</td>
                 `;
                 tbody.appendChild(tr);
             });
