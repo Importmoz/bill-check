@@ -377,10 +377,12 @@
                             <label class="block text-[8px] md:text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Banco</label>
                             <select id="mini-filter-bank" class="w-full p-2 md:p-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" onchange="ui.searchPaymentMiniFilter()">
                                 <option value="">Qualquer Banco</option>
-                                <option value="BIM">BIM</option>
-                                <option value="BCI">BCI</option>
+                                <option value="BIM BOSS">BIM BOSS</option>
+                                <option value="BIM JUPITER">BIM JUPITER</option>
+                                <option value="BCI BOSS">BCI BOSS</option>
+                                <option value="BCI JUPITER">BCI JUPITER</option>
                                 <option value="STB">STB</option>
-                                <option value="NED">NED</option>
+                                <option value="NEDBANK">NEDBANK</option>
                                 <option value="M-PESA">M-PESA</option>
                             </select>
                         </div>
@@ -389,9 +391,9 @@
                             <input id="mini-filter-amount" type="number" step="0.01" placeholder="Ex: 5000" class="w-full p-2 md:p-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" oninput="ui.searchPaymentMiniFilter()" />
                         </div>
                         <div>
-                            <label class="block text-[8px] md:text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Termo (Ref / Desc)</label>
+                            <label class="block text-[8px] md:text-[9px] font-black text-slate-500 uppercase tracking-wider mb-1">Termo (Ref, Desc, Titular, Ordem)</label>
                             <div class="relative">
-                                <input id="mini-filter-search" type="text" placeholder="Pesquisar..." class="w-full pl-8 pr-3 py-2 md:pl-10 md:py-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" oninput="ui.searchPaymentMiniFilter()" />
+                                <input id="mini-filter-search" type="text" placeholder="Ex: HF1234, FILIPE, JUPITER..." class="w-full pl-8 pr-3 py-2 md:pl-10 md:py-3 border-2 border-slate-50 rounded-xl text-xs bg-slate-50 focus:bg-white focus:border-blue-500 transition-all font-bold outline-none" oninput="ui.searchPaymentMiniFilter()" />
                                 <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400">
                                      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                                 </span>

@@ -8,6 +8,49 @@ const PB_URL = (window.POCKETBASE_CONFIG && window.POCKETBASE_CONFIG.POCKETBASE_
 export const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
+export function buildSearchFilter(term) {
+    if (!term) return '';
+    const keywords = term.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+    const filters = [];
+    
+    for (let kw of keywords) {
+        kw = kw.replace(/^"|"$/g, '').trim();
+        if (!kw) continue;
+        
+        let escapedKw = kw.replace(/"/g, '\\"');
+        
+        // 1. Tratar formato de data dd/mm/yyyy para permitir busca flexível (ex: MT940 extrai datas perfeitamente)
+        let searchDate = escapedKw;
+        const dateMatch = kw.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+        if (dateMatch) {
+            if (dateMatch[3]) {
+                searchDate = `${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
+            } else {
+                searchDate = `-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`;
+            }
+        }
+        
+        // Combina todas as colunas relevantes que o MT940 extrai perfeitamente
+        let kwFilter = `description ~ "${escapedKw}" || reference ~ "${escapedKw}" || date ~ "${searchDate}" || order_id ~ "${escapedKw}" || info ~ "${escapedKw}" || account_owner ~ "${escapedKw}" || account_number ~ "${escapedKw}" || bank ~ "${escapedKw}"`;
+        
+        // 2. Tratar valores monetários pt-BR/pt-PT (MT940 lida com , e . corretamente, a busca deve seguir)
+        let cleanNum = kw;
+        if (/^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/.test(kw)) {
+             cleanNum = kw.replace(/\./g, '').replace(',', '.');
+        } else if (/^-?\d+(?:,\d+)?$/.test(kw)) { 
+             cleanNum = kw.replace(',', '.');
+        }
+
+        const numVal = parseFloat(cleanNum);
+        if (!isNaN(numVal) && isFinite(numVal) && String(cleanNum).match(/^-?\d+(\.\d+)?$/)) {
+            kwFilter += ` || amount = ${numVal}`;
+        }
+        
+        filters.push(`(${kwFilter})`);
+    }
+    return filters.join(' && ');
+}
+
 // Estado da Aplicação
 export const state = {
     tables: [],
@@ -174,22 +217,36 @@ export async function searchPayments(bank, amount, term) {
     let filter = `reconciled != true`;
     
     if (bank) {
-        filter += ` && bank ~ "${bank}"`;
+        if (bank === 'BIM BOSS') {
+            filter += ` && bank = "BIM" && (account_owner ~ "FILIPE" || account_owner ~ "BOSS")`;
+        } else if (bank === 'BIM JUPITER') {
+            filter += ` && bank = "BIM" && account_owner ~ "JUPITER"`;
+        } else if (bank === 'BCI BOSS') {
+            filter += ` && bank = "BCI" && (account_owner ~ "FILIPE" || account_owner ~ "BOSS")`;
+        } else if (bank === 'BCI JUPITER') {
+            filter += ` && bank = "BCI" && account_owner ~ "JUPITER"`;
+        } else {
+            filter += ` && bank ~ "${bank}"`;
+        }
     }
     
-    if (amount && !isNaN(parseFloat(amount))) {
-        filter += ` && amount = ${parseFloat(amount)}`;
+    if (amount) {
+        let cleanAmount = String(amount).trim();
+        if (/^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/.test(cleanAmount)) {
+             cleanAmount = cleanAmount.replace(/\./g, '').replace(',', '.');
+        } else if (/^-?\d+(?:,\d+)?$/.test(cleanAmount)) { 
+             cleanAmount = cleanAmount.replace(',', '.');
+        }
+        
+        const numVal = parseFloat(cleanAmount);
+        if (!isNaN(numVal)) {
+            filter += ` && amount = ${numVal}`;
+        }
     }
     
     if (term) {
-        const keywords = term.split(/\s+/).filter(k => k.trim().length > 0);
-        for (const kw of keywords) {
-            let kwFilter = `description ~ "${kw}" || reference ~ "${kw}" || date ~ "${kw}"`;
-            if (!isNaN(parseFloat(kw))) {
-                kwFilter += ` || amount = ${parseFloat(kw)}`;
-            }
-            filter += ` && (${kwFilter})`;
-        }
+        const termFilter = buildSearchFilter(term);
+        if (termFilter) filter += ` && (${termFilter})`;
     }
     
     return await listBankIncomes(filter, 100);
