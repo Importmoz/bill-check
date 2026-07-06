@@ -14,12 +14,16 @@ export function buildSearchFilter(term) {
     const filters = [];
     
     for (let kw of keywords) {
+        // Remover aspas externas do bloco principal se existirem
         kw = kw.replace(/^"|"$/g, '').trim();
         if (!kw) continue;
         
         let escapedKw = kw.replace(/"/g, '\\"');
+        // Remover acentos para garantir que buscas como 'joão' encontrem 'JOAO'
+        let cleanKw = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        let escapedCleanKw = cleanKw.replace(/"/g, '\\"');
 
-        // Advanced Search Prefixes (novas formas de pesquisa para MT940)
+        // Advanced Search Prefixes
         let isAdvanced = false;
         const lowerKw = kw.toLowerCase();
         
@@ -37,10 +41,13 @@ export function buildSearchFilter(term) {
         for (const [prefix, field] of Object.entries(advancedPrefixes)) {
             if (lowerKw.startsWith(prefix)) {
                 let val = kw.substring(prefix.length).trim();
+                // Limpar aspas se o utilizador usou desc:"meu texto"
+                val = val.replace(/^"|"$/g, '').trim();
                 if (!val) continue;
 
+                let cleanVal = val.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
                 if (field === 'amount') {
-                    // check for operator (>, <, >=, <=, =)
                     let op = '=';
                     let numStr = val;
                     if (val.match(/^(>=|<=|>|<|=)/)) {
@@ -71,7 +78,7 @@ export function buildSearchFilter(term) {
                     }
                     filters.push(`(${field} ~ "${searchDate.replace(/"/g, '\\"')}")`);
                 } else {
-                    filters.push(`(${field} ~ "${val.replace(/"/g, '\\"')}")`);
+                    filters.push(`(${field} ~ "${cleanVal.replace(/"/g, '\\"')}")`);
                 }
                 isAdvanced = true;
                 break;
@@ -91,8 +98,8 @@ export function buildSearchFilter(term) {
             }
         }
         
-        // Combina todas as colunas relevantes que o MT940 extrai perfeitamente (forma de pesquisa antiga mantida e melhorada)
-        let kwFilter = `description ~ "${escapedKw}" || reference ~ "${escapedKw}" || date ~ "${searchDate}" || order_id ~ "${escapedKw}" || info ~ "${escapedKw}" || account_owner ~ "${escapedKw}" || account_number ~ "${escapedKw}" || bank ~ "${escapedKw}"`;
+        // Combina colunas, usando a versão sem acentos para maior tolerância!
+        let kwFilter = `description ~ "${escapedCleanKw}" || reference ~ "${escapedCleanKw}" || date ~ "${searchDate}" || order_id ~ "${escapedCleanKw}" || info ~ "${escapedCleanKw}" || account_owner ~ "${escapedCleanKw}" || account_number ~ "${escapedCleanKw}" || bank ~ "${escapedCleanKw}"`;
         
         // 2. Tratar valores monetários pt-BR/pt-PT
         let cleanNum = kw;
