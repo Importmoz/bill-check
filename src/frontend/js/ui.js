@@ -1019,6 +1019,15 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     if (!state.confirm) state.confirm = {};
     state.confirm.columns = columns;
 
+    const btnWarehouse = document.getElementById('btn-warehouse-status');
+    if (btnWarehouse) {
+        if (state.confirm.dischargeDate) {
+            btnWarehouse.classList.remove('hidden');
+        } else {
+            btnWarehouse.classList.add('hidden');
+        }
+    }
+
     // Verificar e criar colunas de Armazém em falta
     const requiredCols = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
     const hasAllCols = requiredCols.every(req => {
@@ -2231,6 +2240,292 @@ export async function replyToConfirmationNote(note) {
         toast('Erro ao gravar dados no GSheet: ' + err.message, 'error');
     } finally {
         setLoader(false);
+    }
+}
+
+/**
+ * Abre o modal que lista mercadorias pendentes no armazém, 
+ * verificando o status de pagamento de Duty e Frete de cada uma.
+ */
+export function openWarehouseStatusModal() {
+    if (!state.confirm || !state.confirm.data) return;
+    
+    const columns = state.confirm.columns;
+    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+    
+    const findCol = (targets) => {
+        const cleanedTargets = targets.map(cleanString);
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c) === target);
+            if (idx !== -1) return idx;
+        }
+        for (const target of cleanedTargets) {
+            const idx = columns.findIndex(c => cleanString(c).includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const idCodeIdx = findCol(['ID CODE', 'CODE ID', 'ID']);
+    const nameIdx = findCol(['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
+    const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
+    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+    
+    const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE']);
+    const balanceFreightIdx = findCol(['BALANCE FREIGHT', 'SALDO FRETE']);
+    const packagesIdx = findCol(['PACKAGES', 'VOLUMES', 'QTIES']);
+    
+    let noIdx = columns.findIndex(c => {
+        const h = String(c || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        return h === 'NO' || h === 'Nº' || h === 'N' || h === 'NUMERO' || h.startsWith('NO.') || h.startsWith('Nº.') || h.startsWith('N.');
+    });
+    if (noIdx === -1 && columns.length > 0) {
+        noIdx = 0;
+    }
+    
+    let lastIdCode = '';
+    let lastName = '';
+    let lastNo = '';
+    
+    const groupedClients = new Map();
+    
+    for (let i = 1; i < state.confirm.data.length; i++) {
+        const row = state.confirm.data[i];
+        if (!row || row.length === 0) continue;
+        
+        const rowString = row.slice(0, 10).map(c => String(c || '').toUpperCase()).join(' ');
+        if (rowString.includes('TOTAL')) continue;
+        
+        let idCode = idCodeIdx !== -1 ? String(row[idCodeIdx] || '').trim() : '';
+        let name = nameIdx !== -1 ? String(row[nameIdx] || '').trim() : '';
+        let noVal = noIdx !== -1 ? String(row[noIdx] || '').trim() : '';
+        
+        if (idCode !== '') lastIdCode = idCode;
+        else idCode = lastIdCode;
+        
+        if (name !== '') lastName = name;
+        else name = lastName;
+        
+        if (noVal !== '') lastNo = noVal;
+        else noVal = lastNo;
+        
+        if (!idCode && !name) continue;
+        const clientKey = idCode + '_' + name;
+        
+        if (!groupedClients.has(clientKey)) {
+            groupedClients.set(clientKey, { idCode, name, no: noVal, rows: [] });
+        }
+        groupedClients.get(clientKey).rows.push(row);
+    }
+
+    const groupedUndelivered = new Map();
+    groupedClients.forEach((client, key) => {
+        let hasUndelivered = false;
+        client.rows.forEach(r => {
+            const deliveredVal = deliveredIdx !== -1 ? String(r[deliveredIdx] || '').toUpperCase().trim() : '';
+            if (deliveredVal !== 'SIM' && deliveredVal !== 'YES' && deliveredVal !== 'ENTREGUE') {
+                hasUndelivered = true;
+            }
+        });
+        if (hasUndelivered) {
+            groupedUndelivered.set(key, client);
+        }
+    });
+    
+    // Obter o nome do projeto ativo
+    const projectName = document.getElementById('confirm-project-active-name')?.innerText || 'Projeto Atual';
+    
+    let html = `
+    <div id="modal-warehouse-status" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in p-4 sm:p-6" onclick="ui.closeModal('modal-warehouse-status')">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-slide-up" onclick="event.stopPropagation()">
+            
+            <div id="warehouse-export-wrapper" class="flex flex-col flex-1 overflow-hidden bg-white">
+                <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-lg font-black text-slate-800 tracking-tight">Mercadorias em Armazém - <span class="text-indigo-600">${projectName}</span></h2>
+                            <p class="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Data do Relatório: ${new Date().toLocaleDateString('pt-PT')} | Gerado pelo Bill-Check</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2" id="modal-actions-exclude">
+                        <button onclick="ui.downloadWarehousePDF()" class="p-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg transition-all shadow-sm" title="Baixar PDF da Tabela">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        </button>
+                        <button onclick="ui.closeModal('modal-warehouse-status')" class="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-2 rounded-full transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="flex-1 overflow-auto p-4 bg-white custom-scrollbar relative">
+                    <table id="warehouse-table-export" class="w-full text-left border-collapse min-w-max bg-white">
+                        <thead class="sticky top-0 bg-white shadow-sm z-10">
+                            <tr>
+                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 w-8 text-center">#</th>
+                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">ID / Nº Processo</th>
+                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">Cliente</th>
+                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center">Volumes</th>
+                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center">Duty</th>
+                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center">Frete</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 bg-white">
+    `;
+    
+    if (groupedUndelivered.size === 0) {
+        html += `
+            <tr>
+                <td colspan="6" class="px-6 py-12 text-center text-slate-400">
+                    <div class="flex justify-center mb-3">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-slate-300"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    </div>
+                    <p class="text-sm font-bold text-slate-600">Nenhuma mercadoria pendente</p>
+                    <p class="text-[11px]">Não há mercadorias retidas no armazém para este projeto.</p>
+                </td>
+            </tr>
+        `;
+    } else {
+        groupedUndelivered.forEach((client, key) => {
+            let totalDutyBalance = 0;
+            let totalFreightBalance = 0;
+            let totalQuantity = 0;
+            let isDutyConfirmed = true;
+            
+            client.rows.forEach(r => {
+                const bal = balanceIdx !== -1 ? parseFloat(String(r[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+                const status = statusIdx !== -1 ? String(r[statusIdx] || '').toUpperCase() : '';
+                
+                totalDutyBalance += bal;
+                if (status === '' || status === 'PENDENTE' || status === 'AGUARDA PAGAMENTO' || status === '?' || status.includes('ERRADO')) {
+                    if (bal > 0) isDutyConfirmed = false;
+                }
+                
+                const fBal = balanceFreightIdx !== -1 ? parseFloat(String(r[balanceFreightIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+                totalFreightBalance += fBal;
+                
+                const qty = packagesIdx !== -1 ? parseFloat(String(r[packagesIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+                totalQuantity += qty;
+            });
+            
+            if (totalDutyBalance > 1.0) isDutyConfirmed = false;
+            
+            const isFreightConfirmed = totalFreightBalance <= 1.0;
+            
+            const dutyBadge = isDutyConfirmed 
+                ? '<span class="px-1 py-0 rounded-full bg-green-100 text-green-700 font-bold text-[9px] uppercase">✅ Pago</span>'
+                : '<span class="px-1 py-0 rounded-full bg-red-100 text-red-700 font-bold text-[9px] uppercase">❌ Pendente</span>';
+                
+            const freightBadge = isFreightConfirmed
+                ? '<span class="px-1 py-0 rounded-full bg-green-100 text-green-700 font-bold text-[9px] uppercase">✅ Pago</span>'
+                : '<span class="px-1 py-0 rounded-full bg-red-100 text-red-700 font-bold text-[9px] uppercase">❌ Pendente</span>';
+            
+            html += `
+                <tr class="hover:bg-slate-50 transition-colors">
+                    <td class="px-2 py-0 text-[10px] font-bold text-slate-400 text-center">${client.no || ''}</td>
+                    <td class="px-2 py-0 text-[11px] font-bold text-slate-700 whitespace-nowrap">${client.idCode}</td>
+                    <td class="px-2 py-0 text-[11px] font-bold text-slate-900">${client.name}</td>
+                    <td class="px-2 py-0 text-[11px] font-black text-slate-600 text-center">${totalQuantity}</td>
+                    <td class="px-2 py-0 text-center">${dutyBadge}</td>
+                    <td class="px-2 py-0 text-center">${freightBadge}</td>
+                </tr>
+            `;
+        });
+    }
+    
+    html += `
+                    </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+
+    const modalsContainer = document.getElementById('modals-container');
+    if (modalsContainer) {
+        const existing = document.getElementById('modal-warehouse-status');
+        if (existing) existing.remove();
+        modalsContainer.insertAdjacentHTML('beforeend', html);
+    }
+}
+
+export async function downloadWarehousePDF() {
+    try {
+        const tableEl = document.getElementById('warehouse-table-export');
+        if (!tableEl) {
+            toast('Tabela não encontrada.', 'error');
+            return;
+        }
+        
+        if (typeof window.jspdf === 'undefined') {
+            toast('Biblioteca jsPDF não está carregada.', 'error');
+            return;
+        }
+        
+        setLoader(true, 'A gerar PDF com alta qualidade...');
+        
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'pt', 'a4');
+        
+        const projectNameStr = document.getElementById('confirm-project-active-name')?.innerText || 'projeto';
+        const safeName = projectNameStr.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        
+        // Configurar Título
+        doc.setFontSize(16);
+        doc.setTextColor(30, 41, 59); // text-slate-800
+        doc.text(`Mercadorias em Armazem - ${projectNameStr}`, 40, 40);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139); // text-slate-500
+        doc.text(`Data do Relatorio: ${new Date().toLocaleDateString('pt-PT')} | Gerado pelo Bill-Check`, 40, 56);
+        
+        // Gerar Tabela Automática
+        doc.autoTable({
+            html: '#warehouse-table-export',
+            startY: 75,
+            theme: 'grid',
+            headStyles: {
+                fillColor: [79, 70, 229], // indigo-600
+                textColor: 255,
+                fontStyle: 'bold',
+                halign: 'center'
+            },
+            bodyStyles: {
+                textColor: [71, 85, 105], // slate-600
+                fontSize: 9
+            },
+            alternateRowStyles: {
+                fillColor: [248, 250, 252] // slate-50
+            },
+            didParseCell: function(data) {
+                // Remove emojis and style status columns
+                if (data.section === 'body' && (data.column.index === 4 || data.column.index === 5)) {
+                    const rawText = (data.cell.raw.innerText || data.cell.raw.textContent || '').toUpperCase();
+                    if (rawText.includes('PAGO')) {
+                        data.cell.text = ['PAGO'];
+                        data.cell.styles.textColor = [22, 163, 74]; // green-600
+                        data.cell.styles.fontStyle = 'bold';
+                    } else if (rawText.includes('PENDENTE')) {
+                        data.cell.text = ['PENDENTE'];
+                        data.cell.styles.textColor = [220, 38, 38]; // red-600
+                        data.cell.styles.fontStyle = 'bold';
+                    }
+                }
+            }
+        });
+        
+        doc.save(`armazem_${safeName}_${new Date().toISOString().split('T')[0]}.pdf`);
+        
+        setLoader(false);
+        toast('PDF descarregado com sucesso!', 'success');
+    } catch (err) {
+        console.error('Erro ao gerar PDF:', err);
+        setLoader(false);
+        alert('Falha ao gerar PDF: ' + err.message);
+        toast('Erro ao gerar PDF.', 'error');
     }
 }
 
@@ -6583,11 +6878,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         }
 
         // Regras de negócio para autorização de entrega:
-        // 1. Direitos aduaneiros (Duty) vinculados e confirmados (allConfirmed === true)
-        // 2. Frete pago (totalBalanceFreight <= 0)
         const isDutyConfirmed = allConfirmed;
         const isFreightPaid = totalBalanceFreight <= 0;
-        const allowDelivery = isDutyConfirmed && isFreightPaid;
 
         // Calcular agregados
         let totalOriginal = 0;
@@ -6638,6 +6930,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
         const deliveredVal = deliveredIdx !== -1 ? String(firstRowData[deliveredIdx] || '').trim().toUpperCase() : 'NAO';
         const isDelivered = (deliveredVal === 'SIM' || deliveredVal === 'ENTREGUE' || deliveredVal === 'YES');
+        const isExtraordinaria = String(motivoIsencaoVal).includes('[EXTRAORDINÁRIA]');
+        const allowDelivery = isExtraordinaria || (isDutyConfirmed && isFreightPaid);
 
         // --- CÁLCULO DE CUSTO DE ARMAZENAGEM ---
         const dischargeDateStr = state.confirm?.dischargeDate || ''; // YYYY-MM-DD
@@ -6685,6 +6979,11 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         if (dDate && targetEndDate) {
             const timeDiff = targetEndDate.getTime() - dDate.getTime();
             daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
+            
+            // Regra: O dia de levantamento/hoje não deve ser cobrado como dia de armazenagem
+            if (daysDiff > 0) {
+                daysDiff -= 1;
+            }
         }
 
         // Aplicar a regra de armazenamento
@@ -6741,7 +7040,21 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                 </div>
             `;
         } else if (allowDelivery) {
-            if (storageCost > 0 && !isStoragePaid) {
+            if (isExtraordinaria) {
+                const motivoExtraMatch = String(motivoIsencaoVal).match(/\[EXTRAORDINÁRIA\](.*)/);
+                const motivoExtra = motivoExtraMatch ? motivoExtraMatch[1].trim() : 'Autorização forçada manual';
+                bannerHtml = `
+                    <div class="bg-orange-50 border border-orange-200 text-orange-900 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-orange-500">
+                        <div class="p-2 bg-orange-100 rounded-xl text-orange-600 flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        </div>
+                        <div>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-orange-900">Entrega Extraordinária Ativa ⚠️</h4>
+                            <p class="text-[11px] text-orange-800 font-semibold mt-1">A entrega foi forçada manualmente por um administrador.<br>Motivo: <strong>${motivoExtra}</strong></p>
+                        </div>
+                    </div>
+                `;
+            } else if (storageCost > 0 && !isStoragePaid) {
                 bannerHtml = `
                     <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-red-500">
                         <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
@@ -6780,18 +7093,26 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             }
         } else {
             bannerHtml = `
-                <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-red-500">
-                    <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-l-4 border-l-red-500">
+                    <div class="flex items-start gap-3">
+                        <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        </div>
+                        <div>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-red-900">Entrega Bloqueada 🔒</h4>
+                            <p class="text-[11px] text-red-700 font-bold mt-1">A carga não pode ser entregue até que as pendências sejam resolvidas:</p>
+                            <ul class="list-disc pl-5 mt-1 text-[11px] text-red-700 font-bold space-y-0.5">
+                                ${!isDutyConfirmed ? '<li>Os Direitos Aduaneiros (Duty) não estão totalmente CONFIRMADOS.</li>' : ''}
+                                ${!isFreightPaid ? '<li>O Frete não está totalmente PAGO (Saldo pendente).</li>' : ''}
+                            </ul>
+                        </div>
                     </div>
-                    <div>
-                        <h4 class="font-black text-xs uppercase tracking-wider text-red-900">Entrega Bloqueada 🔒</h4>
-                        <p class="text-[11px] text-red-700 font-bold mt-1">A carga não pode ser entregue até que as pendências sejam resolvidas:</p>
-                        <ul class="list-disc pl-5 mt-1 text-[11px] text-red-700 font-bold space-y-0.5">
-                            ${!isDutyConfirmed ? '<li>Os Direitos Aduaneiros (Duty) não estão totalmente CONFIRMADOS.</li>' : ''}
-                            ${!isFreightPaid ? '<li>O Frete não está totalmente PAGO (Saldo pendente).</li>' : ''}
-                        </ul>
-                    </div>
+                    ${isAdmin ? `
+                    <button onclick="ui.forceExtraordinaryDelivery(${firstRowIndex}, this)" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center gap-1.5 flex-shrink-0 mt-3 md:mt-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                        Forçar Entrega Extraordinária
+                    </button>
+                    ` : ''}
                 </div>
             `;
         }
@@ -6950,11 +7271,26 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
-                    <div>
-                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Motivo Isenção</label>
-                        <input type="text" name="motivoIsencao" value="${motivoIsencaoVal}" placeholder="Motivo Isenção" 
-                            ${!isEditable ? 'disabled' : ''}
-                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    <div class="col-span-2">
+                        <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-400 mb-1.5 cursor-pointer hover:text-indigo-600 transition-colors">
+                            <input type="checkbox" onchange="ui.toggleIsencaoFields(this)" ${motivoIsencaoVal ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                            <span>Adicionar Isenção / Notas</span>
+                        </label>
+                        <div class="flex flex-col gap-1.5 isencao-fields-container ${motivoIsencaoVal ? '' : 'hidden'}">
+                            <div class="flex gap-1.5">
+                                <select id="select-isencao" onchange="ui.handleIsencaoChange(this)"
+                                    ${!isEditable ? 'disabled' : ''}
+                                    class="w-[110px] py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-[9px] font-bold uppercase tracking-wider focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'text-indigo-700'}">
+                                    <option value="">Atribuir Isenção?</option>
+                                    <option value="Atraso no Despacho" ${motivoIsencaoVal.includes('Atraso no Despacho') ? 'selected' : ''}>Atraso no Despacho</option>
+                                    <option value="Autorização da Direção" ${motivoIsencaoVal.includes('Autorização da Direção') ? 'selected' : ''}>Autorização Dir.</option>
+                                    <option value="Erro de Sistema" ${motivoIsencaoVal.includes('Erro de Sistema') ? 'selected' : ''}>Erro Sistema</option>
+                                </select>
+                                <input type="text" name="motivoIsencao" value="${motivoIsencaoVal}" placeholder="Notas adicionais" 
+                                    ${!isEditable ? 'disabled' : ''}
+                                    class="flex-1 py-1.5 px-3 bg-white border border-slate-200 rounded-xl text-[10px] font-normal focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            </div>
+                        </div>
                     </div>
                     <div class="${storageCost === 0 ? 'hidden' : ''}">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Armazenagem</label>
@@ -7240,6 +7576,84 @@ export async function reopenDelivery(originalIndex, buttonEl) {
     deliveredInput.value = 'NAO';
 
     await saveArmazemRow(originalIndex, buttonEl);
+}
+
+/**
+ * Força a entrega extraordinária, ignorando restrições de Duty e Frete
+ */
+export async function forceExtraordinaryDelivery(originalIndex, buttonEl) {
+    const reason = prompt('Motivo da Entrega Extraordinária (Ex: Autorização superior, Erro bancário):');
+    if (!reason || reason.trim() === '') {
+        toast('Erro: É obrigatório justificar a Entrega Extraordinária.', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Confirma a autorização extraordinária com o motivo: "${reason}"?`)) {
+        return;
+    }
+
+    const container = buttonEl.closest('#armazem-operations-container') || buttonEl.closest('#armazem-form-container') || document;
+    let motivoInput = container.querySelector('input[name="motivoIsencao"]');
+    if (motivoInput) {
+        const existing = motivoInput.value.replace(/\[EXTRAORDINÁRIA\][^|]+\|?/g, '').trim();
+        motivoInput.value = `[EXTRAORDINÁRIA] ${reason.trim()} ${existing ? '| ' + existing : ''}`.trim();
+        
+        // Força o gravar para enviar para a folha
+        await saveArmazemRow(originalIndex, buttonEl);
+        toast('Entrega Extraordinária autorizada e registada com sucesso.', 'success');
+    } else {
+        toast('Erro: Campo de notas não encontrado para registar o motivo.', 'error');
+    }
+}
+
+/**
+ * Helper para interagir com o campo de Motivo de Isenção/Notas através de dropdown
+ */
+export function handleIsencaoChange(selectEl) {
+    const container = selectEl.closest('.flex-col');
+    if (!container) return;
+    const textInput = container.querySelector('input[name="motivoIsencao"]');
+    const storageSelect = container.closest('#armazem-form-container')?.querySelector('select[name="storagePaid"]');
+    if (!textInput) return;
+
+    const val = selectEl.value;
+    
+    // Mantenha as tags extraordinárias se houver
+    const hasExtra = textInput.value.includes('[EXTRAORDINÁRIA]');
+    let extraStr = '';
+    if (hasExtra) {
+        const match = textInput.value.match(/(\[EXTRAORDINÁRIA\].*?)(?:\||$)/);
+        if (match) {
+            extraStr = match[1].trim();
+        }
+    }
+
+    if (val === '') {
+        // Remover selects
+        textInput.value = extraStr;
+        if (storageSelect) storageSelect.value = 'NAO';
+    } else if (val === 'Outro') {
+        textInput.value = extraStr ? `${extraStr} | ` : '';
+        textInput.focus();
+        if (storageSelect) storageSelect.value = 'SIM';
+    } else {
+        textInput.value = extraStr ? `${extraStr} | ${val}` : val;
+        if (storageSelect) storageSelect.value = 'SIM';
+    }
+}
+
+/**
+ * Mostra ou esconde os campos de isenção/notas
+ */
+export function toggleIsencaoFields(checkbox) {
+    const container = checkbox.closest('.col-span-2').querySelector('.isencao-fields-container');
+    if (container) {
+        if (checkbox.checked) {
+            container.classList.remove('hidden');
+        } else {
+            container.classList.add('hidden');
+        }
+    }
 }
 
 /**
