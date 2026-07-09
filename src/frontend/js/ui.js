@@ -2533,8 +2533,13 @@ window.openClientFromWarehouse = function(groupId) {
     if (!state.confirm || !state.confirm.groupedClients) return;
     const client = state.confirm.groupedClients.find(g => g.groupId === groupId);
     if (client) {
+        setLoader(true, 'A carregar cliente...');
         closeModal('modal-warehouse-status');
-        showConfirmDetail(client, client.no || '—');
+        
+        setTimeout(async () => {
+            await showConfirmDetail(client, client.no || '—');
+            setLoader(false);
+        }, 50);
     } else {
         toast('Não foi possível carregar os detalhes do cliente.', 'error');
     }
