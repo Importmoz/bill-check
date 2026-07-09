@@ -2310,12 +2310,12 @@ export function openWarehouseStatusModal() {
         else noVal = lastNo;
         
         if (!idCode && !name) continue;
-        const clientKey = idCode + '_' + name;
+        const groupId = `${idCode}_${name}`.replace(/\s+/g, '_') || `ROW_${i}`;
         
-        if (!groupedClients.has(clientKey)) {
-            groupedClients.set(clientKey, { idCode, name, no: noVal, rows: [] });
+        if (!groupedClients.has(groupId)) {
+            groupedClients.set(groupId, { idCode, name, no: noVal, rows: [] });
         }
-        groupedClients.get(clientKey).rows.push(row);
+        groupedClients.get(groupId).rows.push(row);
     }
 
     const groupedUndelivered = new Map();
@@ -2423,7 +2423,7 @@ export function openWarehouseStatusModal() {
                 : '<span class="px-1 py-0 rounded-full bg-red-100 text-red-700 font-bold text-[9px] uppercase">❌ Pendente</span>';
             
             html += `
-                <tr class="hover:bg-slate-50 transition-colors">
+                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.openClientFromWarehouse('${key}')" title="Clique para abrir detalhes do cliente">
                     <td class="px-2 py-0 text-[10px] font-bold text-slate-400 text-center">${client.no || ''}</td>
                     <td class="px-2 py-0 text-[11px] font-bold text-slate-700 whitespace-nowrap">${client.idCode}</td>
                     <td class="px-2 py-0 text-[11px] font-bold text-slate-900">${client.name}</td>
@@ -2528,6 +2528,17 @@ export async function downloadWarehousePDF() {
         toast('Erro ao gerar PDF.', 'error');
     }
 }
+
+window.openClientFromWarehouse = function(groupId) {
+    if (!state.confirm || !state.confirm.groupedClients) return;
+    const client = state.confirm.groupedClients.find(g => g.groupId === groupId);
+    if (client) {
+        closeModal('modal-warehouse-status');
+        showConfirmDetail(client, client.no || '—');
+    } else {
+        toast('Não foi possível carregar os detalhes do cliente.', 'error');
+    }
+};
 
 export function toggleConfirmArmazem(mode) {
     const confirmTab = document.getElementById('btn-tab-confirm');
