@@ -4911,3 +4911,66 @@ STDOUT: [
     "...
 STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 15466194210001
 
+2026-07-10T07:38:19.889Z - INFO: Arquivo extraído bank_b3709465-6bcc-4645-8c07-53e242332809_Extrato_75470366_09-07-26_10-07-26.txt
+STDOUT: [
+  {
+    "date": "2026-07-09 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "<00TRANSFERENCIA <102619000005 <20TRANSFERENCIA <21IZI TRANSFER P/ 735904663 <22            *AUTOMAT <27VALERIA ANTONIO CHINAMA <28BR CIMENTOVILA MANDIMBAN/A <30BIMMMXXUUUU <31000073590466357 <32VALERIA ANTONIO CHINAMA <33BR CIMENTO <38MZ59000100000073590466357 <60VILA MANDIMBAN/A <63REF60075470366202619000005",
+    "reference": "NTRFNONR...
+STDERR: DEBUG: MT940 Parser detetou Banco: BIM, Conta: 75470366
+
+2026-07-10T07:38:28.095Z - INFO: Arquivo extraído bank_42dbeabd-e9bb-4bc4-8460-7783dbe809f0_Extrato_330788916_09-07-26_10-07-26.txt
+STDOUT: [
+  {
+    "date": "2026-07-09 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "<00TRANSFERENCIA <102619000001 <20TRANSFERENCIA <21IZI TRANSFER P/ 267393693 <22            *AUTOMAT <27ANTONIO MANUEL LEITE <28BR 05BR 05N/A <30BIMMMXXUUUU <31000026739369357 <32ANTONIO MANUEL LEITE <33BR 05 <38MZ59000100000026739369357 <60BR 05N/A <63REF60330788916202619000001",
+    "reference": "NTRFNONREF TRANSFERENCIA",
+    ...
+STDERR: DEBUG: MT940 Parser detetou Banco: BIM, Conta: 330788916
+
+2026-07-10T07:38:46.613Z - INFO: Arquivo extraído bank_9ee67929-b6f0-46dd-8011-e9921b7fe0b8_8f79c61c-ae1e-46ff-811b-86376f6e3cc2.txt
+STDOUT: [
+  {
+    "date": "2026-07-09 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "547715823 P24-Transf.Rec. 0879970930",
+    "reference": "547715823 P24-Transf.Rec. 0879970930",
+    "amount": 1862.0,
+    "balance": 119484.37,
+    "signature": "9173379f72ebd4c6c1c4473ddde0a08871cbe6e8df5248ee6762152b189265bc",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-09 00:00:00",
+    "ban...
+STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 18909451710002
+
+2026-07-10T07:38:55.413Z - INFO: Arquivo extraído bank_448717d3-8303-42c0-86d4-1d1b0fb2b83a_1499506c-b69e-40d4-b9a9-18c7da0be451.txt
+STDOUT: [
+  {
+    "date": "2026-07-09 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "548145566 Dep.Num. 548145566",
+    "reference": "548145566 Dep.Num. 548145566",
+    "amount": 19600.0,
+    "balance": 39701.1,
+    "signature": "21cfed08a38ffd4a5c7b7e848736cf2f021bdcde26ccb15e9c1714e29af5f521",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-09 00:00:00",
+    "bank": "BCI",...
+STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 15466194210001
+

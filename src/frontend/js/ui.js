@@ -3,6 +3,7 @@
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
 import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
+import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js';
 
 export function getPaymentBankDisplay(payment) {
     let rawBank = payment.bank;
@@ -1376,7 +1377,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
                 </div>
             `;
 
-            card.onclick = () => showConfirmDetail(client, client.no || '—');
+            card.onclick = () => window.openClientWithLoader(client.groupId);
             container.appendChild(card);
         });
     } 
@@ -1430,7 +1431,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
                 </div>
             `;
 
-            card.onclick = () => showConfirmDetail(client, client.no || '—');
+            card.onclick = () => window.openClientWithLoader(client.groupId);
             container.appendChild(card);
         });
     } 
@@ -1520,7 +1521,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
             const trId = `tr-client-${client.no || 'X'}-${client.displayName.replace(/\s+/g, '_')}`;
             const tr = document.getElementById(trId);
             if (tr) {
-                tr.onclick = () => showConfirmDetail(client, client.no || '—');
+                tr.onclick = () => window.openClientWithLoader(client.groupId);
             }
         });
     }
@@ -2536,6 +2537,20 @@ window.openClientFromWarehouse = function(groupId) {
         setLoader(true, 'A carregar cliente...');
         closeModal('modal-warehouse-status');
         
+        setTimeout(async () => {
+            await showConfirmDetail(client, client.no || '—');
+            setLoader(false);
+        }, 50);
+    } else {
+        toast('Não foi possível carregar os detalhes do cliente.', 'error');
+    }
+};
+
+window.openClientWithLoader = function(groupId) {
+    if (!state.confirm || !state.confirm.groupedClients) return;
+    const client = state.confirm.groupedClients.find(g => g.groupId === groupId);
+    if (client) {
+        setLoader(true, 'A carregar cliente...');
         setTimeout(async () => {
             await showConfirmDetail(client, client.no || '—');
             setLoader(false);
@@ -5726,6 +5741,7 @@ window.handleQuoteSubModeChange = function() {
     window.quoteEditorState.subMode = document.getElementById('input-quote-submode').value;
     window.quoteIsDirty = true;
     if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    if (typeof window.calculateFullInvoice === 'function') window.calculateFullInvoice();
 };
 
 window.startNewQuote = function() {
@@ -5895,9 +5911,9 @@ window.updateRowDOM = function(item) {
     const tr = document.getElementById(`row-${item.id}`);
     if (!tr) return;
     
-    const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
-    const tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
-    const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
+    const daRate = item.daRate !== undefined ? item.daRate : (item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0);
+    const tsaRate = item.tsaRate !== undefined ? item.tsaRate : (item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0);
+    const ivaRate = item.ivaRate !== undefined ? item.ivaRate : (item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0);
     
     tr.querySelector('.cell-fob').innerText = formatCurrencyVal(item.fob);
     tr.querySelector('.cell-cif').innerText = formatCurrencyVal(item.cifMzn);
@@ -5957,239 +5973,72 @@ function formatCurrencyVal(val) {
     return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(val);
 }
 
-function getRateFromPauta(pautaItem, nameFragments) {
-    if (!pautaItem || !pautaItem.duties) return 0;
-    const duty = pautaItem.duties.find(d => {
-        const dutyName = (d['Nome da Taxa'] || d['Taxa Description'] || '').toLowerCase();
-        return nameFragments.some(frag => dutyName.includes(frag.toLowerCase()));
-    });
-    if (!duty) return 0;
-    const rateStr = duty['Taxa'] || duty['Value'] || '0';
-    if (rateStr.includes('%')) {
-        return parseFloat(rateStr.replace('%', '')) / 100;
-    }
-    return 0;
-}
-
-function parseTaxPart(part, resultObj) {
-    if (part.includes('%')) {
-        resultObj.adValorem = parseFloat(part.replace('%', '')) / 100;
-    } else if (part.includes(' per ')) {
-        const parts = part.split(' per ');
-        const amountStr = parts[0].trim();
-        const unitStr = parts[1].trim();
-        const match = amountStr.match(/([0-9.]+)/);
-        if (match) {
-            resultObj.specificAmount = parseFloat(match[1]);
-        }
-        resultObj.specificUnit = unitStr.toUpperCase();
-    }
-}
-
-function getComplexRateFromPauta(pautaItem, nameFragments) {
-    if (!pautaItem || !pautaItem.duties) return null;
-    const duty = pautaItem.duties.find(d => {
-        const dutyName = (d['Nome da Taxa'] || d['Taxa Description'] || '').toLowerCase();
-        return nameFragments.some(frag => dutyName.includes(frag.toLowerCase()));
-    });
-    if (!duty) return null;
-    const rateStr = (duty['Taxa'] || duty['Value'] || '0').toLowerCase();
-    
-    let result = { adValorem: 0, specificAmount: 0, specificUnit: '', operator: 'none', raw: rateStr };
-
-    if (rateStr.includes(' or ')) {
-        result.operator = 'or';
-        const parts = rateStr.split(' or ');
-        parts.forEach(p => parseTaxPart(p.trim(), result));
-    } else {
-        parseTaxPart(rateStr, result);
-    }
-    
-    return result;
-}
-
 window.calculateFullInvoice = function() {
     window.quoteIsDirty = true;
     if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    
     const curr = document.getElementById('input-quote-currency').value.toUpperCase() || 'USD';
     const excRate = parseFloat(document.getElementById('input-quote-exchange').value) || 64.00;
     
     window.quoteEditorState.currency = curr;
     window.quoteEditorState.exchangeRate = excRate;
-    
-    let tFob = 0, tFrt = 0, tIns = 0, tOth = 0;
-    let tCifMzn = 0, tDaMzn = 0, tIceMzn = 0, tIvaMzn = 0, tTsaMzn = 0;
-    
+
     document.querySelectorAll('.lbl-currency').forEach(el => el.innerText = curr);
     const printCaption = document.getElementById('print-currency-note');
     if (printCaption) printCaption.innerText = `${curr} | ${excRate.toFixed(2)}`;
-    
-    const globalFreightInput = document.getElementById('input-global-freight').value;
-    const globalInsuranceInput = document.getElementById('input-global-insurance').value;
-    const globalOthersInput = document.getElementById('input-global-others').value;
-    
-    const globalFrt = globalFreightInput === '' ? null : parseFloat(globalFreightInput);
-    const globalIns = globalInsuranceInput === '' ? null : parseFloat(globalInsuranceInput);
-    const globalOth = globalOthersInput === '' ? null : parseFloat(globalOthersInput);
-    
-    let grandTotalFob = 0;
+
+    const globais = {
+        freight: document.getElementById('input-global-freight').value,
+        insurance: document.getElementById('input-global-insurance').value,
+        others: document.getElementById('input-global-others').value
+    };
+
+    const result = calculateInvoice(window.quoteEditorState, globais);
+
+    window.quoteEditorState.items = result.items;
+    window.quoteEditorState.totals = result.totals;
+
     window.quoteEditorState.items.forEach(item => {
-        item.fob = (item.qty || 0) * (item.unitPrice || 0);
-        grandTotalFob += item.fob;
-    });
-    
-    window.quoteEditorState.items.forEach(item => {
-        const ratio = grandTotalFob > 0 ? (item.fob / grandTotalFob) : 0;
-        
-        let frt = globalFrt !== null ? (globalFrt * ratio) : (item.fob * 0.10);
-        let ins = globalIns !== null ? (globalIns * ratio) : ((item.fob + frt) * 0.02);
-        let oth = globalOth !== null ? (globalOth * ratio) : 0;
-        
-        item.actualFreight = frt;
-        item.actualInsurance = ins;
-        item.actualOthers = oth;
-        
-        const cifForeign = item.fob + frt + ins + oth;
-        const cifMzn = cifForeign * excRate;
-        item.cifMzn = cifMzn;
-        
-        const daRate = item.pauta ? getRateFromPauta(item.pauta, ['Direitos', 'Aduaneiros']) : 0;
-        const tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
-        
-        const hsPrefix = item.hsCode.substring(0, 4);
-        const isAlcohol = ['2203', '2204', '2205', '2206', '2208'].includes(hsPrefix);
-        const isSugar = hsPrefix === '2202';
-
-        // NEW ICE Calculation Logic
-        let iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
-        
-        // --- INICIO: Fallbacks Manuais exigidos pelo cliente ---
-        if (!iceData) {
-            if (isAlcohol) {
-                let fbTax = 455;
-                if (hsPrefix === '2203') fbTax = 423;
-                else if (hsPrefix === '2204') fbTax = 610;
-                iceData = { adValorem: 0, specificAmount: fbTax, specificUnit: 'L', operator: 'none', raw: fbTax + ' MT / Alc 100%' };
-            } else if (isSugar) {
-                iceData = { adValorem: 0, specificAmount: 0.0133, specificUnit: 'L', operator: 'none', raw: '0.0133 MT / gr' };
-            }
-        }
-        // --- FIM Fallbacks Manuais ---
-        
-        let iceAdValorem = 0;
-        let iceSpecific = 0;
-        let appliedIceRateLabel = '0%';
-
-        if (iceData) {
-            iceAdValorem = cifMzn * iceData.adValorem;
-            const qFis = parseFloat(String(item.qtyFisica).replace(',', '.')) || 0;
-            const alcPct = parseFloat(String(item.iceAlcoholPercent).replace(',', '.')) || 0;
-            const sugGr = parseFloat(String(item.iceSugarGrams).replace(',', '.')) || 0;
-
-            iceSpecific = qFis * iceData.specificAmount;
-            
-            if (isAlcohol) {
-                // ICE = Taxa (ice) X Qdt (litros) X Teor de álcool contido num litro
-                iceSpecific = iceData.specificAmount * qFis * (alcPct / 100);
-            } else if (isSugar) {
-                // ICE = Taxa X Teor de açúcar contido em 100 ml X 10 X Qdt.(litros)
-                iceSpecific = iceData.specificAmount * sugGr * 10 * qFis;
-            }
-
-            if (iceData.operator === 'or') {
-                item.iceValue = Math.max(iceAdValorem, iceSpecific);
-                appliedIceRateLabel = iceAdValorem > iceSpecific 
-                    ? `${parseFloat((iceData.adValorem*100).toFixed(2))}%` 
-                    : `${iceData.specificAmount} MT/${iceData.specificUnit}`;
-            } else {
-                item.iceValue = iceSpecific || iceAdValorem;
-                appliedIceRateLabel = iceSpecific > 0 
-                    ? (isAlcohol ? `${iceData.specificAmount} MT/Alc100%` : (isSugar ? `${iceData.specificAmount} MT/gr` : `${iceData.specificAmount} MT/${iceData.specificUnit}`)) 
-                    : `${parseFloat((iceData.adValorem*100).toFixed(2))}%`;
-            }
-        } else {
-            item.iceValue = 0;
-        }
-
-        // Keep label in item for UI rendering
-        item.iceLabel = appliedIceRateLabel;
-        
-        const ivaRate = item.pauta ? getRateFromPauta(item.pauta, ['IVA', 'Valor Acrescentado']) : 0;
-        
-        item.daValue = cifMzn * daRate;
-        item.tsaValue = cifMzn * tsaRate;
-        
-        const ivaBase = cifMzn + item.daValue + item.iceValue + item.tsaValue;
-        item.ivaValue = ivaBase * ivaRate;
-        
-        tFob += item.fob;
-        tFrt += frt;
-        tIns += ins;
-        tOth += oth;
-        
-        tCifMzn += cifMzn;
-        tDaMzn += item.daValue;
-        tIceMzn += item.iceValue;
-        tTsaMzn += item.tsaValue;
-        tIvaMzn += item.ivaValue;
-        
         window.updateRowDOM(item);
     });
-    
-    let mcnetUsd = 0;
-    if (tFob < 500) {
-        mcnetUsd = 5;
-    } else if (tFob >= 500 && tFob <= 10000) {
-        mcnetUsd = 24;
-    } else if (tFob > 10000 && tFob <= 50000) {
-        mcnetUsd = 64;
-    } else if (tFob > 50000) {
-        mcnetUsd = tFob * 0.0085;
-    }
-    const tMcnetMzn = mcnetUsd * excRate;
-    const tsaFixedMzn = 1000;
 
-    const grandTotal = tCifMzn + tDaMzn + tIceMzn + tIvaMzn + tTsaMzn + tMcnetMzn + tsaFixedMzn;
-    
-    window.quoteEditorState.totals = {
-        fobForeign: tFob, freightForeign: tFrt, insForeign: tIns, othForeign: tOth,
-        cifMzn: tCifMzn, daMzn: tDaMzn, iceMzn: tIceMzn, ivaMzn: tIvaMzn, tsaMzn: tTsaMzn, mcnetMzn: tMcnetMzn, tsaFixedMzn: tsaFixedMzn,
-        grandTotalMzn: grandTotal
-    };
     const setTxt = (id, val) => {
         const el = document.getElementById(id);
         if (el) el.innerText = val;
     };
     
-    setTxt('tot-fob-foreign', formatCurrencyVal(tFob));
-    setTxt('tot-freight-foreign', formatCurrencyVal(tFrt));
-    setTxt('tot-ins-foreign', formatCurrencyVal(tIns));
-    setTxt('tot-oth-foreign', formatCurrencyVal(tOth));
-    setTxt('tot-cif-foreign', formatCurrencyVal(tFob + tFrt + tIns + tOth));
+    const { totals } = result;
+
+    setTxt('tot-fob-foreign', formatCurrencyVal(totals.fobForeign));
+    setTxt('tot-freight-foreign', formatCurrencyVal(totals.freightForeign));
+    setTxt('tot-ins-foreign', formatCurrencyVal(totals.insForeign));
+    setTxt('tot-oth-foreign', formatCurrencyVal(totals.othForeign));
+    setTxt('tot-cif-foreign', formatCurrencyVal(totals.fobForeign + totals.freightForeign + totals.insForeign + totals.othForeign));
     
-    setTxt('tot-cif-mzn', formatMZN(tCifMzn));
-    setTxt('tot-da-mzn', formatMZN(tDaMzn));
-    setTxt('tot-ice-mzn', formatMZN(tIceMzn));
-    setTxt('tot-iva-mzn', formatMZN(tIvaMzn));
-    setTxt('tot-tsa-mzn', formatMZN(tTsaMzn));
+    setTxt('tot-cif-mzn', formatMZN(totals.cifMzn));
+    setTxt('tot-da-mzn', formatMZN(totals.daMzn));
+    setTxt('tot-ice-mzn', formatMZN(totals.iceMzn));
+    setTxt('tot-iva-mzn', formatMZN(totals.ivaMzn));
+    setTxt('tot-tsa-mzn', formatMZN(totals.tsaMzn));
     
-    setTxt('tot-grand-mzn', formatMZN(grandTotal));
+    setTxt('tot-grand-mzn', formatMZN(totals.grandTotalMzn));
     
     // Table Footer Totals
-    setTxt('foot-tot-fob', formatCurrencyVal(tFob));
+    setTxt('foot-tot-fob', formatCurrencyVal(totals.fobForeign));
     const gFrtInput = document.getElementById('input-global-freight');
-    if (gFrtInput) gFrtInput.placeholder = formatCurrencyVal(tFrt);
+    if (gFrtInput) gFrtInput.placeholder = formatCurrencyVal(totals.freightForeign);
     const gInsInput = document.getElementById('input-global-insurance');
-    if (gInsInput) gInsInput.placeholder = formatCurrencyVal(tIns);
+    if (gInsInput) gInsInput.placeholder = formatCurrencyVal(totals.insForeign);
     const gOthInput = document.getElementById('input-global-others');
-    if (gOthInput) gOthInput.placeholder = formatCurrencyVal(tOth);
-    setTxt('foot-tot-cif', formatCurrencyVal(tCifMzn));
-    setTxt('foot-tot-da', formatCurrencyVal(tDaMzn));
-    setTxt('foot-tot-tsa', formatCurrencyVal(tTsaMzn));
-    setTxt('foot-tot-ice', formatCurrencyVal(tIceMzn));
-    setTxt('foot-tot-iva', formatCurrencyVal(tIvaMzn));
+    if (gOthInput) gOthInput.placeholder = formatCurrencyVal(totals.othForeign);
     
-    const tTotalTaxas = tDaMzn + tTsaMzn + tIceMzn + tIvaMzn + tMcnetMzn + tsaFixedMzn;
+    setTxt('foot-tot-cif', formatCurrencyVal(totals.cifMzn));
+    setTxt('foot-tot-da', formatCurrencyVal(totals.daMzn));
+    setTxt('foot-tot-tsa', formatCurrencyVal(totals.tsaMzn));
+    setTxt('foot-tot-ice', formatCurrencyVal(totals.iceMzn));
+    setTxt('foot-tot-iva', formatCurrencyVal(totals.ivaMzn));
+    
+    const tTotalTaxas = totals.daMzn + totals.tsaMzn + totals.iceMzn + totals.ivaMzn + totals.mcnetMzn + totals.tsaFixedMzn;
     setTxt('global-tot-imposicoes', formatCurrencyVal(tTotalTaxas) + ' MT');
 
     window.toggleDynamicColumnsVisibility();
@@ -7120,6 +6969,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             <ul class="list-disc pl-5 mt-1 text-[11px] text-red-700 font-bold space-y-0.5">
                                 ${!isDutyConfirmed ? '<li>Os Direitos Aduaneiros (Duty) não estão totalmente CONFIRMADOS.</li>' : ''}
                                 ${!isFreightPaid ? '<li>O Frete não está totalmente PAGO (Saldo pendente).</li>' : ''}
+                                ${(!isStoragePaid && storageCost > 0) ? `<li>Armazenagem acumulada pendente: <strong>${formatMZN(storageCost)}</strong>.</li>` : ''}
                             </ul>
                         </div>
                     </div>
@@ -8390,6 +8240,26 @@ window.syncInvoiceLinesFromDraft = function() {
     // Filter out old 'alfandegas' lines because they must strictly come from the calculation table
     lines = lines.filter(l => l.group !== 'alfandegas');
     
+    // Auto-sync Maritimo automatic costs based on mode and subMode
+    const autoDescs = ['DP World 40', 'DP World 20', 'Ordem de Entrega', 'Caução (Reembolsável)', 'Kudumba', 'Taxa JUE (MCnet)'];
+    lines = lines.filter(l => !(l.group === 'terceiros' && autoDescs.includes(l.desc)));
+    
+    const mode = window.quoteEditorState.mode;
+    const subMode = window.quoteEditorState.subMode;
+    if (mode === 'Maritimo') {
+        if (subMode === 'FCL-40') {
+            lines.push({ group: 'terceiros', desc: 'DP World 40', price: 32202.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 50385.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Caução (Reembolsável)', price: 130000.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
+        } else if (subMode === 'FCL-20') {
+            lines.push({ group: 'terceiros', desc: 'DP World 20', price: 17640.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 34800.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Caução (Reembolsável)', price: 70000.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
+        }
+    }
+    
     // Add Alfandegas from totals
     let addedAlfandegas = false;
     if (totals.daMzn > 0) {
@@ -8409,8 +8279,7 @@ window.syncInvoiceLinesFromDraft = function() {
         addedAlfandegas = true;
     }
     if (totals.mcnetMzn > 0) {
-        lines.push({ group: 'alfandegas', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 });
-        addedAlfandegas = true;
+        lines.push({ group: 'terceiros', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 });
     }
     if (totals.tsaFixedMzn > 0) {
         lines.push({ group: 'alfandegas', desc: 'Taxa de Serviço Aduaneiro (TSA)', price: totals.tsaFixedMzn, tax: 0 });
@@ -8502,7 +8371,6 @@ window.addCategoryFromDraft = function(groupName) {
         if (totals.ivaMzn > 0) { lines.push({ group: 'alfandegas', desc: 'IVA', price: totals.ivaMzn, tax: 0 }); added = true; }
         if (totals.tsaMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Sobretaxa', price: totals.tsaMzn, tax: 0 }); added = true; }
         if (totals.iceMzn > 0) { lines.push({ group: 'alfandegas', desc: 'ICE', price: totals.iceMzn, tax: 0 }); added = true; }
-        if (totals.mcnetMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 }); added = true; }
         if (totals.tsaFixedMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Taxa de Serviço Aduaneiro (TSA)', price: totals.tsaFixedMzn, tax: 0 }); added = true; }
         if (!added) {
             lines.push({ group: 'alfandegas', desc: 'Despesas Aduaneiras', price: 0, tax: 0 });
@@ -8510,6 +8378,7 @@ window.addCategoryFromDraft = function(groupName) {
     } else if (groupName === 'terceiros') {
         lines.push({ group: 'terceiros', desc: 'Portagens / Parques', price: 1550, tax: 0 });
         lines.push({ group: 'terceiros', desc: 'Taxas Portuárias / Kudumba', price: 2604, tax: 0 });
+        if (totals.mcnetMzn > 0) { lines.push({ group: 'terceiros', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 }); }
     } else if (groupName === 'servicos') {
         lines.push({ group: 'servicos', desc: 'Honorários de Desembaraço', price: 10850, tax: 16 });
     }
