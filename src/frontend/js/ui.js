@@ -5752,6 +5752,7 @@ window.startNewQuote = function() {
         exchangeRate: 64.00,
         mode: '',
         subMode: '',
+        globais: { freight: '', insurance: '', others: '' },
         items: [],
         totals: { fobForeign: 0, freightForeign: 0, insForeign: 0, cifMzn: 0, daMzn: 0, iceMzn: 0, ivaMzn: 0, tsaMzn: 0, mcnetMzn: 0, tsaFixedMzn: 0, grandTotalMzn: 0 }
     };
@@ -5992,6 +5993,7 @@ window.calculateFullInvoice = function() {
         insurance: document.getElementById('input-global-insurance').value,
         others: document.getElementById('input-global-others').value
     };
+    window.quoteEditorState.globais = globais;
 
     const result = calculateInvoice(window.quoteEditorState, globais);
 
@@ -6333,6 +6335,10 @@ window.loadSavedQuote = function(id) {
             if (subModeContainer) subModeContainer.classList.add('hidden');
             else document.getElementById('input-quote-submode').classList.add('hidden');
         }
+        
+        document.getElementById('input-global-freight').value = window.quoteEditorState.globais?.freight || '';
+        document.getElementById('input-global-insurance').value = window.quoteEditorState.globais?.insurance || '';
+        document.getElementById('input-global-others').value = window.quoteEditorState.globais?.others || '';
         
         document.getElementById('lbl-quote-editor-title').innerText = `Cotação: ${quote.client_name}`;
         
@@ -8039,6 +8045,11 @@ window.switchQuoteTab = async function(tabName) {
             btnBackWrapper.classList.add('hidden');
             btnBackWrapper.classList.remove('flex');
         }
+        
+        const btnPdf = document.getElementById('btn-quote-pdf-download');
+        if (btnPdf) {
+            btnPdf.style.display = 'none';
+        }
     } else if (tabName === 'quote') {
         if (tabQuoteBtn) tabQuoteBtn.className = "px-5 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg bg-white shadow-sm text-indigo-600 transition-all border border-gray-200/50 flex items-center gap-2";
         if (tabDraftBtn) tabDraftBtn.className = "px-5 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg text-gray-400 hover:text-gray-700 transition-all flex items-center gap-2";
@@ -8054,6 +8065,11 @@ window.switchQuoteTab = async function(tabName) {
         if (btnBackWrapper) {
             btnBackWrapper.classList.remove('hidden');
             btnBackWrapper.classList.add('flex');
+        }
+        
+        const btnPdf = document.getElementById('btn-quote-pdf-download');
+        if (btnPdf) {
+            btnPdf.style.display = 'flex';
         }
         
         if (contentInv) {
@@ -8257,6 +8273,8 @@ window.syncInvoiceLinesFromDraft = function() {
             lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 34800.00, tax: 0 });
             lines.push({ group: 'terceiros', desc: 'Caução (Reembolsável)', price: 70000.00, tax: 0 });
             lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
+        } else if (subMode === 'CBM') {
+            lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7620.00, tax: 0 });
         }
     }
     
@@ -8302,7 +8320,7 @@ window.syncInvoiceLinesFromDraft = function() {
             group: 'servicos',
             desc: 'Desembaraço Moz',
             price: 10850,
-            tax: 16
+            tax: 0
         });
     }
 
@@ -8380,7 +8398,7 @@ window.addCategoryFromDraft = function(groupName) {
         lines.push({ group: 'terceiros', desc: 'Taxas Portuárias / Kudumba', price: 2604, tax: 0 });
         if (totals.mcnetMzn > 0) { lines.push({ group: 'terceiros', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 }); }
     } else if (groupName === 'servicos') {
-        lines.push({ group: 'servicos', desc: 'Honorários de Desembaraço', price: 10850, tax: 16 });
+        lines.push({ group: 'servicos', desc: 'Honorários de Desembaraço', price: 10850, tax: 0 });
     }
     
     window.quoteIsDirty = true;
@@ -8422,6 +8440,12 @@ window.renderInvoiceLines = function() {
     // Populate
     lines.forEach((l, index) => {
         if (!groups[l.group]) l.group = 'servicos'; // fallback
+        
+        // HOTFIX: Forçar IVA a zero para o Desembaraço, mesmo que tenha sido guardado com 16% antes
+        if (l.desc && (l.desc === 'Desembaraço Moz' || l.desc === 'Honorários de Desembaraço')) {
+            l.tax = 0;
+        }
+
         groups[l.group].items.push({ ...l, index });
         groups[l.group].subtotal += parseFloat(l.price) || 0;
     });

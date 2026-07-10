@@ -191,19 +191,7 @@ input[type=number] {
 
 
 @media print {
-    body * {
-        visibility: hidden;
-    }
-    #quote-items-table, #quote-items-table * {
-        visibility: visible;
-    }
-    #quote-items-table {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100% !important;
-        border-collapse: collapse;
-    }
+    /* Remover a regra antiga que ocultava tudo */
     
     /* Expand scrollable containers so all rows print */
     .overflow-auto, .overflow-hidden, .custom-scrollbar {

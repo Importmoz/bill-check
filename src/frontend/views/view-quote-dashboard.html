@@ -73,7 +73,13 @@
                 </div>
                 <span id="lbl-quote-editor-title" class="hidden"></span>
             </div>
-
+            <div class="flex items-center pr-4 print:hidden">
+                <button id="btn-quote-pdf-download" style="display: none;" onclick="window.print()" class="btn-action-scale text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 active:bg-red-200 p-1.5 rounded-lg text-xs font-bold border border-red-100 flex items-center justify-center shadow-sm" title="Baixar Cotação (PDF)">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <!-- TAB: CÁLCULO ADUANEIRO (DRAFT) -->
@@ -210,7 +216,7 @@
             
             <!-- TAB: EMISSÃO DE DOCUMENTO (FATURA/COTAÇÃO) -->
         <div id="tab-content-invoice" class="hidden flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 w-full items-start">
-            <div class="w-[210mm] max-w-full mx-auto bg-white rounded-xl shadow-[0_0_15px_rgba(0,0,0,0.05)] border border-gray-200 overflow-hidden relative print:shadow-none print:border-none print:p-0 h-fit">
+            <div class="w-[210mm] max-w-full mx-auto bg-white rounded-xl shadow-[0_0_15px_rgba(0,0,0,0.05)] border border-gray-200 overflow-hidden relative print:shadow-none print:border-none print:p-0 print:m-0 h-fit">
                 
                 <!-- Watermark / Background Styling -->
                 <div class="absolute top-0 left-0 w-full h-2 bg-indigo-600 print:bg-indigo-600 print:opacity-100"></div>
@@ -260,6 +266,7 @@
                                         <option value="FCL-40">FCL-40</option>
                                         <option value="FCL-20">FCL-20</option>
                                         <option value="LCL">LCL</option>
+                                        <option value="CBM">CBM</option>
                                     </select>
                                 </div>
                             </div>
