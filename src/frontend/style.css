@@ -191,36 +191,58 @@ input[type=number] {
 
 
 @media print {
-    /* Remover a regra antiga que ocultava tudo */
+    /* Forçar impressão a cores de fundos */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Ocultar elementos estruturais que não devem aparecer na impressão */
+    body > *:not(#app-root),
+    nav, header, aside, footer,
+    #modals-container,
+    .print\:hidden {
+        display: none !important;
+    }
+
+    /* Forçar containers principais a permitirem impressão fluida (remove barras laterais e scrolls) */
+    html, body, #app-root, #view-quote-dashboard, #tab-content-quote, #tab-content-invoice {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: white !important;
+    }
+
+    /* Ocultar outras áreas e workspaces que não queremos imprimir */
+    #tab-content-simulation, 
+    #quote-history-workspace,
+    #tab-content-quote > *:not(#tab-content-invoice) {
+        display: none !important;
+    }
+
+    /* Estilo específico para a folha A4 da fatura na impressão */
+    #tab-content-invoice > div {
+        margin: 0 auto !important;
+        box-shadow: none !important;
+        border: none !important;
+        width: 100% !important;
+    }
+
+    /* Forçar a exibição do conteúdo dos blocos <details> mesmo quando estão fechados na tela */
+    details.print\:open:not([open]) > :not(summary) {
+        display: block !important;
+    }
     
     /* Expand scrollable containers so all rows print */
     .overflow-auto, .overflow-hidden, .custom-scrollbar {
         overflow: visible !important;
         height: auto !important;
         max-height: none !important;
-    }
-    
-    /* Remove shadow and sticky behaviors */
-    #quote-items-table thead, #quote-items-table tfoot {
-        position: static !important;
-        box-shadow: none !important;
-    }
-    
-    /* Hide the last action column */
-    #quote-items-table th:last-child,
-    #quote-items-table td:last-child {
-        display: none !important;
-    }
-    
-    /* Inputs should look like normal text */
-    #quote-items-table input {
-        border: none !important;
-        background: transparent !important;
-    }
-
-    @page {
-        size: landscape;
-        margin: 10mm;
     }
 }
 

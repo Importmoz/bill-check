@@ -5692,6 +5692,115 @@ window.closeQuoteEditor = function() {
     document.getElementById('quote-history-workspace').classList.remove('hidden');
 };
 
+window.openAllInvoiceTabsForPrint = function() {
+    const details = document.querySelectorAll('#tab-content-invoice details');
+    const openedDetails = [];
+    
+    details.forEach(d => {
+        if (d.hasAttribute('open')) {
+            openedDetails.push(d);
+        } else {
+            d.setAttribute('open', '');
+        }
+        // Remover name para permitir múltiplas abas abertas simultaneamente
+        if (d.hasAttribute('name')) {
+            d.dataset.name = d.getAttribute('name');
+            d.removeAttribute('name');
+        }
+    });
+
+    const restore = function() {
+        details.forEach(d => {
+            if (!openedDetails.includes(d)) {
+                d.removeAttribute('open');
+            }
+            if (d.dataset.name) {
+                d.setAttribute('name', d.dataset.name);
+            }
+        });
+        window.removeEventListener('afterprint', restore);
+    };
+    
+    window.addEventListener('afterprint', restore);
+};
+
+window.previewQuotePDF = function() {
+    window.openAllInvoiceTabsForPrint();
+    setTimeout(() => {
+        window.print();
+    }, 100);
+};
+
+window.downloadQuotePDF = function() {
+    try {
+        if (typeof window.html2pdf === 'undefined') {
+            alert('A biblioteca html2pdf não foi carregada. Por favor faça Ctrl+F5 (ou Cmd+Shift+R). Vai abrir a janela de impressão clássica como alternativa.');
+            window.previewQuotePDF();
+            return;
+        }
+
+        const element = document.querySelector('#tab-content-invoice > div');
+        if (!element) {
+            alert('Não foi possível encontrar a fatura no ecrã.');
+            return;
+        }
+
+        const quoteNumberInput = document.getElementById('inv-doc-number');
+        let quoteNumber = quoteNumberInput ? quoteNumberInput.value.trim() : '';
+        if (!quoteNumber || quoteNumber.toUpperCase() === 'AUTO') {
+            quoteNumber = 'Rascunho';
+        }
+        
+        const docTypeInput = document.getElementById('inv-doc-type');
+        const docType = docTypeInput ? docTypeInput.value.trim() : 'Cotacao';
+
+        const filename = `${docType}_${quoteNumber}.pdf`.replace(/\s+/g, '_');
+
+        const originalClasses = element.className;
+        element.classList.remove('overflow-hidden');
+        element.classList.add('print:m-0', 'print:p-0', 'print:shadow-none', 'print:border-none');
+
+        if (window.setLoader) window.setLoader(true, 'A gerar PDF da Cotação...');
+
+        const opt = {
+            margin:       [10, 0, 10, 0],
+            filename:     filename,
+            image:        { type: 'jpeg', quality: 1.0 },
+            html2canvas:  { 
+                scale: 2, 
+                useCORS: true,
+                scrollY: 0
+            },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        // Open tabs for html2pdf rendering as well
+        window.openAllInvoiceTabsForPrint();
+
+        html2pdf().set(opt).from(element).save().then(() => {
+            if (window.setLoader) window.setLoader(false);
+            element.className = originalClasses;
+            if (window.toast) window.toast('PDF transferido com sucesso!', 'success');
+            // manually trigger afterprint to restore tabs since html2pdf doesn't fire it
+            window.dispatchEvent(new Event('afterprint'));
+        }).catch(err => {
+            console.error('Erro ao gerar PDF:', err);
+            if (window.setLoader) window.setLoader(false);
+            element.className = originalClasses;
+            window.dispatchEvent(new Event('afterprint'));
+            
+            // FALLBACK TO NATIVE PRINT
+            alert('Falha na geração direta do ficheiro (erro de rendering). A redirecionar para a Janela de Impressão (Preview Clássico). Pode selecionar "Guardar como PDF" a partir de lá.');
+            window.previewQuotePDF();
+        });
+    } catch (e) {
+        console.error('Crash na geração do PDF:', e);
+        if (window.setLoader) window.setLoader(false);
+        // FALLBACK TO NATIVE PRINT
+        window.previewQuotePDF();
+    }
+};
+
 window.toggleQuoteSidebar = function() {
     const sidebar = document.getElementById('quote-editor-sidebar');
     const icon = document.getElementById('quote-sidebar-icon');
@@ -7175,7 +7284,17 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     ${buttonsHtml}
                 </div>
             </div>
-            ` : ''}
+            ` : `
+            <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4 mt-4">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-3">
+                    <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Resumo de Armazenagem Acumulada</h4>
+                </div>
+                <div class="flex flex-wrap items-center gap-2.5 text-xs">
+                    ${dischargeDateBadge}
+                    ${storageBadgesHtml}
+                </div>
+            </div>
+            `}
         `;
     } catch (err) {
         console.error('[WAREHOUSE] Erro ao renderizar detalhes de Armazém:', err);
@@ -8047,8 +8166,12 @@ window.switchQuoteTab = async function(tabName) {
         }
         
         const btnPdf = document.getElementById('btn-quote-pdf-download');
+        const btnPreview = document.getElementById('btn-quote-pdf-preview');
         if (btnPdf) {
             btnPdf.style.display = 'none';
+        }
+        if (btnPreview) {
+            btnPreview.style.display = 'none';
         }
     } else if (tabName === 'quote') {
         if (tabQuoteBtn) tabQuoteBtn.className = "px-5 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg bg-white shadow-sm text-indigo-600 transition-all border border-gray-200/50 flex items-center gap-2";
@@ -8068,8 +8191,12 @@ window.switchQuoteTab = async function(tabName) {
         }
         
         const btnPdf = document.getElementById('btn-quote-pdf-download');
+        const btnPreview = document.getElementById('btn-quote-pdf-preview');
         if (btnPdf) {
             btnPdf.style.display = 'flex';
+        }
+        if (btnPreview) {
+            btnPreview.style.display = 'flex';
         }
         
         if (contentInv) {
@@ -8456,16 +8583,16 @@ window.renderInvoiceLines = function() {
         
         // Group Container (Card)
         html += `
-        <details class="group print:open border-b border-gray-100 last:border-0">
-            <summary class="flex justify-between items-center bg-gray-50/50 px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors list-none print:hidden [&::-webkit-details-marker]:hidden">
+        <details name="invoice-groups" class="group print:open border-b border-gray-100 last:border-0">
+            <summary class="flex justify-between items-center bg-gray-50/50 px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors list-none [&::-webkit-details-marker]:hidden">
                 <span class="text-[10px] font-black uppercase tracking-widest text-indigo-900"><i class="fas ${group.icon} mr-2"></i>${group.title}</span>
-                <span class="text-gray-400 group-open:rotate-180 transition-transform duration-300">
+                <span class="text-gray-400 group-open:rotate-180 transition-transform duration-300 print:hidden">
                     <i class="fas fa-chevron-down"></i>
                 </span>
             </summary>
             
-            <div class="px-4 pb-2 pt-2">
-                <table class="w-full text-left border-collapse mb-2">
+            <div class="px-4 pb-2 pt-2 print:pb-0 print:pt-0">
+                <table class="w-full text-left border-collapse mb-2 print:mb-0">
                     <thead class="bg-red-100/60 border-y border-red-200">
                         <tr>
                             <th class="py-1 px-3 text-[10px] font-normal text-gray-800 uppercase tracking-wider w-1/2">DESCRIÇÃO</th>
@@ -8481,14 +8608,14 @@ window.renderInvoiceLines = function() {
         group.items.forEach((item, i) => {
             html += `
                         <tr class="group/row hover:bg-indigo-50/30 transition-colors border-b border-gray-50 last:border-0">
-                            <td class="py-1 px-3 pl-6">
+                            <td class="py-1 print:py-0.5 px-3 pl-6">
                                 <span class="text-xs font-normal text-gray-700">${item.desc}</span>
                                 ${item.tax > 0 ? `<span class="text-[9px] font-normal bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded ml-2" title="Sujeito a IVA">IVA ${item.tax}%</span>` : ''}
                             </td>
-                            <td class="py-1 px-3 text-right">
+                            <td class="py-1 print:py-0.5 px-3 text-right">
                                 <span class="text-xs font-normal text-gray-800">${formatCurrencyVal(item.price)}</span>
                             </td>
-                            <td class="py-1 px-3 text-right">
+                            <td class="py-1 print:py-0.5 px-3 text-right">
                                 <span class="text-xs font-normal text-gray-400">—</span>
                             </td>
                             <td class="py-1 px-2 text-center print:hidden w-16">
@@ -8512,14 +8639,14 @@ window.renderInvoiceLines = function() {
         // Group Subtotal
         html += `
                         <tr class="bg-white">
-                            <td class="py-2.5 px-3">
+                            <td class="py-1.5 print:py-0.5 px-3">
                                 ${gKey !== 'alfandegas' ? `
                                 <button type="button" onclick="window.openLineModal(-1, '${gKey}')" class="text-[10px] font-normal text-indigo-500 hover:text-indigo-700 uppercase tracking-widest print:hidden flex items-center gap-1 transition-all hover:scale-105"><i class="fas fa-plus-circle"></i> Adicionar Item</button>
                                 ` : ''}
                             </td>
-                            <td class="py-2.5 px-3 text-right font-normal text-gray-400 text-[9px] uppercase tracking-widest">Sub-Total ${group.title}</td>
-                            <td class="py-2.5 px-3 text-right font-normal text-indigo-900 text-sm border-t-2 border-indigo-100">${formatCurrencyVal(group.subtotal)}</td>
-                            <td class="py-2.5 px-2 print:hidden"></td>
+                            <td class="py-1.5 print:py-0.5 px-3 text-right font-normal text-gray-400 text-[9px] uppercase tracking-widest">Sub-Total ${group.title}</td>
+                            <td class="py-1.5 print:py-0.5 px-3 text-right font-normal text-indigo-900 text-sm border-t-2 border-indigo-100">${formatCurrencyVal(group.subtotal)}</td>
+                            <td class="py-1.5 print:py-0.5 px-2 print:hidden"></td>
                         </tr>
                     </tbody>
                 </table>
