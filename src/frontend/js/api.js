@@ -1557,6 +1557,7 @@ export async function saveQuote(quoteData) {
         quote_number: number,
         date: quoteData.date || now.toISOString().split('T')[0],
         total_amount: Number(quoteData.total_amount) || 0,
+        issuer: quoteData.issuer || '',
         payload: quoteData.payload || {},
         created: quoteData.created
     };

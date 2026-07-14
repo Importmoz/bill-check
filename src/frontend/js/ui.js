@@ -5512,6 +5512,10 @@ export function renderQuoteDashboard() {
             fob = parseFloat(payload.fob) || 0;
             total = parseFloat(payload.results?.totalImport) || 0;
         }
+        let cNameList = q.client_name;
+        if (!cNameList || cNameList === 'undefined') {
+            cNameList = payload.invoiceData?.clientName || payload.clientName || 'Cliente Não Definido';
+        }
         
         const card = document.createElement('div');
         card.className = "bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group transition-all hover:shadow hover:border-gray-300 hover:bg-gray-50/50 cursor-pointer active:scale-[0.98] relative";
@@ -5529,7 +5533,7 @@ export function renderQuoteDashboard() {
                     </svg>
                 </div>
                 <div class="overflow-hidden pr-8 w-full">
-                    <h3 class="text-[13px] font-bold text-gray-700 tracking-tight leading-none truncate group-hover:text-black transition-colors" title="${q.client_name}">${q.client_name}</h3>
+                    <h3 class="text-[13px] font-bold text-gray-700 tracking-tight leading-none truncate group-hover:text-black transition-colors" title="${cNameList}">${cNameList}</h3>
                     <p class="text-[9px] text-gray-400 font-bold uppercase mt-1.5 leading-none tracking-wider">${q.quote_number || 'S/N'}</p>
                 </div>
             </div>
@@ -5826,7 +5830,7 @@ window.handleQuoteModeChange = function() {
     
     const subModeSelect = document.getElementById('input-quote-submode');
     const subModeContainer = document.getElementById('container-quote-submode');
-    if (mode === 'Maritimo') {
+    if (mode === 'Maritimo' || mode === 'Rodoviario') {
         if (subModeContainer) subModeContainer.classList.remove('hidden');
         else subModeSelect.classList.remove('hidden');
     } else {
@@ -5843,14 +5847,76 @@ window.handleQuoteModeChange = function() {
     }
     
     if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    window.syncInvoiceLinesFromDraft();
     if (typeof window.calculateFullInvoice === 'function') window.calculateFullInvoice();
+    if (typeof window.renderInvoiceLines === 'function') window.renderInvoiceLines();
 };
 
 window.handleQuoteSubModeChange = function() {
-    window.quoteEditorState.subMode = document.getElementById('input-quote-submode').value;
+    const subMode = document.getElementById('input-quote-submode').value;
+    window.quoteEditorState.subMode = subMode;
+    
+    const cbmContainer = document.getElementById('container-quote-cbm');
+    if (subMode === 'LCL' || subMode === 'CBM') {
+        if (cbmContainer) cbmContainer.classList.remove('hidden');
+        if (cbmContainer) cbmContainer.classList.add('flex');
+    } else {
+        if (cbmContainer) cbmContainer.classList.add('hidden');
+        if (cbmContainer) cbmContainer.classList.remove('flex');
+    }
+    
+    const carClassContainer = document.getElementById('container-quote-carclass');
+    if (subMode === 'CAR') {
+        if (carClassContainer) carClassContainer.classList.remove('hidden');
+        if (carClassContainer) carClassContainer.classList.add('flex');
+    } else {
+        if (carClassContainer) carClassContainer.classList.add('hidden');
+        if (carClassContainer) carClassContainer.classList.remove('flex');
+    }
+    
     window.quoteIsDirty = true;
     if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    window.syncInvoiceLinesFromDraft();
     if (typeof window.calculateFullInvoice === 'function') window.calculateFullInvoice();
+    if (typeof window.renderInvoiceLines === 'function') window.renderInvoiceLines();
+};
+
+window.handleQuoteCbmChange = function() {
+    let rawValue = document.getElementById('input-quote-cbm').value || '';
+    
+    const cbmInput = document.getElementById('input-quote-cbm');
+    if (rawValue.trim() !== '') {
+        cbmInput.classList.remove('border-gray-200');
+        cbmInput.classList.add('border-transparent');
+    } else {
+        cbmInput.classList.remove('border-transparent');
+        cbmInput.classList.add('border-gray-200');
+    }
+    
+    rawValue = rawValue.replace(',', '.');
+    const cbmVal = parseFloat(rawValue) || 0;
+    
+    if (!window.quoteEditorState.globais) window.quoteEditorState.globais = {};
+    window.quoteEditorState.globais.cbm = cbmVal;
+    
+    window.quoteIsDirty = true;
+    if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    window.syncInvoiceLinesFromDraft();
+    if (typeof window.calculateFullInvoice === 'function') window.calculateFullInvoice();
+    if (typeof window.renderInvoiceLines === 'function') window.renderInvoiceLines();
+};
+
+window.handleQuoteCarClassChange = function() {
+    const classVal = document.getElementById('input-quote-carclass').value;
+    
+    if (!window.quoteEditorState.globais) window.quoteEditorState.globais = {};
+    window.quoteEditorState.globais.carClass = classVal;
+    
+    window.quoteIsDirty = true;
+    if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    window.syncInvoiceLinesFromDraft();
+    if (typeof window.calculateFullInvoice === 'function') window.calculateFullInvoice();
+    if (typeof window.renderInvoiceLines === 'function') window.renderInvoiceLines();
 };
 
 window.startNewQuote = function() {
@@ -5861,7 +5927,7 @@ window.startNewQuote = function() {
         exchangeRate: 64.00,
         mode: '',
         subMode: '',
-        globais: { freight: '', insurance: '', others: '' },
+        globais: { freight: '', insurance: '', others: '', cbm: '' },
         items: [],
         totals: { fobForeign: 0, freightForeign: 0, insForeign: 0, cifMzn: 0, daMzn: 0, iceMzn: 0, ivaMzn: 0, tsaMzn: 0, mcnetMzn: 0, tsaFixedMzn: 0, grandTotalMzn: 0 }
     };
@@ -5873,6 +5939,26 @@ window.startNewQuote = function() {
     const subModeCont = document.getElementById('container-quote-submode');
     if (subModeCont) subModeCont.classList.add('hidden');
     else document.getElementById('input-quote-submode').classList.add('hidden');
+    
+    const cbmCont = document.getElementById('container-quote-cbm');
+    if (cbmCont) {
+        cbmCont.classList.add('hidden');
+        cbmCont.classList.remove('flex');
+    }
+    const cbmInput = document.getElementById('input-quote-cbm');
+    if (cbmInput) {
+        cbmInput.value = '';
+        cbmInput.classList.remove('border-transparent');
+        cbmInput.classList.add('border-gray-200');
+    }
+    
+    const carClassCont = document.getElementById('container-quote-carclass');
+    if (carClassCont) {
+        carClassCont.classList.add('hidden');
+        carClassCont.classList.remove('flex');
+    }
+    const carClassInput = document.getElementById('input-quote-carclass');
+    if (carClassInput) carClassInput.value = 'Ligeiro';
     
     document.getElementById('input-global-freight').value = '';
     document.getElementById('input-global-insurance').value = '';
@@ -5917,6 +6003,13 @@ window.removeQuoteRow = function(id) {
 window.updateQuoteRow = function(id, field, value) {
     const item = window.quoteEditorState.items.find(i => i.id === id);
     if (!item) return;
+    
+    // Convert commas to dots for numeric fields
+    if (field === 'freight' || field === 'insurance' || field === 'others' || field === 'qty' || field === 'unitPrice' || field === 'qtyFisica' || field === 'iceAlcoholPercent' || field === 'iceSugarGrams') {
+        if (typeof value === 'string') {
+            value = value.replace(',', '.');
+        }
+    }
     
     if (field === 'freight' || field === 'insurance' || field === 'others') {
         item[field] = value === '' ? null : parseFloat(value);
@@ -5973,11 +6066,11 @@ window.getQtyFisicaModeAndHTML = function(item) {
             html: `
                 <div class="flex flex-row gap-0.5 w-full">
                     <div class="flex items-center bg-yellow-50/30 hover:bg-yellow-50 w-1/2 rounded overflow-hidden">
-                        <input type="number" step="any" class="input-qty-fisica w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-5 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Litros" title="Quantidade em Litros">
+                        <input type="text" class="input-qty-fisica w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-5 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Litros" title="Quantidade em Litros">
                         <span class="text-[8px] text-yellow-600 pr-1 font-semibold select-none">L</span>
                     </div>
                     <div class="flex items-center bg-purple-50/30 hover:bg-purple-50 w-1/2 rounded overflow-hidden">
-                        <input type="number" step="any" class="input-ice-extra w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-purple-800 font-normal outline-none focus:ring-0 h-5 placeholder-purple-400" value="${item.iceAlcoholPercent || ''}" oninput="window.updateQuoteRow(${item.id}, 'iceAlcoholPercent', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Alc" title="Teor Alcoólico (%)">
+                        <input type="text" class="input-ice-extra w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-purple-800 font-normal outline-none focus:ring-0 h-5 placeholder-purple-400" value="${item.iceAlcoholPercent || ''}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateQuoteRow(${item.id}, 'iceAlcoholPercent', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Alc" title="Teor Alcoólico (%)">
                         <span class="text-[8px] text-purple-600 pr-1 font-semibold select-none">%</span>
                     </div>
                 </div>
@@ -5989,11 +6082,11 @@ window.getQtyFisicaModeAndHTML = function(item) {
             html: `
                 <div class="flex flex-row gap-0.5 w-full">
                     <div class="flex items-center bg-yellow-50/30 hover:bg-yellow-50 w-1/2 rounded overflow-hidden">
-                        <input type="number" step="any" class="input-qty-fisica w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-5 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Litros" title="Quantidade em Litros">
+                        <input type="text" class="input-qty-fisica w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-5 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Litros" title="Quantidade em Litros">
                         <span class="text-[8px] text-yellow-600 pr-1 font-semibold select-none">L</span>
                     </div>
                     <div class="flex items-center bg-pink-50/30 hover:bg-pink-50 w-1/2 rounded overflow-hidden">
-                        <input type="number" step="any" class="input-ice-extra w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-pink-800 font-normal outline-none focus:ring-0 h-5 placeholder-pink-400" value="${item.iceSugarGrams || ''}" oninput="window.updateQuoteRow(${item.id}, 'iceSugarGrams', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Teor" title="Teor de Açúcar (gramas por 100ml)">
+                        <input type="text" class="input-ice-extra w-full text-[9px] text-right py-0 px-0.5 border-none bg-transparent text-pink-800 font-normal outline-none focus:ring-0 h-5 placeholder-pink-400" value="${item.iceSugarGrams || ''}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateQuoteRow(${item.id}, 'iceSugarGrams', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Teor" title="Teor de Açúcar (gramas por 100ml)">
                         <span class="text-[7px] text-pink-600 pr-0.5 font-semibold select-none leading-none">g/100m</span>
                     </div>
                 </div>
@@ -6004,7 +6097,7 @@ window.getQtyFisicaModeAndHTML = function(item) {
             mode: 'specific',
             html: `
                 <div class="flex items-center bg-yellow-50/30 hover:bg-yellow-50 w-full rounded overflow-hidden">
-                    <input type="number" step="any" class="input-qty-fisica w-full text-[10px] text-right py-0 px-1 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-6 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Qtd" title="Quantidade (${iceData.specificUnit})">
+                    <input type="text" class="input-qty-fisica w-full text-[10px] text-right py-0 px-1 border-none bg-transparent text-yellow-800 font-normal outline-none focus:ring-0 h-6 placeholder-yellow-400" value="${item.qtyFisica || ''}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateQuoteRow(${item.id}, 'qtyFisica', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Qtd" title="Quantidade (${iceData.specificUnit})">
                     <span class="text-[8px] text-yellow-600 pr-1 font-semibold select-none">${iceData.specificUnit}</span>
                 </div>
             `
@@ -6097,10 +6190,16 @@ window.calculateFullInvoice = function() {
     const printCaption = document.getElementById('print-currency-note');
     if (printCaption) printCaption.innerText = `${curr} | ${excRate.toFixed(2)}`;
 
+    const rawCbm = document.getElementById('input-quote-cbm')?.value || '';
+    const cbmVal = parseFloat(rawCbm.replace(',', '.')) || 0;
+    const carClassVal = document.getElementById('input-quote-carclass')?.value || 'Ligeiro';
+
     const globais = {
         freight: document.getElementById('input-global-freight').value,
         insurance: document.getElementById('input-global-insurance').value,
-        others: document.getElementById('input-global-others').value
+        others: document.getElementById('input-global-others').value,
+        cbm: cbmVal,
+        carClass: carClassVal
     };
     window.quoteEditorState.globais = globais;
 
@@ -6307,13 +6406,13 @@ window.renderQuoteItemsTable = function() {
                 <input type="text" maxlength="8" class="input-hscode w-full text-xs ${hsColorClass} py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 text-center" value="${item.hsCode}" oninput="this.value = this.value.replace(/[^0-9]/g, ''); window.updateQuoteRow(${item.id}, 'hsCode', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Ex: 8703">
             </td>
             <td class="p-0 border-b border-r border-gray-100">
-                <input type="number" step="any" class="input-qty w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.qty}" oninput="window.updateQuoteRow(${item.id}, 'qty', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0">
+                <input type="text" class="input-qty w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.qty}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateQuoteRow(${item.id}, 'qty', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0">
             </td>
             <td class="p-0 border-b border-r border-gray-100 cell-qty-fis ${hasSpecificIce ? '' : 'hidden'}" data-current-mode="${qtyObj.mode}">
                 ${qtyFisicaInput}
             </td>
             <td class="p-0 border-b border-r border-gray-100">
-                <input type="number" step="any" class="input-unit-price w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.unitPrice}" oninput="window.updateQuoteRow(${item.id}, 'unitPrice', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0.00">
+                <input type="text" class="input-unit-price w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.unitPrice}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateQuoteRow(${item.id}, 'unitPrice', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0.00">
             </td>
             <td class="p-0 px-1 border-b border-r border-gray-100 text-center text-xs text-gray-800 bg-indigo-50/30 cell-fob font-normal">
                 ${formatCurrencyVal(item.fob)}
@@ -6368,6 +6467,7 @@ window.saveQuoteSimulation = async function(preventClose = false) {
             status: 'RASCUNHO',
             total_amount: window.quoteEditorState.totals.grandTotalMzn,
             cargo_description: window.quoteEditorState.items[0]?.description || 'Múltiplos Artigos',
+            issuer: window.quoteEditorState.invoiceData?.issuer || 'jupiter',
             payload: window.quoteEditorState
         };
         
@@ -6445,11 +6545,51 @@ window.loadSavedQuote = function(id) {
             else document.getElementById('input-quote-submode').classList.add('hidden');
         }
         
+        const cbmContainer = document.getElementById('container-quote-cbm');
+        if (window.quoteEditorState.subMode === 'LCL' || window.quoteEditorState.subMode === 'CBM') {
+            if (cbmContainer) { cbmContainer.classList.remove('hidden'); cbmContainer.classList.add('flex'); }
+        } else {
+            if (cbmContainer) { cbmContainer.classList.add('hidden'); cbmContainer.classList.remove('flex'); }
+        }
+        
+        const cbmInput = document.getElementById('input-quote-cbm');
+        if (cbmInput) {
+            cbmInput.value = window.quoteEditorState.globais?.cbm || '';
+            if (cbmInput.value.toString().trim() !== '') {
+                cbmInput.classList.remove('border-gray-200');
+                cbmInput.classList.add('border-transparent');
+            } else {
+                cbmInput.classList.remove('border-transparent');
+                cbmInput.classList.add('border-gray-200');
+            }
+        }
+        
+        const carClassContainer = document.getElementById('container-quote-carclass');
+        if (window.quoteEditorState.subMode === 'CAR') {
+            if (carClassContainer) {
+                carClassContainer.classList.remove('hidden');
+                carClassContainer.classList.add('flex');
+            }
+        } else {
+            if (carClassContainer) {
+                carClassContainer.classList.add('hidden');
+                carClassContainer.classList.remove('flex');
+            }
+        }
+        const carClassInput = document.getElementById('input-quote-carclass');
+        if (carClassInput) {
+            carClassInput.value = window.quoteEditorState.globais?.carClass || 'Ligeiro';
+        }
+        
         document.getElementById('input-global-freight').value = window.quoteEditorState.globais?.freight || '';
         document.getElementById('input-global-insurance').value = window.quoteEditorState.globais?.insurance || '';
         document.getElementById('input-global-others').value = window.quoteEditorState.globais?.others || '';
         
-        document.getElementById('lbl-quote-editor-title').innerText = `Cotação: ${quote.client_name}`;
+        let cNameTitle = quote.client_name;
+        if (!cNameTitle || cNameTitle === 'undefined') {
+            cNameTitle = quote.payload?.invoiceData?.clientName || quote.payload?.clientName || 'Cliente Não Definido';
+        }
+        document.getElementById('lbl-quote-editor-title').innerText = `Cotação: ${cNameTitle}`;
         
         window.openQuoteEditor();
         window.quoteIsDirty = false;
@@ -6479,7 +6619,8 @@ window.loadSavedQuote = function(id) {
         
         document.getElementById('input-quote-currency').value = 'MT';
         document.getElementById('input-quote-exchange').value = '1';
-        document.getElementById('lbl-quote-editor-title').innerText = `Cotação Migrada: ${quote.client_name}`;
+        const cNameOld = quote.client_name && quote.client_name !== 'undefined' ? quote.client_name : 'Cliente Não Definido';
+        document.getElementById('lbl-quote-editor-title').innerText = `Cotação Migrada: ${cNameOld}`;
         
         window.openQuoteEditor();
         window.quoteIsDirty = false;
@@ -8212,6 +8353,47 @@ window.switchQuoteTab = async function(tabName) {
     }
 };
 
+window.issuers = {
+    'jupiter': {
+        name: 'JUPITER LOGISTICS LDA',
+        nuit: 'NUIT: 400574472',
+        address: 'Av. do Trabalho nº 1412, 3º Andar',
+        contact: 'Tel.: +258 21401334, Cel:+25884 0485 691'
+    },
+    'hlces': {
+        name: 'HL COMÉRCIO E SERVIÇOS, LDA',
+        nuit: 'NUIT: 401950133',
+        address: 'Bairro Central, Avenida Guerra popular, 1.º andar, n.º 1346, Cidade de Maputo, Maputo, Moçambique',
+        contact: 'Email: info@hlces.com'
+    }
+};
+
+window.changeIssuer = function(presetId) {
+    const select = document.getElementById('inv-issuer-select');
+    if (!select) return;
+    
+    if (presetId) {
+        select.value = presetId;
+    }
+    
+    const issuerId = select.value;
+    const issuer = window.issuers[issuerId];
+    
+    if (issuer) {
+        document.getElementById('inv-issuer-name').innerText = issuer.name;
+        document.getElementById('inv-issuer-nuit').innerText = issuer.nuit;
+        document.getElementById('inv-issuer-address').innerText = issuer.address;
+        document.getElementById('inv-issuer-contact').innerText = issuer.contact;
+    } else {
+        document.getElementById('inv-issuer-name').innerHTML = '&nbsp;';
+        document.getElementById('inv-issuer-nuit').innerHTML = '&nbsp;';
+        document.getElementById('inv-issuer-address').innerHTML = '&nbsp;';
+        document.getElementById('inv-issuer-contact').innerHTML = '&nbsp;';
+    }
+    
+    window.syncInvoiceHeaderToState();
+};
+
 window.syncInvoiceHeaderToState = function() {
     window.quoteEditorState.invoiceData = window.quoteEditorState.invoiceData || {};
     window.quoteEditorState.invoiceData.docType = document.getElementById('inv-doc-type').value;
@@ -8219,6 +8401,9 @@ window.syncInvoiceHeaderToState = function() {
     window.quoteEditorState.invoiceData.dateIssue = document.getElementById('inv-date-issue').value;
     window.quoteEditorState.invoiceData.dateDue = document.getElementById('inv-date-due').value;
     if(document.getElementById('inv-doc-ref')) window.quoteEditorState.invoiceData.reference = document.getElementById('inv-doc-ref').value;
+    
+    const issuerSelect = document.getElementById('inv-issuer-select');
+    if (issuerSelect) window.quoteEditorState.invoiceData.issuer = issuerSelect.value;
     
     window.quoteIsDirty = true;
     if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
@@ -8264,8 +8449,12 @@ window.initInvoiceData = function() {
     document.getElementById('inv-date-due').value = d.dateDue;
     if(document.getElementById('inv-doc-ref')) document.getElementById('inv-doc-ref').value = d.reference;
     
-    // Emitente is now static in the UI, so we don't need to populate inputs for it
-    
+    // Emitente is now dynamic from a dropdown
+    if (d.issuer) {
+        window.changeIssuer(d.issuer);
+    } else {
+        window.changeIssuer('jupiter'); // Default se não existir
+    }
     window.syncClientUIDisplay();
     
     document.getElementById('inv-val-discount').value = d.discount;
@@ -8384,7 +8573,7 @@ window.syncInvoiceLinesFromDraft = function() {
     lines = lines.filter(l => l.group !== 'alfandegas');
     
     // Auto-sync Maritimo automatic costs based on mode and subMode
-    const autoDescs = ['DP World 40', 'DP World 20', 'Ordem de Entrega', 'Caução (Reembolsável)', 'Kudumba', 'Taxa JUE (MCnet)'];
+    const autoDescs = ['DP World 40', 'DP World 20', 'DP World LCL', 'Ordem de Entrega', 'Caução (Reembolsável)', 'Kudumba', 'Taxa JUE (MCnet)', 'MCnet', 'Agente', 'Taxa de Radio de Difusao', 'Titulo de Propriedade', 'INATRO', 'Maputo Car'];
     lines = lines.filter(l => !(l.group === 'terceiros' && autoDescs.includes(l.desc)));
     
     const mode = window.quoteEditorState.mode;
@@ -8400,8 +8589,35 @@ window.syncInvoiceLinesFromDraft = function() {
             lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 34800.00, tax: 0 });
             lines.push({ group: 'terceiros', desc: 'Caução (Reembolsável)', price: 70000.00, tax: 0 });
             lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
+        } else if (subMode === 'LCL') {
+            const cbm = window.quoteEditorState.globais?.cbm || 0;
+            const exRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+            
+            // DP World LCL: ((23 + 44.5 * CBM) * exRate) + 16% IVA embutido
+            const dpWorldMzn = (23 + (44.50 * cbm)) * exRate * 1.16;
+            
+            // Kudumba: (15 USD * exRate) + 16% IVA embutido
+            const kudumbaMzn = 15 * exRate * 1.16;
+
+            lines.push({ group: 'terceiros', desc: 'DP World LCL', price: dpWorldMzn, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 0, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Kudumba', price: kudumbaMzn, tax: 0 });
         } else if (subMode === 'CBM') {
-            lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7620.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Kudumba', price: 2601.00, tax: 0 });
+        } else if (subMode === 'CAR') {
+            const exRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+            const carClass = window.quoteEditorState.globais?.carClass || 'Ligeiro';
+            
+            const kudumbaMzn = 30 * exRate * 1.16;
+            const maputoCarMzn = 273 * exRate * 1.16;
+            const tituloPrice = carClass === 'Pesado' ? 3460.00 : 2460.00;
+
+            lines.push({ group: 'terceiros', desc: 'Kudumba', price: kudumbaMzn, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Agente', price: 8200.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Taxa de Radio de Difusao', price: 59.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Titulo de Propriedade', price: tituloPrice, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'INATRO', price: 11520.00, tax: 0 });
+            lines.push({ group: 'terceiros', desc: 'Maputo Car', price: maputoCarMzn, tax: 0 });
         }
     }
     
@@ -8447,7 +8663,7 @@ window.syncInvoiceLinesFromDraft = function() {
             group: 'servicos',
             desc: 'Desembaraço Moz',
             price: 10850,
-            tax: 0
+            tax: 16
         });
     }
 
@@ -8525,7 +8741,7 @@ window.addCategoryFromDraft = function(groupName) {
         lines.push({ group: 'terceiros', desc: 'Taxas Portuárias / Kudumba', price: 2604, tax: 0 });
         if (totals.mcnetMzn > 0) { lines.push({ group: 'terceiros', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 }); }
     } else if (groupName === 'servicos') {
-        lines.push({ group: 'servicos', desc: 'Honorários de Desembaraço', price: 10850, tax: 0 });
+        lines.push({ group: 'servicos', desc: 'Desembaraço Moz', price: 10850, tax: 16 });
     }
     
     window.quoteIsDirty = true;
@@ -8568,9 +8784,14 @@ window.renderInvoiceLines = function() {
     lines.forEach((l, index) => {
         if (!groups[l.group]) l.group = 'servicos'; // fallback
         
-        // HOTFIX: Forçar IVA a zero para o Desembaraço, mesmo que tenha sido guardado com 16% antes
-        if (l.desc && (l.desc === 'Desembaraço Moz' || l.desc === 'Honorários de Desembaraço')) {
-            l.tax = 0;
+        // AUTO-UPGRADE: Forçar 16% de IVA nas cotações antigas que guardaram o desembaraço a 0%
+        if (l.desc && l.desc === 'Desembaraço Moz' && l.tax === 0) {
+            l.tax = 16;
+        }
+        
+        // AUTO-RENAME: Reverter nome para "Desembaraço Moz"
+        if (l.desc && l.desc === 'Honorários de Desembaraço') {
+            l.desc = 'Desembaraço Moz';
         }
 
         groups[l.group].items.push({ ...l, index });
@@ -8644,7 +8865,7 @@ window.renderInvoiceLines = function() {
                                 <button type="button" onclick="window.openLineModal(-1, '${gKey}')" class="text-[10px] font-normal text-indigo-500 hover:text-indigo-700 uppercase tracking-widest print:hidden flex items-center gap-1 transition-all hover:scale-105"><i class="fas fa-plus-circle"></i> Adicionar Item</button>
                                 ` : ''}
                             </td>
-                            <td class="py-1.5 print:py-0.5 px-3 text-right font-normal text-gray-400 text-[9px] uppercase tracking-widest">Sub-Total ${group.title}</td>
+                            <td class="py-1.5 print:py-0.5 px-3 text-right font-normal text-gray-400 text-[9px] uppercase tracking-widest"></td>
                             <td class="py-1.5 print:py-0.5 px-3 text-right font-normal text-indigo-900 text-sm border-t-2 border-indigo-100">${formatCurrencyVal(group.subtotal)}</td>
                             <td class="py-1.5 print:py-0.5 px-2 print:hidden"></td>
                         </tr>
@@ -8727,6 +8948,18 @@ window.calculateInvoiceTotals = function() {
     
     const extEl = document.getElementById('inv-val-extenso');
     if (extEl) extEl.innerText = window.numeroParaExtenso(finalTotal);
+
+    // Atualizar Cabeçalho (Câmbio e CIF)
+    const cifForeign = (window.quoteEditorState.totals?.fobForeign || 0) + 
+                       (window.quoteEditorState.totals?.freightForeign || 0) + 
+                       (window.quoteEditorState.totals?.insForeign || 0) + 
+                       (window.quoteEditorState.totals?.othForeign || 0);
+    const curr = window.quoteEditorState.currency || 'USD';
+    
+    if (document.getElementById('inv-header-cambio-curr')) document.getElementById('inv-header-cambio-curr').innerText = curr;
+    if (document.getElementById('inv-header-cif-curr')) document.getElementById('inv-header-cif-curr').innerText = curr;
+    if (document.getElementById('inv-header-cambio')) document.getElementById('inv-header-cambio').innerText = formatCurrencyVal(window.quoteEditorState.exchangeRate || 0);
+    if (document.getElementById('inv-header-cif')) document.getElementById('inv-header-cif').innerText = formatCurrencyVal(cifForeign);
 };
 window.openClientModal = async function() {
     const d = window.quoteEditorState.invoiceData;
