@@ -4974,3 +4974,106 @@ STDOUT: [
     "bank": "BCI",...
 STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 15466194210001
 
+2026-07-16T11:32:20.232Z - INFO: Arquivo extraído bank_2facbd0c-a96c-45bb-ba4f-adf78d21b04b_draft-bci-boss.xls
+STDOUT: [
+  {
+    "date": "2026-07-16 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "Trf.Cred.610364871",
+    "reference": "610364871",
+    "amount": 1470.0,
+    "balance": 267772.92,
+    "signature": "aba9c8101d4e69ee779ab137cda6958b2e0c3be6ba72a4c8696ef93395ebf9d6",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-16 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHIT...
+STDERR: DEBUG: Diagn�stico de bank_2facbd0c-a96c-45bb-ba4f-adf78d21b04b_draft-bci-boss.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-07-16T11:32:28.359Z - INFO: Arquivo extraído bank_90906ff2-2e7e-4e8e-9ef0-0022f5acb6ad_c758e0f9-5180-434b-b10a-2bc69f9072d1.xls
+STDOUT: [
+  {
+    "date": "2026-07-16 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cred.611296031",
+    "reference": "611296031",
+    "amount": 2058.0,
+    "balance": 49424.53,
+    "signature": "8014b877bda1b1955801c46c48c1b6504e83b9a8d63da3220d03ce8c40694562",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-16 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPIT...
+STDERR: DEBUG: Diagn�stico de bank_90906ff2-2e7e-4e8e-9ef0-0022f5acb6ad_c758e0f9-5180-434b-b10a-2bc69f9072d1.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-07-16T11:32:37.265Z - INFO: Arquivo extraído bank_d76a19f6-b765-4836-8572-6431266c5610_Extrato_75470366_16-07-26_16-07-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-16 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "TRF/ ABSABANK               CiRef. 260716123132300C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 18228.0,
+    "balance": 224875.27,
+    "signature": "d2fe9f35807cc2d39123b5f055f4434bf294d5d5b9d0bee91a817067f6ae213b",
+    "order_id": "",
+    "reconciled": f...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-16T11:32:45.830Z - INFO: Arquivo extraído bank_7b8fc80a-f7b1-4713-86ab-04f0d137cf37_Extrato_330788916_16-07-26_16-07-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-16 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 200976823Ref. 260716121259816C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 4704.0,
+    "balance": 257948.33,
+    "signature": "2d85347d2a41c9daad0d5d1abd03c5b4ef3cb62c5d49f320a2935526927eda80",
+    "order_id": "",
+    "reconcil...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-16T12:32:14.740Z - INFO: Arquivo extraído bank_ff885876-9de7-4526-8627-4c9e5f6d567f_20049c45-dc37-4929-9dce-0b9ef66f0a35.txt
+STDOUT: [
+  {
+    "date": "2026-07-16 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "610364871 Trf.Cred.610364871",
+    "reference": "610364871 Trf.Cred.610364871",
+    "amount": 1470.0,
+    "balance": 267772.92,
+    "signature": "33d1caa33a264006449f4d2b4bbcb1a4b95eaa9cd3f70df059f5915665ba5e11",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-16 00:00:00",
+    "bank": "BCI",
+    ...
+STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 18909451710002
+

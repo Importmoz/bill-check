@@ -8409,6 +8409,74 @@ window.syncInvoiceHeaderToState = function() {
     if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
 };
 
+window.updateInvoiceDocType = function() {
+    const el = document.getElementById('inv-doc-type');
+    if (!el) return;
+    
+    const val = el.value;
+    window.quoteEditorState.invoiceData.docType = val;
+    
+    let origQuoteNum = window.quoteEditorState.invoiceData.originalQuoteNumber;
+    let invNum = window.quoteEditorState.invoiceData.generatedInvoiceNumber;
+    let currentNum = window.quoteEditorState.invoiceData.docNumber;
+    
+    if (!currentNum || currentNum === 'AUTO') {
+        const docEl = document.getElementById('inv-doc-number');
+        if (docEl && docEl.value !== 'AUTO') currentNum = docEl.value;
+    }
+    
+    // Store original quote number if not present
+    if (!origQuoteNum) {
+        if (currentNum && !currentNum.startsWith('F')) {
+            origQuoteNum = currentNum;
+            window.quoteEditorState.invoiceData.originalQuoteNumber = origQuoteNum;
+        }
+    }
+    
+    if (val === 'FATURA' || val === 'FATURA-RECIBO') {
+        if (!invNum) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const rnd = Math.floor(Math.random() * 9000) + 1000;
+            const prefix = val === 'FATURA' ? 'FT' : 'FR';
+            invNum = `${prefix} ${year}/${rnd}`;
+            window.quoteEditorState.invoiceData.generatedInvoiceNumber = invNum;
+        }
+        
+        window.quoteEditorState.invoiceData.docNumber = invNum;
+        let refVal = origQuoteNum || (window.quoteEditorState.id || '');
+        if (refVal) window.quoteEditorState.invoiceData.reference = refVal;
+        
+    } else {
+        // Revert to Cotação
+        if (origQuoteNum) {
+            window.quoteEditorState.invoiceData.docNumber = origQuoteNum;
+        } else {
+            window.quoteEditorState.invoiceData.docNumber = currentNum && !currentNum.startsWith('F') ? currentNum : 'AUTO';
+        }
+        
+        if (window.quoteEditorState.invoiceData.reference === origQuoteNum) {
+             window.quoteEditorState.invoiceData.reference = '';
+        }
+    }
+    
+    const numEl = document.getElementById('inv-doc-number');
+    if (numEl) numEl.value = window.quoteEditorState.invoiceData.docNumber || 'AUTO';
+    
+    const refEl = document.getElementById('inv-doc-ref');
+    if (refEl) refEl.value = window.quoteEditorState.invoiceData.reference || '';
+    
+    const dueDateContainer = document.getElementById('container-inv-date-due');
+    if (dueDateContainer) {
+        if (val === 'FATURA' || val === 'FATURA-RECIBO') {
+            dueDateContainer.style.display = 'none';
+        } else {
+            dueDateContainer.style.display = 'flex';
+        }
+    }
+    
+    window.renderInvoiceLines();
+};
 
 
 window.initInvoiceData = function() {
@@ -8428,7 +8496,16 @@ window.initInvoiceData = function() {
     d.clientNuit = d.clientNuit || '';
     d.clientAddress = d.clientAddress || '';
     d.clientContact = d.clientContact || '';
-    d.lines = d.lines || [];
+    
+    d.quoteLines = d.quoteLines || [];
+    d.faturaLines = d.faturaLines || [];
+    
+    if (d.lines) {
+        if (d.faturaLines.length === 0) d.faturaLines = JSON.parse(JSON.stringify(d.lines));
+        if (d.quoteLines.length === 0) d.quoteLines = JSON.parse(JSON.stringify(d.lines));
+        delete d.lines;
+    }
+
     d.discount = d.discount || 0;
     d.bankDetails = d.bankDetails || 'NIB: 00000000000\nBanco: Millennium Bim\nTitular: Sua Empresa Lda\n\nM-Pesa: 84 000 0000';
     d.observations = d.observations || 'Validade da cotação: 30 dias.';
@@ -8461,8 +8538,17 @@ window.initInvoiceData = function() {
     document.getElementById('inv-bank-details').value = d.bankDetails;
     document.getElementById('inv-observations').value = d.observations;
     
+    const dueDateContainer = document.getElementById('container-inv-date-due');
+    if (dueDateContainer) {
+        if (d.docType === 'FATURA' || d.docType === 'FATURA-RECIBO') {
+            dueDateContainer.style.display = 'none';
+        } else {
+            dueDateContainer.style.display = 'flex';
+        }
+    }
+    
     // Add event listeners to sync DOM back to state
-    const inputs = ['doc-type', 'doc-number', 'date-issue', 'date-due', 'doc-ref', 'issuer-name', 'issuer-nuit', 'issuer-address', 'issuer-contact', 'client-name', 'client-nuit', 'client-address', 'client-contact', 'bank-details', 'observations'];
+    const inputs = ['doc-number', 'date-issue', 'date-due', 'doc-ref', 'issuer-name', 'issuer-nuit', 'issuer-address', 'issuer-contact', 'client-name', 'client-nuit', 'client-address', 'client-contact', 'bank-details', 'observations'];
     inputs.forEach(id => {
         const el = document.getElementById('inv-' + id);
         if (el) {
@@ -8478,8 +8564,7 @@ window.initInvoiceData = function() {
                 }
             };
             
-            // Explicit overrides
-            if(id === 'doc-type') el.onchange = (e) => window.quoteEditorState.invoiceData.docType = e.target.value;
+            // Removed doc-type override as it is now handled globally
             if(id === 'doc-number') el.onchange = (e) => window.quoteEditorState.invoiceData.docNumber = e.target.value;
             if(id === 'date-issue') el.onchange = (e) => window.quoteEditorState.invoiceData.dateIssue = e.target.value;
             if(id === 'date-due') el.onchange = (e) => window.quoteEditorState.invoiceData.dateDue = e.target.value;
@@ -8564,110 +8649,78 @@ window.syncInvoiceLinesFromDraft = function() {
     if (!window.quoteEditorState.invoiceData) {
         window.quoteEditorState.invoiceData = {};
     }
-    let lines = window.quoteEditorState.invoiceData.lines || [];
     
-    // Check if lines are completely empty before syncing (so we can add default 'terceiros' and 'servicos' just once)
-    const isFirstTime = lines.length === 0;
+    // Ensure both arrays exist
+    window.quoteEditorState.invoiceData.quoteLines = window.quoteEditorState.invoiceData.quoteLines || [];
+    window.quoteEditorState.invoiceData.faturaLines = window.quoteEditorState.invoiceData.faturaLines || [];
+    
+    const syncArray = (existingLines) => {
+        let lines = [...(existingLines || [])];
+        const isFirstTime = lines.length === 0;
 
-    // Filter out old 'alfandegas' lines because they must strictly come from the calculation table
-    lines = lines.filter(l => l.group !== 'alfandegas');
-    
-    // Auto-sync Maritimo automatic costs based on mode and subMode
-    const autoDescs = ['DP World 40', 'DP World 20', 'DP World LCL', 'Ordem de Entrega', 'Caução (Reembolsável)', 'Kudumba', 'Taxa JUE (MCnet)', 'MCnet', 'Agente', 'Taxa de Radio de Difusao', 'Titulo de Propriedade', 'INATRO', 'Maputo Car'];
-    lines = lines.filter(l => !(l.group === 'terceiros' && autoDescs.includes(l.desc)));
-    
-    const mode = window.quoteEditorState.mode;
-    const subMode = window.quoteEditorState.subMode;
-    if (mode === 'Maritimo') {
-        if (subMode === 'FCL-40') {
-            lines.push({ group: 'terceiros', desc: 'DP World 40', price: 32202.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 50385.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Caução (Reembolsável)', price: 130000.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
-        } else if (subMode === 'FCL-20') {
-            lines.push({ group: 'terceiros', desc: 'DP World 20', price: 17640.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 34800.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Caução (Reembolsável)', price: 70000.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
-        } else if (subMode === 'LCL') {
-            const cbm = window.quoteEditorState.globais?.cbm || 0;
-            const exRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
-            
-            // DP World LCL: ((23 + 44.5 * CBM) * exRate) + 16% IVA embutido
-            const dpWorldMzn = (23 + (44.50 * cbm)) * exRate * 1.16;
-            
-            // Kudumba: (15 USD * exRate) + 16% IVA embutido
-            const kudumbaMzn = 15 * exRate * 1.16;
-
-            lines.push({ group: 'terceiros', desc: 'DP World LCL', price: dpWorldMzn, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 0, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Kudumba', price: kudumbaMzn, tax: 0 });
-        } else if (subMode === 'CBM') {
-            lines.push({ group: 'terceiros', desc: 'Kudumba', price: 2601.00, tax: 0 });
-        } else if (subMode === 'CAR') {
-            const exRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
-            const carClass = window.quoteEditorState.globais?.carClass || 'Ligeiro';
-            
-            const kudumbaMzn = 30 * exRate * 1.16;
-            const maputoCarMzn = 273 * exRate * 1.16;
-            const tituloPrice = carClass === 'Pesado' ? 3460.00 : 2460.00;
-
-            lines.push({ group: 'terceiros', desc: 'Kudumba', price: kudumbaMzn, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Agente', price: 8200.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Taxa de Radio de Difusao', price: 59.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Titulo de Propriedade', price: tituloPrice, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'INATRO', price: 11520.00, tax: 0 });
-            lines.push({ group: 'terceiros', desc: 'Maputo Car', price: maputoCarMzn, tax: 0 });
-        }
-    }
-    
-    // Add Alfandegas from totals
-    let addedAlfandegas = false;
-    if (totals.daMzn > 0) {
-        lines.push({ group: 'alfandegas', desc: 'Direitos', price: totals.daMzn, tax: 0 });
-        addedAlfandegas = true;
-    }
-    if (totals.ivaMzn > 0) {
-        lines.push({ group: 'alfandegas', desc: 'IVA', price: totals.ivaMzn, tax: 0 });
-        addedAlfandegas = true;
-    }
-    if (totals.tsaMzn > 0) {
-        lines.push({ group: 'alfandegas', desc: 'Sobretaxa', price: totals.tsaMzn, tax: 0 });
-        addedAlfandegas = true;
-    }
-    if (totals.iceMzn > 0) {
-        lines.push({ group: 'alfandegas', desc: 'ICE', price: totals.iceMzn, tax: 0 });
-        addedAlfandegas = true;
-    }
-    if (totals.mcnetMzn > 0) {
-        lines.push({ group: 'terceiros', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 });
-    }
-    if (totals.tsaFixedMzn > 0) {
-        lines.push({ group: 'alfandegas', desc: 'Taxa de Serviço Aduaneiro (TSA)', price: totals.tsaFixedMzn, tax: 0 });
-        addedAlfandegas = true;
-    }
-    
-    if (!addedAlfandegas) {
-        lines.push({ group: 'alfandegas', desc: 'Despesas Aduaneiras', price: 0, tax: 0 });
-    }
-    
-    if (isFirstTime) {
-        // Terceiros globais 
-        let others = parseFloat(document.getElementById('input-global-others').value) || 0;
-        if (others > 0) {
-            lines.push({ group: 'terceiros', desc: 'Outros Serviços de Navegação / Agência', price: others, tax: 0 });
+        lines = lines.filter(l => l.group !== 'alfandegas');
+        
+        const autoDescs = ['DP World 40', 'DP World 20', 'DP World LCL', 'Ordem de Entrega', 'Caução (Reembolsável)', 'Kudumba', 'Taxa JUE (MCnet)', 'MCnet', 'Agente', 'Taxa de Radio de Difusao', 'Titulo de Propriedade', 'INATRO', 'Maputo Car'];
+        lines = lines.filter(l => !(l.group === 'terceiros' && autoDescs.includes(l.desc)));
+        
+        const mode = window.quoteEditorState.mode;
+        const subMode = window.quoteEditorState.subMode;
+        if (mode === 'Maritimo') {
+            if (subMode === 'FCL-40') {
+                lines.push({ group: 'terceiros', desc: 'DP World 40', price: 32202.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 50385.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Caução (Reembolsável)', price: 130000.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
+            } else if (subMode === 'FCL-20') {
+                lines.push({ group: 'terceiros', desc: 'DP World 20', price: 17640.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 34800.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Caução (Reembolsável)', price: 70000.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
+            } else if (subMode === 'LCL') {
+                const cbm = window.quoteEditorState.globais?.cbm || 0;
+                const exRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+                const dpWorldMzn = (23 + (44.50 * cbm)) * exRate * 1.16;
+                const kudumbaMzn = 15 * exRate * 1.16;
+                lines.push({ group: 'terceiros', desc: 'DP World LCL', price: dpWorldMzn, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Ordem de Entrega', price: 0, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Kudumba', price: kudumbaMzn, tax: 0 });
+            } else if (subMode === 'CBM') {
+                lines.push({ group: 'terceiros', desc: 'Kudumba', price: 2601.00, tax: 0 });
+            } else if (subMode === 'CAR') {
+                const exRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+                const carClass = window.quoteEditorState.globais?.carClass || 'Ligeiro';
+                const kudumbaMzn = 30 * exRate * 1.16;
+                const maputoCarMzn = 273 * exRate * 1.16;
+                const tituloPrice = carClass === 'Pesado' ? 3460.00 : 2460.00;
+                lines.push({ group: 'terceiros', desc: 'Kudumba', price: kudumbaMzn, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Agente', price: 8200.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Taxa de Radio de Difusao', price: 59.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Titulo de Propriedade', price: tituloPrice, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'INATRO', price: 11520.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Maputo Car', price: maputoCarMzn, tax: 0 });
+            }
         }
         
-        // Servicos padrão
-        lines.push({
-            group: 'servicos',
-            desc: 'Desembaraço Moz',
-            price: 10850,
-            tax: 16
-        });
-    }
+        let addedAlfandegas = false;
+        if (totals.daMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Direitos', price: totals.daMzn, tax: 0 }); addedAlfandegas = true; }
+        if (totals.ivaMzn > 0) { lines.push({ group: 'alfandegas', desc: 'IVA', price: totals.ivaMzn, tax: 0 }); addedAlfandegas = true; }
+        if (totals.tsaMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Sobretaxa', price: totals.tsaMzn, tax: 0 }); addedAlfandegas = true; }
+        if (totals.iceMzn > 0) { lines.push({ group: 'alfandegas', desc: 'ICE', price: totals.iceMzn, tax: 0 }); addedAlfandegas = true; }
+        if (totals.mcnetMzn > 0) { lines.push({ group: 'terceiros', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 }); }
+        if (totals.tsaFixedMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Taxa de Serviço Aduaneiro (TSA)', price: totals.tsaFixedMzn, tax: 0 }); addedAlfandegas = true; }
+        if (!addedAlfandegas) { lines.push({ group: 'alfandegas', desc: 'Despesas Aduaneiras', price: 0, tax: 0 }); }
+        
+        if (isFirstTime) {
+            let others = parseFloat(document.getElementById('input-global-others')?.value) || 0;
+            if (others > 0) lines.push({ group: 'terceiros', desc: 'Outros Serviços de Navegação / Agência', price: others, tax: 0 });
+            lines.push({ group: 'servicos', desc: 'Desembaraço Moz', price: 10850, tax: 16 });
+        }
+        return lines;
+    };
 
-    window.quoteEditorState.invoiceData.lines = lines;
+    window.quoteEditorState.invoiceData.quoteLines = syncArray(window.quoteEditorState.invoiceData.quoteLines);
+    window.quoteEditorState.invoiceData.faturaLines = syncArray(window.quoteEditorState.invoiceData.faturaLines);
+    
     window.renderInvoiceLines();
 };
 
@@ -8706,12 +8759,15 @@ window.saveLineModal = function() {
     const price = parseFloat(document.getElementById('modal-line-price').value) || 0;
     const tax = parseFloat(document.getElementById('modal-line-tax').value) || 0;
     
+    const docType = window.quoteEditorState.invoiceData.docType || 'COTAÇÃO';
+    const lines = (docType === 'FATURA' || docType === 'FATURA-RECIBO') ? window.quoteEditorState.invoiceData.faturaLines : window.quoteEditorState.invoiceData.quoteLines;
+    
     if (index >= 0) {
         // Edit
-        window.quoteEditorState.invoiceData.lines[index] = { group, desc, price, tax };
+        lines[index] = { group, desc, price, tax };
     } else {
         // Add
-        window.quoteEditorState.invoiceData.lines.push({ group, desc, price, tax });
+        lines.push({ group, desc, price, tax });
     }
     
     window.renderInvoiceLines();
@@ -8720,11 +8776,14 @@ window.saveLineModal = function() {
 
 window.addCategoryFromDraft = function(groupName) {
     const totals = window.quoteEditorState.totals;
-    let lines = window.quoteEditorState.invoiceData.lines || [];
+    const docType = window.quoteEditorState.invoiceData.docType || 'COTAÇÃO';
+    const isFatura = (docType === 'FATURA' || docType === 'FATURA-RECIBO');
+    let lines = isFatura ? (window.quoteEditorState.invoiceData.faturaLines || []) : (window.quoteEditorState.invoiceData.quoteLines || []);
     
     // Clear out existing lines of this group to prevent duplication!
     lines = lines.filter(l => l.group !== groupName);
-    window.quoteEditorState.invoiceData.lines = lines;
+    if (isFatura) window.quoteEditorState.invoiceData.faturaLines = lines;
+    else window.quoteEditorState.invoiceData.quoteLines = lines;
     
     if (groupName === 'alfandegas') {
         let added = false;
@@ -8750,13 +8809,30 @@ window.addCategoryFromDraft = function(groupName) {
 };
 
 window.removeInvoiceLine = function(index) {
-    window.quoteEditorState.invoiceData.lines.splice(index, 1);
+    const docType = window.quoteEditorState.invoiceData.docType || 'COTAÇÃO';
+    const lines = (docType === 'FATURA' || docType === 'FATURA-RECIBO') ? window.quoteEditorState.invoiceData.faturaLines : window.quoteEditorState.invoiceData.quoteLines;
+    lines.splice(index, 1);
     window.renderInvoiceLines();
 };
 
 window.updateInvoiceLine = function(index, field, value) {
-    window.quoteEditorState.invoiceData.lines[index][field] = value;
+    const docType = window.quoteEditorState.invoiceData.docType || 'COTAÇÃO';
+    const lines = (docType === 'FATURA' || docType === 'FATURA-RECIBO') ? window.quoteEditorState.invoiceData.faturaLines : window.quoteEditorState.invoiceData.quoteLines;
+    lines[index][field] = value;
     if (field === 'price' || field === 'tax') {
+        window.calculateInvoiceTotals();
+    }
+};
+
+window.updateInvoiceLinePrice = function(index, valueStr) {
+    if (typeof valueStr === 'string') {
+        valueStr = valueStr.replace(',', '.');
+    }
+    const val = parseFloat(valueStr) || 0;
+    const docType = window.quoteEditorState.invoiceData.docType || 'COTAÇÃO';
+    const lines = (docType === 'FATURA' || docType === 'FATURA-RECIBO') ? window.quoteEditorState.invoiceData.faturaLines : window.quoteEditorState.invoiceData.quoteLines;
+    if (lines[index]) {
+        lines[index].price = val;
         window.calculateInvoiceTotals();
     }
 };
@@ -8765,14 +8841,12 @@ window.renderInvoiceLines = function() {
     const container = document.getElementById('inv-lines-container');
     if (!container) return;
     
+    const docType = window.quoteEditorState.invoiceData.docType || 'PROFORMA';
+    const isFatura = docType === 'FATURA' || docType === 'FATURA-RECIBO';
+    
     let html = '';
     
-    const lines = window.quoteEditorState.invoiceData.lines || [];
-    if (lines.length === 0) {
-        container.innerHTML = '<div class="p-8 text-center text-gray-400 font-bold">Nenhuma linha adicionada. Utilize a calculadora ou adicione manualmente.</div>';
-        window.calculateInvoiceTotals();
-        return;
-    }
+    const lines = isFatura ? (window.quoteEditorState.invoiceData.faturaLines || []) : (window.quoteEditorState.invoiceData.quoteLines || []);
     
     const groups = {
         alfandegas: { title: 'Alfândegas', icon: 'fa-file-invoice', items: [], subtotal: 0 },
@@ -8804,7 +8878,7 @@ window.renderInvoiceLines = function() {
         
         // Group Container (Card)
         html += `
-        <details name="invoice-groups" class="group print:open border-b border-gray-100 last:border-0">
+        <details class="group print:open border-b border-gray-100 last:border-0" open>
             <summary class="flex justify-between items-center bg-gray-50/50 px-4 py-2 cursor-pointer hover:bg-gray-100 transition-colors list-none [&::-webkit-details-marker]:hidden">
                 <span class="text-[10px] font-black uppercase tracking-widest text-indigo-900"><i class="fas ${group.icon} mr-2"></i>${group.title}</span>
                 <span class="text-gray-400 group-open:rotate-180 transition-transform duration-300 print:hidden">
@@ -8834,7 +8908,9 @@ window.renderInvoiceLines = function() {
                                 ${item.tax > 0 ? `<span class="text-[9px] font-normal bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded ml-2" title="Sujeito a IVA">IVA ${item.tax}%</span>` : ''}
                             </td>
                             <td class="py-1 print:py-0.5 px-3 text-right">
-                                <span class="text-xs font-normal text-gray-800">${formatCurrencyVal(item.price)}</span>
+                                ${isFatura ? 
+                                `<input type="text" class="w-24 text-xs font-normal text-gray-800 text-right bg-transparent border-b border-dashed border-gray-300 focus:border-indigo-500 outline-none" value="${parseFloat(item.price || 0).toFixed(2)}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateInvoiceLinePrice(${item.index}, this.value)">` 
+                                : `<span class="text-xs font-normal text-gray-800">${formatCurrencyVal(item.price)}</span>`}
                             </td>
                             <td class="py-1 print:py-0.5 px-3 text-right">
                                 <span class="text-xs font-normal text-gray-400">—</span>
@@ -8866,7 +8942,7 @@ window.renderInvoiceLines = function() {
                                 ` : ''}
                             </td>
                             <td class="py-1.5 print:py-0.5 px-3 text-right font-normal text-gray-400 text-[9px] uppercase tracking-widest"></td>
-                            <td class="py-1.5 print:py-0.5 px-3 text-right font-normal text-indigo-900 text-sm border-t-2 border-indigo-100">${formatCurrencyVal(group.subtotal)}</td>
+                            <td class="py-1.5 print:py-0.5 px-3 text-right font-normal text-indigo-900 text-sm border-t-2 border-indigo-100" id="inv-group-subtotal-${gKey}">${formatCurrencyVal(group.subtotal)}</td>
                             <td class="py-1.5 print:py-0.5 px-2 print:hidden"></td>
                         </tr>
                     </tbody>
@@ -8875,14 +8951,22 @@ window.renderInvoiceLines = function() {
         
         if (gKey === 'servicos') {
             html += `
-                    <div class="mt-8 flex flex-col md:flex-row justify-between items-end gap-4 border-t border-gray-100 pt-6">
+                    <div class="mt-8 flex flex-col md:flex-row print:flex-row justify-between items-end gap-4 border-t border-gray-100 pt-6">
                         <div class="flex-1 w-full relative h-full flex flex-col justify-end">
+                            ${isFatura ? `
+                            <div class="mb-4 text-[10px] text-gray-600 space-y-0.5">
+                                <p><strong class="text-gray-800 font-bold uppercase">Banco:</strong> BCI</p>
+                                <p><strong class="text-gray-800 font-bold uppercase">Titular:</strong> HL COMERCIO E SERVICOS, LDA</p>
+                                <p><strong class="text-gray-800 font-bold uppercase">N.º de Conta:</strong> 34391097910001</p>
+                                <p><strong class="text-gray-800 font-bold uppercase">Conta / NIB do Beneficiário:</strong> 0008 0000 43910979101 28</p>
+                            </div>
+                            ` : ''}
                             <div class="border-b border-gray-800 pb-1 inline-block min-w-[70%] max-w-full">
                                 <p class="text-xs font-bold text-gray-800 italic" id="inv-val-extenso">Zero meticais</p>
                             </div>
                         </div>
                         
-                        <div class="w-full md:w-[350px]">
+                        <div class="w-full md:w-[350px] print:w-[350px]">
                             <table class="w-full text-sm border-collapse">
                                 <tbody>
                                     <tr class="border-b border-gray-200">
@@ -8919,19 +9003,37 @@ window.renderInvoiceLines = function() {
 };
 
 window.calculateInvoiceTotals = function() {
-    const lines = window.quoteEditorState.invoiceData.lines;
+    const docType = window.quoteEditorState.invoiceData.docType || 'COTAÇÃO';
+    const lines = (docType === 'FATURA' || docType === 'FATURA-RECIBO') ? (window.quoteEditorState.invoiceData.faturaLines || []) : (window.quoteEditorState.invoiceData.quoteLines || []);
     
     let subtotalGeral = 0;
     let totalIva = 0;
+    
+    const groupSubtotals = {
+        alfandegas: 0,
+        terceiros: 0,
+        servicos: 0
+    };
     
     lines.forEach(line => {
         const val = parseFloat(line.price) || 0;
         subtotalGeral += val;
         
+        const g = line.group || 'servicos';
+        if (groupSubtotals[g] !== undefined) {
+            groupSubtotals[g] += val;
+        }
+        
         // Calcular IVA apenas nas linhas que têm tax (neste caso, "servicos" com 16%)
         if (line.tax > 0) {
             totalIva += val * (line.tax / 100);
         }
+    });
+    
+    // Update HTML for group subtotals
+    Object.keys(groupSubtotals).forEach(gKey => {
+        const el = document.getElementById(`inv-group-subtotal-${gKey}`);
+        if (el) el.innerText = formatCurrencyVal(groupSubtotals[gKey]);
     });
     
     const finalTotal = subtotalGeral + totalIva;
