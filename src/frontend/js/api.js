@@ -279,14 +279,21 @@ export async function listBankIncomes(filter = '', perPage = 5000) {
 }
 
 /**
- * Procura pagamentos não reconciliados no PocketBase
+ * Procura pagamentos no PocketBase
  */
-export async function searchPayments(bank, amount, term) {
-    let filter = `reconciled != true`;
+export async function searchPayments(bank, amount, term, includeReconciled = false) {
+    let conditions = [];
+    
+    // Se pesquisar por termo ou valor, assumimos que procura um movimento específico e mostramos tudo
+    const isSpecificSearch = (term && term.trim() !== '') || (amount && String(amount).trim() !== '');
+    
+    if (!includeReconciled && !isSpecificSearch) {
+        conditions.push(`reconciled != true`);
+    }
     
     if (bank) {
         let cleanBank = bank.replace(' BOSS', '').replace(' JUPITER', '').trim();
-        filter += ` && bank ~ "${cleanBank}"`;
+        conditions.push(`bank ~ "${cleanBank}"`);
     }
     
     if (amount) {
@@ -299,15 +306,16 @@ export async function searchPayments(bank, amount, term) {
         
         const numVal = parseFloat(cleanAmount);
         if (!isNaN(numVal)) {
-            filter += ` && amount = ${numVal}`;
+            conditions.push(`amount = ${numVal}`);
         }
     }
     
     if (term) {
         const termFilter = buildSearchFilter(term);
-        if (termFilter) filter += ` && (${termFilter})`;
+        if (termFilter) conditions.push(`(${termFilter})`);
     }
     
+    const filter = conditions.join(" && ");
     return await listBankIncomes(filter, 100);
 }
 

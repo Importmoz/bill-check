@@ -4679,6 +4679,7 @@ export async function searchPaymentMiniFilter() {
     const bank = document.getElementById('mini-filter-bank').value.trim();
     const amount = document.getElementById('mini-filter-amount').value.trim();
     const term = document.getElementById('mini-filter-search').value.trim();
+    const includeUsed = document.getElementById('mini-filter-show-used')?.checked || false;
 
     const tbody = document.getElementById('mini-filter-results');
     const emptyMsg = document.getElementById('mini-filter-empty');
@@ -4690,7 +4691,7 @@ export async function searchPaymentMiniFilter() {
             tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">A procurar...</td></tr>';
             emptyMsg.classList.add('hidden');
 
-            const results = await searchPayments(bank, amount, term);
+            const results = await searchPayments(bank, amount, term, includeUsed);
             tbody.innerHTML = '';
 
             if (results.length === 0) {
@@ -4702,28 +4703,45 @@ export async function searchPaymentMiniFilter() {
                 const tr = document.createElement('tr');
                 const isSelected = selectedPaymentsForLink.some(p => p.id === rec.id);
                 const checkedAttr = isSelected ? 'checked' : '';
-                const rowClass = isSelected ? 'bg-blue-100 border-blue-200 font-bold' : 'hover:bg-blue-50';
+                let rowClass = isSelected ? 'bg-blue-100 border-blue-200 font-bold' : 'hover:bg-blue-50';
+                if (rec.reconciled && !isSelected) {
+                    rowClass = 'bg-slate-100 opacity-60 cursor-not-allowed';
+                } else {
+                    rowClass += ' cursor-pointer';
+                }
 
-                tr.className = `${rowClass} cursor-pointer transition-colors border-b border-slate-50`;
+                tr.className = `${rowClass} transition-colors border-b border-slate-50`;
                 tr.dataset.id = rec.id;
 
                 const refText = rec.reference || rec.description || '';
-                tr.onclick = () => togglePaymentSelection(rec.id, rec.date, refText, rec.amount);
+                
+                // Apenas permitir clique na linha se não estiver reconciliado (usado)
+                if (!rec.reconciled) {
+                    tr.onclick = () => togglePaymentSelection(rec.id, rec.date, refText, rec.amount);
+                }
 
                 // Formatar Data
                 const dateStr = rec.date ? rec.date.split(' ')[0] : '—';
                 const amountFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(rec.amount);
 
                 const bankDisplay = getPaymentBankDisplay(rec);
-                const descHtml = rec.description || rec.reference || '—';
+                let descHtml = rec.description || rec.reference || '—';
+                
+                if (rec.reconciled) {
+                    const allocatedToInfo = rec.allocated_to ? ` Alocado a: ${rec.allocated_to}` : '';
+                    descHtml = `<span class="bg-slate-200 text-slate-600 px-1 py-0.5 rounded text-[8px] font-black mr-1 border border-slate-300" title="${rec.allocated_to || 'Já alocado'}">USADO</span>` + descHtml + `<div class="text-[9px] text-red-500 font-bold mt-0.5 truncate" title="${allocatedToInfo}">${allocatedToInfo}</div>`;
+                }
+
+                // Checkbox disabled se estiver reconciliado
+                const checkboxDisabled = rec.reconciled ? 'disabled' : '';
 
                 tr.innerHTML = `
                     <td class="px-3 py-1 text-center" onclick="event.stopPropagation();">
-                        <input type="checkbox" ${checkedAttr} onchange="ui.togglePaymentSelection('${rec.id}', '${rec.date}', '${refText.replace(/'/g, "\\'")}', parseFloat('${rec.amount}'))" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                        <input type="checkbox" ${checkedAttr} ${checkboxDisabled} onchange="ui.togglePaymentSelection('${rec.id}', '${rec.date}', '${refText.replace(/'/g, "\\'")}', parseFloat('${rec.amount}'))" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 ${rec.reconciled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}">
                     </td>
                     <td class="px-4 py-1 whitespace-nowrap">${dateStr}</td>
                     <td class="px-4 py-1 font-normal text-slate-700">${bankDisplay}</td>
-                    <td class="px-4 py-1 text-slate-600 truncate max-w-[250px]" title="${descHtml}">${descHtml}</td>
+                    <td class="px-4 py-1 text-slate-600 truncate max-w-[250px]" title="${(rec.description || rec.reference || '').replace(/"/g, '&quot;')}">${descHtml}</td>
                     <td class="px-4 py-1 text-right font-normal text-green-600">${amountFormatted}</td>
                 `;
                 tbody.appendChild(tr);
@@ -6775,7 +6793,7 @@ export async function saveFreightModal() {
                 // Update Bank in Freight
                 if (bankVal !== '' && bankFreightIdx !== -1) {
                     updates.push({
-                        range: `${cleanSheetName}!${String.fromCharCode(65 + bankFreightIdx)}${rowIndex}`,
+                        range: `${cleanSheetName}!${getColLetter(bankFreightIdx)}${rowIndex}`,
                         values: [[bankVal === '?' ? '' : bankVal]]
                     });
                 }
@@ -6783,7 +6801,7 @@ export async function saveFreightModal() {
                 // Update Nota Freight
                 if (finalNote !== '' && notaFreightIdx !== -1) {
                     updates.push({
-                        range: `${cleanSheetName}!${String.fromCharCode(65 + notaFreightIdx)}${rowIndex}`,
+                        range: `${cleanSheetName}!${getColLetter(notaFreightIdx)}${rowIndex}`,
                         values: [[finalNote]]
                     });
                 }
@@ -6796,7 +6814,7 @@ export async function saveFreightModal() {
                 const amt = parseFloat(String(amountVal).replace(/[^0-9.-]+/g, "")) || 0;
                 
                 updates.push({
-                    range: `${cleanSheetName}!${String.fromCharCode(65 + paidFreightIdx)}${rowIndex}`,
+                    range: `${cleanSheetName}!${getColLetter(paidFreightIdx)}${rowIndex}`,
                     values: [[amt]]
                 });
             }
