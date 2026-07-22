@@ -13,6 +13,14 @@ const pautaRoutes = require('./src/backend/routes/pautaRoutes');
 const app = express();
 const PORT = process.env.PORT || 3000; // Restaurando para 3000
 
+// Evitar que o servidor pare completamente (crash) em caso de erros não tratados (ex: falhas de rede na API Google)
+process.on('uncaughtException', (err) => {
+  console.error('[V2] Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[V2] Unhandled Rejection:', reason);
+});
+
 // Segurança: Helmet ajuda a proteger contra várias vulnerabilidades
 // app.use(helmet({
 //   contentSecurityPolicy: false,

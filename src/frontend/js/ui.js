@@ -6280,7 +6280,7 @@ window.toggleDynamicColumnsVisibility = function() {
     window.quoteEditorState.items.forEach(item => {
         let iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
         let tsaRate = item.pauta ? getRateFromPauta(item.pauta, ['Sobretaxa']) : 0;
-        const hsPrefix = item.hsCode.substring(0, 4);
+        const hsPrefix = (item.hsCode || '').substring(0, 4);
         const isAlcohol = ['2203', '2204', '2205', '2206', '2208'].includes(hsPrefix);
         const isSugar = hsPrefix === '2202';
         

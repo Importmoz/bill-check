@@ -100,12 +100,28 @@ def parse_mt940(filepath):
                 break
                 
     if bank == "UNKNOWN":
-        all_vals_str = (content + " " + fn_upper).upper()
-        if "BCI" in all_vals_str: bank, owner = "BCI", "UNKNOWN"
-        elif "BIM" in all_vals_str: bank, owner = "BIM", "UNKNOWN"
-        elif "NEDBANK" in all_vals_str: bank, owner = "NEDBANK", "UNKNOWN"
-        elif "STANDARD" in all_vals_str or "STB" in all_vals_str: bank, owner = "STB", "UNKNOWN"
+        fn_upper = os.path.basename(filepath).upper()
+        if "BCI" in fn_upper: bank, owner = "BCI", "UNKNOWN"
+        elif "BIM" in fn_upper or "MILLENNIUM" in fn_upper: bank, owner = "BIM", "UNKNOWN"
+        elif "NEDBANK" in fn_upper or "NED" in fn_upper: bank, owner = "NEDBANK", "UNKNOWN"
+        elif "STANDARD" in fn_upper or "STB" in fn_upper: bank, owner = "STB", "UNKNOWN"
+        
+        if bank == "UNKNOWN":
+            header_str = content[:1000].upper()
+            if "BCI" in header_str: bank, owner = "BCI", "UNKNOWN"
+            elif "BIM" in header_str or "MILLENNIUM" in header_str: bank, owner = "BIM", "UNKNOWN"
+            elif "NEDBANK" in header_str or "NED" in header_str: bank, owner = "NEDBANK", "UNKNOWN"
+            elif "STANDARD" in header_str or "STB" in header_str: bank, owner = "STB", "UNKNOWN"
 
+    if bank == "BIM" and not acc_num:
+        safe_fn = fn_upper
+        if safe_fn.startswith("BANK_"):
+            parts = safe_fn.split("_", 2)
+            if len(parts) >= 3:
+                safe_fn = parts[2]
+        m = re.search(r'\b(\d{8,11})\b', safe_fn)
+        if m:
+            acc_num = m.group(1)
     print(f"DEBUG: MT940 Parser detetou Banco: {bank}, Conta: {acc_num}", file=sys.stderr)
     
     running_balance = 0.0
@@ -279,16 +295,35 @@ def process_file(filepath):
 
     # Fallback agressivo: detetar banco por nomes/palavras-chave no nome do arquivo ou conteúdo global
     if bank == "UNKNOWN":
-        all_vals_str = (" ".join([str(v) for v in df.values.flatten()]) + " " + fn_upper).upper()
-        if "BCI" in all_vals_str:
-            bank, owner = "BCI", "JUPITER LOGISTICS LDA"
-        elif "BIM" in all_vals_str or "MILLENNIUM" in all_vals_str:
-            bank, owner = "BIM", "JUPITER LOGISTICS LDA"
-        elif "NEDBANK" in all_vals_str or "NED" in all_vals_str:
-            bank, owner = "NEDBANK", "JUPITER LOGISTICS LDA"
-        elif "STANDARD" in all_vals_str or "STB" in all_vals_str:
-            bank, owner = "STB", "JUPITER LOGISTICS LDA"
+        if "BCI" in fn_upper:
+            bank, owner = "BCI", "UNKNOWN"
+        elif "BIM" in fn_upper or "MILLENNIUM" in fn_upper:
+            bank, owner = "BIM", "UNKNOWN"
+        elif "NEDBANK" in fn_upper or "NED" in fn_upper:
+            bank, owner = "NEDBANK", "UNKNOWN"
+        elif "STANDARD" in fn_upper or "STB" in fn_upper:
+            bank, owner = "STB", "UNKNOWN"
 
+        if bank == "UNKNOWN":
+            header_str = " ".join([str(v) for v in df.head(15).values.flatten()]).upper()
+            if "BCI" in header_str:
+                bank, owner = "BCI", "UNKNOWN"
+            elif "BIM" in header_str or "MILLENNIUM" in header_str:
+                bank, owner = "BIM", "UNKNOWN"
+            elif "NEDBANK" in header_str or "NED" in header_str:
+                bank, owner = "NEDBANK", "UNKNOWN"
+            elif "STANDARD" in header_str or "STB" in header_str:
+                bank, owner = "STB", "UNKNOWN"
+
+    if bank == "BIM" and not acc_num:
+        safe_fn = fn_upper
+        if safe_fn.startswith("BANK_"):
+            parts = safe_fn.split("_", 2)
+            if len(parts) >= 3:
+                safe_fn = parts[2]
+        m = re.search(r'\b(\d{8,11})\b', safe_fn)
+        if m:
+            acc_num = m.group(1)
     header_row = -1
     keywords = ['DATA', 'DESCRI', 'DESCRIO', 'CREDITO', 'CRDITO', 'DEBITO', 'DBITO', 'SALDO', 'VALOR', 'MONTANTE', 'DETALHE', 'MOVIMENTO', 'MOEDA', 'MOV', 'DOCUMENTO', 'OPER', 'TRANSAC']
 

@@ -89,29 +89,38 @@ router.post('/drive/create-folder', async (req, res) => {
 
 // Upload ficheiro no Drive
 router.post('/drive/upload', upload.single('file'), async (req, res) => {
-  const { parentId } = req.body;
-  const file = req.file;
-  try {
-    if (!file || !parentId) return res.status(400).json({ error: "Ficheiro e ID pai obrigatórios." });
-
-    const auth = await getGoogleAuth();
-    const drive = google.drive({ version: 'v3', auth });
-
-    const { Readable } = require('stream');
-    const bufferStream = new Readable();
-    bufferStream.push(file.buffer);
-    bufferStream.push(null);
+    const parentId = req.body.parentId || req.query.parentId;
+    const file = req.file;
+    try {
+      if (!file || !parentId) return res.status(400).json({ error: "Ficheiro e ID pai obrigatórios." });
+  
+      const auth = await getGoogleAuth();
+      const drive = google.drive({ version: 'v3', auth });
+  
+      const { Readable } = require('stream');
+      const bufferStream = new Readable();
+      bufferStream.push(file.buffer);
+      bufferStream.push(null);
+  
+      // Usar req.body.name ou req.query.name se fornecido
+      const nameParam = req.body.name || req.query.name;
+      const finalName = nameParam || file.originalname;
 
     const response = await drive.files.create({
-      resource: { name: file.originalname, parents: [parentId] },
+      resource: { name: finalName, parents: [parentId] },
       media: { mimeType: file.mimetype, body: bufferStream },
       fields: 'id, name, webViewLink'
     });
 
-    await drive.permissions.create({
-      fileId: response.data.id,
-      resource: { role: 'reader', type: 'anyone' }
-    });
+    // Adicionar permissão pública para poder ser visualizado
+    try {
+      await drive.permissions.create({
+        fileId: response.data.id,
+        resource: { role: 'reader', type: 'anyone' }
+      });
+    } catch (permErr) {
+      console.warn('[DRIVE] Aviso: Não foi possível definir permissão pública:', permErr.message);
+    }
 
     res.json(response.data);
   } catch (error) {
@@ -146,13 +155,20 @@ router.get('/drive/file/:fileId', async (req, res) => {
 // Listar pasta do Drive
 router.post('/drive/list', async (req, res) => {
   try {
-    const { folderId } = req.body;
-    if (!folderId) return res.status(400).json({ error: "Folder ID is required" });
+    const { folderId, q } = req.body;
+    let query = '';
+    if (folderId) {
+      query = `'${folderId}' in parents and trashed = false`;
+    } else if (q) {
+      query = q;
+    } else {
+      return res.status(400).json({ error: "Folder ID or query (q) is required" });
+    }
 
     const auth = await getGoogleAuth();
     const drive = google.drive({ version: 'v3', auth });
     const response = await drive.files.list({
-      q: `'${folderId}' in parents and trashed = false`,
+      q: query,
       pageSize: 1000,
       fields: 'files(id, name, mimeType, webViewLink, thumbnailLink)',
     });
@@ -269,7 +285,7 @@ router.post('/sheet/read', async (req, res) => {
         spreadsheetId,
         ranges: [range || 'A1:AZ1000'],
         includeGridData: true,
-        fields: 'sheets(properties(title),data(rowData(values(note,formattedValue))))'
+        fields: 'sheets(properties(title,sheetId),data(rowData(values(note,formattedValue))))'
       });
 
       const sheet = response.data.sheets?.[0];
@@ -327,7 +343,8 @@ router.post('/sheet/read', async (req, res) => {
       return res.json({
         values,
         notes,
-        range: finalRange
+        range: finalRange,
+        sheetId: sheet?.properties?.sheetId
       });
     } catch (getErr) {
       console.warn('[BACKEND] Falha ao ler com includeGridData. Usando fallback values.get. Erro:', getErr.message, getErr.response?.data || getErr);
@@ -335,11 +352,37 @@ router.post('/sheet/read', async (req, res) => {
       return res.json({
         values: response.data.values || [],
         notes: [],
-        range: response.data.range
+        range: response.data.range,
+        sheetId: null
       });
     }
   } catch (error) {
     console.error('SERVER ERROR (Sheet Read):', error.message);
+    if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
+    const status = (error.message.includes('AUTH_REQUIRED') || error.message.includes('invalid_grant')) ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+router.post('/sheet/batch-requests', async (req, res) => {
+  try {
+    const { spreadsheetId, requests } = req.body;
+    if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
+    if (!requests || !Array.isArray(requests)) return res.status(400).json({ error: "Requests array is required" });
+
+    const auth = await getGoogleAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+    
+    console.log(`[BACKEND] Executando batchUpdate estrutural. Total de requests: ${requests.length}`);
+    const response = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      resource: {
+        requests: requests
+      }
+    });
+    res.json(response.data);
+  } catch (error) {
+    console.error('SERVER ERROR (Sheet Structural Batch Update):', error.message);
     if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
     const status = (error.message.includes('AUTH_REQUIRED') || error.message.includes('invalid_grant')) ? 401 : 500;
     res.status(status).json({ error: error.message });
