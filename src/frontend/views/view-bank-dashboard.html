@@ -20,47 +20,29 @@
             </div>
         </div>
 
-        <!-- Filtros e Controlo -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-             <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm col-span-3">
-                <div class="flex items-center gap-4 mb-6">
-                    <div class="relative flex-1">
-                        <input type="text" id="input-bank-search" oninput="ui.refreshBankData()" placeholder="Pesquisar... (ex: titular, HF... ou banco:BIM, valor:>1000, data:12/05)" class="w-full pl-10 pr-4 py-3 bg-gray-50 border-none rounded-xl font-bold text-xs outline-none focus:ring-2 focus:ring-purple-200 transition-all">
-                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                        </span>
-                    </div>
-                    <select id="select-bank-filter" onchange="ui.refreshBankData()" class="bg-gray-50 border-none rounded-xl font-bold text-xs p-3 outline-none focus:ring-2 focus:ring-purple-200">
-                        <option value="">TODOS OS BANCOS</option>
-                        <option value="BIM">BIM</option>
-                        <option value="BCI">BCI</option>
-                        <option value="STB">STB</option>
-                        <option value="NEDBANK">NEDBANK</option>
-                        <option value="EMOLA">EMOLA</option>
-                    </select>
-                </div>
-                
+        <div class="sticky top-0 z-40 pb-4 pt-4 -mx-4 px-4 mb-4">
+             <div class="flex items-center gap-4">
+                  <div class="relative flex-1">
+                      <input type="text" id="input-bank-search" oninput="ui.refreshBankData()" placeholder="Pesquisar... (ex: titular, HF... ou banco:BIM, valor:>1000, data:12/05)" class="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 shadow-sm rounded-xl font-bold text-xs outline-none focus:ring-2 focus:ring-purple-200 transition-all">
+                      <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                      </span>
+                  </div>
+                  <select id="select-bank-filter" onchange="ui.refreshBankData()" class="bg-white border border-gray-200 shadow-sm rounded-xl font-bold text-xs p-3 outline-none focus:ring-2 focus:ring-purple-200 cursor-pointer">
+                      <option value="">TODOS OS BANCOS</option>
+                      <option value="BIM">BIM</option>
+                      <option value="BCI">BCI</option>
+                      <option value="STB">STB</option>
+                      <option value="NEDBANK">NEDBANK</option>
+                      <option value="EMOLA">EMOLA</option>
+                  </select>
+             </div>
+        </div>
+
+        <div id="bank-incomes-wrapper" class="mb-8 hidden">
+             <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                 <div id="bank-incomes-container" class="overflow-x-auto min-h-[400px]">
                     <!-- Tabela de Movimentos -->
-                    <div class="flex flex-col items-center justify-center py-20 text-gray-300">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mb-4 opacity-20"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
-                        <p class="text-xs font-bold uppercase tracking-widest italic">Nenhum dado importado</p>
-                    </div>
-                </div>
-             </div>
-
-             <div class="space-y-6">
-                <!-- Resumo por Titular -->
-                <div class="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
-                    <h4 class="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-4">Titulares</h4>
-                    <div id="bank-owner-summary" class="space-y-4">
-                        <!-- JS populado -->
-                    </div>
-                </div>
-
-                <div class="bg-purple-50 p-6 rounded-2xl border border-purple-100">
-                    <h4 class="text-purple-900 font-black text-xs uppercase mb-2">Dica de Reconciliação</h4>
-                    <p class="text-[10px] text-purple-700 leading-relaxed">O sistema identifica automaticamente números de ordem começando por <strong class="font-bold">HF</strong> nas descrições bancárias.</p>
                 </div>
              </div>
         </div>

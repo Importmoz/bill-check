@@ -218,6 +218,11 @@ input[type=number] {
         background: white !important;
     }
 
+    @page {
+        size: A4;
+        margin: 10mm;
+    }
+
     /* Ocultar outras áreas e workspaces que não queremos imprimir */
     #tab-content-simulation, 
     #quote-history-workspace,
@@ -226,11 +231,16 @@ input[type=number] {
     }
 
     /* Estilo específico para a folha A4 da fatura na impressão */
+    #tab-content-invoice {
+        zoom: 0.92; /* Scale down for Chrome/Edge to fit single page */
+    }
+    
     #tab-content-invoice > div {
         margin: 0 auto !important;
         box-shadow: none !important;
         border: none !important;
         width: 100% !important;
+        transform-origin: top left;
     }
 
     /* Forçar a exibição do conteúdo dos blocos <details> mesmo quando estão fechados na tela */

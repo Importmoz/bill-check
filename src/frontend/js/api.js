@@ -1486,6 +1486,8 @@ export async function listQuotes() {
         // Normalizar
         const normalized = records.map(r => ({
             id: r.id,
+            collectionId: r.collectionId || 'quotes',
+            collectionName: r.collectionName || 'quotes',
             client_ref: r.client_ref,
             client_data: r.expand?.client_ref || null,
             client_name: r.client_name,
@@ -1495,6 +1497,8 @@ export async function listQuotes() {
             quote_number: r.quote_number,
             date: r.date,
             total_amount: r.total_amount,
+            anexo: r.anexo || r.attachment || r.documento || null,
+            attachment: r.anexo || r.attachment || r.documento || null,
             payload: typeof r.payload === 'string' ? JSON.parse(r.payload) : r.payload,
             created: r.created
         }));
@@ -1571,32 +1575,52 @@ export async function saveQuote(quoteData) {
     };
 
     try {
-        // Tentar gravar no PocketBase
+        // Tentar gravar no PocketBase usando FormData para suportar upload de ficheiros
         let savedRecord;
-        const pbPayload = {
-            client_name: normalizedQuote.client_name,
-            cargo_description: normalizedQuote.cargo_description,
-            type: normalizedQuote.type,
-            status: normalizedQuote.status,
-            quote_number: normalizedQuote.quote_number,
-            date: normalizedQuote.date,
-            total_amount: normalizedQuote.total_amount,
-            payload: JSON.stringify(normalizedQuote.payload)
-        };
+        const formData = new FormData();
+        
+        formData.append('client_name', normalizedQuote.client_name);
+        formData.append('cargo_description', normalizedQuote.cargo_description);
+        formData.append('type', normalizedQuote.type);
+        formData.append('status', normalizedQuote.status);
+        formData.append('quote_number', normalizedQuote.quote_number);
+        formData.append('date', normalizedQuote.date);
+        formData.append('total_amount', normalizedQuote.total_amount);
+        formData.append('payload', JSON.stringify(normalizedQuote.payload));
+
+        if (quoteData.pendingAttachment) {
+            // Pode ser 'anexo', 'documento', ou 'attachment' dependendo do seu PocketBase
+            formData.append('anexo', quoteData.pendingAttachment);
+        }
 
         if (isNew || normalizedQuote.id.startsWith('local_')) {
-            savedRecord = await pb.collection('quotes').create(pbPayload);
+            savedRecord = await pb.collection('quotes').create(formData);
         } else {
-            savedRecord = await pb.collection('quotes').update(normalizedQuote.id, pbPayload);
+            savedRecord = await pb.collection('quotes').update(normalizedQuote.id, formData);
         }
         
         normalizedQuote.id = savedRecord.id;
         normalizedQuote.created = savedRecord.created;
+        normalizedQuote.collectionId = savedRecord.collectionId || 'quotes';
+        normalizedQuote.collectionName = savedRecord.collectionName || 'quotes';
+        
+        // Se a gravação devolver o nome do ficheiro (ex: savedRecord.anexo), 
+        // guardamos na normalizedQuote para poder ser usado pelo loadSavedQuote
+        if (savedRecord.anexo || savedRecord.attachment || savedRecord.documento) {
+            const fName = savedRecord.anexo || savedRecord.attachment || savedRecord.documento;
+            normalizedQuote.anexo = fName;
+            normalizedQuote.attachment = fName;
+        }
         
         updateLocalQuotesCache(normalizedQuote);
-        return normalizedQuote;
+        return savedRecord; // Return the actual DB record so ui.js can extract .anexo
     } catch (err) {
-        console.warn("[QUOTE API] Falha ao gravar no PocketBase, gravando localmente:", err);
+        console.warn("[QUOTE API] Falha ao gravar no PocketBase:", err);
+        // Se for um erro de validação (ex: campo não existe), devemos avisar o utilizador
+        if (err.status >= 400 && err.status < 500) {
+            throw err;
+        }
+        console.warn("Gravando localmente como fallback...");
         updateLocalQuotesCache(normalizedQuote);
         return normalizedQuote;
     }

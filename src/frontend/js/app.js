@@ -3,7 +3,7 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js';
+import * as ui from './ui.js?v=20260730_8';
 import * as utils from './utils.js';
 
 const { state, pb } = api;

@@ -5087,3 +5087,418 @@ STDOUT: {"error": "Erro interno ao ler o ficheiro. Certifique-se que o pandas e 
 ...
 STDERR: DEBUG: Erro cr�tico ao ler C:\Users\Henriques Arrone\Documents\PROJECTOS\Bill-Check-v2\tmp\bank_40b117c7-ceec-4890-97e0-4593000e50db_64553cd1-6f2b-4d75-bb2f-a812e5469d04.xls. Erros:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml.
 
+2026-07-28T07:29:43.638Z - INFO: Arquivo extraído bank_d7542b8e-aae5-48c7-9f17-76da00192e73_Extrato_330788916_27-07-26_28-07-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 306137336Ref. 260728074314853C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 93390.7,
+    "signature": "b835be8f44faaa75de1f6e53863ce808d4129058a87ef189152f10e604990a95",
+    "order_id": "",
+    "reconciled"...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-28T07:30:49.268Z - INFO: Arquivo extraído bank_2e5d628f-a507-4255-9cf6-fa263541731a_10887b21-b0fc-4744-a40b-94d93c216733.txt
+STDOUT: [
+  {
+    "date": "2026-07-27 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "727355911 TRF :  Pagamentos diversos",
+    "reference": "727355911 TRF :  Pagamentos diversos",
+    "amount": 37000.0,
+    "balance": 37803.68,
+    "signature": "4cd4c5d35f937575ab751f04b6b09cc6b39af8bf47b8d1efa86f4a9a4581fd15",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-27 00:00:00",
+    "ban...
+STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 18909451710002
+
+2026-07-28T07:30:57.179Z - INFO: Arquivo extraído bank_ca46cb3b-6160-442a-81fb-f5e35e998c36_a89c7cff-545b-458c-b930-3b2318cc657f.xls
+STDOUT: {"error": "Erro interno ao ler o ficheiro. Certifique-se que o pandas e xlrd est\u00e3o instalados na VPS. Detalhes:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml."}
+...
+STDERR: DEBUG: Erro cr�tico ao ler C:\Users\Henriques Arrone\Documents\PROJECTOS\Bill-Check-v2\tmp\bank_ca46cb3b-6160-442a-81fb-f5e35e998c36_a89c7cff-545b-458c-b930-3b2318cc657f.xls. Erros:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml.
+
+2026-07-28T07:31:16.295Z - INFO: Arquivo extraído bank_3127b0cd-d8d3-4ee9-948e-a92119474511_a89c7cff-545b-458c-b930-3b2318cc657f.xls
+STDOUT: {"error": "Erro interno ao ler o ficheiro. Certifique-se que o pandas e xlrd est\u00e3o instalados na VPS. Detalhes:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml."}
+...
+STDERR: DEBUG: Erro cr�tico ao ler C:\Users\Henriques Arrone\Documents\PROJECTOS\Bill-Check-v2\tmp\bank_3127b0cd-d8d3-4ee9-948e-a92119474511_a89c7cff-545b-458c-b930-3b2318cc657f.xls. Erros:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml.
+
+2026-07-28T07:31:23.213Z - INFO: Arquivo extraído bank_a6b24175-c6cf-4b56-83b0-29bae09c4506_a89c7cff-545b-458c-b930-3b2318cc657f.xls
+STDOUT: {"error": "Erro interno ao ler o ficheiro. Certifique-se que o pandas e xlrd est\u00e3o instalados na VPS. Detalhes:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml."}
+...
+STDERR: DEBUG: Erro cr�tico ao ler C:\Users\Henriques Arrone\Documents\PROJECTOS\Bill-Check-v2\tmp\bank_a6b24175-c6cf-4b56-83b0-29bae09c4506_a89c7cff-545b-458c-b930-3b2318cc657f.xls. Erros:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml.
+
+2026-07-28T07:31:36.697Z - INFO: Arquivo extraído bank_1267bf21-fb2f-4734-baa0-329a06a3f029_a89c7cff-545b-458c-b930-3b2318cc657f.xls
+STDOUT: {"error": "Erro interno ao ler o ficheiro. Certifique-se que o pandas e xlrd est\u00e3o instalados na VPS. Detalhes:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml."}
+...
+STDERR: DEBUG: Erro cr�tico ao ler C:\Users\Henriques Arrone\Documents\PROJECTOS\Bill-Check-v2\tmp\bank_1267bf21-fb2f-4734-baa0-329a06a3f029_a89c7cff-545b-458c-b930-3b2318cc657f.xls. Erros:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml.
+
+2026-07-28T09:53:22.858Z - INFO: Arquivo extraído bank_3ab4ef84-73aa-44af-a53c-1b35a116e722_Extrato_330788916_28-07-26_28-07-26__1_.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "Pagamento da encomendaRef. 260728112657208C\u00f3digo do Canal SCI IPNome do Canal SCI INTERNETC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 3920.0,
+    "balance": 102023.88,
+    "signature": "ec9909b171e24f1f925ea1ae6f7296e0578feff06bac841f5354f4eab746547e",
+    "order_id": "",
+    "reconciled"...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-28T09:59:02.563Z - INFO: Arquivo extraído bank_b2c780b5-5ef5-44ca-856c-a5baf411d5d0_Extrato_330788916_28-07-26_28-07-26__1_.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "Pagamento da encomendaRef. 260728112657208C\u00f3digo do Canal SCI IPNome do Canal SCI INTERNETC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 3920.0,
+    "balance": 102023.88,
+    "signature": "ec9909b171e24f1f925ea1ae6f7296e0578feff06bac841f5354f4eab746547e",
+    "order_id": "",
+    "reconciled"...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-28T10:03:07.354Z - INFO: Arquivo extraído bank_c10c67ea-0855-4036-8bd3-8c167aa2396e_Extrato_330788916_28-07-26_28-07-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "Pagamento da encomendaRef. 260728112657208C\u00f3digo do Canal SCI IPNome do Canal SCI INTERNETC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 3920.0,
+    "balance": 102023.88,
+    "signature": "ec9909b171e24f1f925ea1ae6f7296e0578feff06bac841f5354f4eab746547e",
+    "order_id": "",
+    "reconciled"...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-28T10:29:40.365Z - INFO: Arquivo extraído bank_749d7f25-decb-45de-be67-6706bf8ee4e2_6ec71265-2648-434b-83b0-f4e50a15f97e.txt
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "734878042 Trf.Cred.734878042",
+    "reference": "734878042 Trf.Cred.734878042",
+    "amount": 331338.0,
+    "balance": 331358.01,
+    "signature": "36230f8abe594d5701ec68ce9de792e9873dd03b1925015c5970ec6a38baa9f9",
+    "order_id": "",
+    "reconciled": false
+  }
+]
+...
+STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 18909451710002
+
+2026-07-28T10:38:35.172Z - INFO: Arquivo extraído bank_dd658802-a254-42be-b7d1-2a8984e5d6bc_a51ac649-539b-483c-b2cb-e574f9ec6dcf.xls
+STDOUT: {"error": "Erro interno ao ler o ficheiro. Certifique-se que o pandas e xlrd est\u00e3o instalados na VPS. Detalhes:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml."}
+...
+STDERR: DEBUG: Erro cr�tico ao ler C:\Users\Henriques Arrone\Documents\PROJECTOS\Bill-Check-v2\tmp\bank_dd658802-a254-42be-b7d1-2a8984e5d6bc_a51ac649-539b-483c-b2cb-e574f9ec6dcf.xls. Erros:  engine1: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine2: Missing optional dependency 'xlrd'. Install xlrd >= 2.0.1 for xls Excel support Use pip or conda to install xlrd. engine3: Missing optional dependency 'lxml'.  Use pip or conda to install lxml.
+
+2026-07-28T10:45:47.249Z - INFO: Arquivo extraído bank_c7c456f1-1e29-407c-b6a5-598359e22bb0_a51ac649-539b-483c-b2cb-e574f9ec6dcf.xls
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cred.732916017",
+    "reference": "732916017",
+    "amount": 1764.0,
+    "balance": 411839.57,
+    "signature": "6657d34e02b9f7a74914bbe1da2a37f4709f5eaafa4bffeabf6c63bf7d3a9495",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPI...
+STDERR: DEBUG: Diagn�stico de bank_c7c456f1-1e29-407c-b6a5-598359e22bb0_a51ac649-539b-483c-b2cb-e574f9ec6dcf.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-07-28T11:08:01.283Z - INFO: Arquivo extraído bank_9bbb15b4-3be2-4bd5-906a-ef3fe701828f_148a39a1-fdac-41a9-8b93-92ed1ee19ca8.xls
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cred.732916017",
+    "reference": "732916017",
+    "amount": 1764.0,
+    "balance": 411839.57,
+    "signature": "6657d34e02b9f7a74914bbe1da2a37f4709f5eaafa4bffeabf6c63bf7d3a9495",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPI...
+STDERR: DEBUG: Diagn�stico de bank_9bbb15b4-3be2-4bd5-906a-ef3fe701828f_148a39a1-fdac-41a9-8b93-92ed1ee19ca8.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-07-28T12:39:57.298Z - INFO: Arquivo extraído bank_4b8bf830-6ec8-471f-a085-ac9806e27b84_Extrato_330788916_28-07-26_28-07-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 415306180Ref. 260728133954623C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 3038.0,
+    "balance": 106139.88,
+    "signature": "43ef05ef48bdd9506205c621582c57a2562557e71ec06f992554c5b0af703755",
+    "order_id": "",
+    "reconcil...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-28T12:40:30.165Z - INFO: Arquivo extraído bank_e842bb25-9239-4833-a946-052caf47b9da_ea135631-c6b8-4e40-93fc-d52e8d46f569.txt
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "734878042 Trf.Cred.734878042",
+    "reference": "734878042 Trf.Cred.734878042",
+    "amount": 331338.0,
+    "balance": 331358.01,
+    "signature": "36230f8abe594d5701ec68ce9de792e9873dd03b1925015c5970ec6a38baa9f9",
+    "order_id": "",
+    "reconciled": false
+  }
+]
+...
+STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 18909451710002
+
+2026-07-28T12:40:41.168Z - INFO: Arquivo extraído bank_08681fa5-eedc-4665-b60f-ee81c6b6794a_0019c68f-2c0e-4840-a9ef-c55bb292b5ff.xls
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cred.732916017",
+    "reference": "732916017",
+    "amount": 1764.0,
+    "balance": 411839.57,
+    "signature": "6657d34e02b9f7a74914bbe1da2a37f4709f5eaafa4bffeabf6c63bf7d3a9495",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPI...
+STDERR: DEBUG: Diagn�stico de bank_08681fa5-eedc-4665-b60f-ee81c6b6794a_0019c68f-2c0e-4840-a9ef-c55bb292b5ff.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-07-28T12:41:59.150Z - INFO: Arquivo extraído bank_a46cf4ac-93b4-4c4e-8b0e-74d97ffa30fe_0019c68f-2c0e-4840-a9ef-c55bb292b5ff.xls
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cred.732916017",
+    "reference": "732916017",
+    "amount": 1764.0,
+    "balance": 411839.57,
+    "signature": "6657d34e02b9f7a74914bbe1da2a37f4709f5eaafa4bffeabf6c63bf7d3a9495",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPI...
+STDERR: DEBUG: Diagn�stico de bank_a46cf4ac-93b4-4c4e-8b0e-74d97ffa30fe_0019c68f-2c0e-4840-a9ef-c55bb292b5ff.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-07-28T13:33:04.834Z - INFO: Arquivo extraído bank_340d0e66-853a-4b43-a1d0-df89b11631a7_Extrato_75470366_28-07-26_28-07-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "TRF eMola 862274721 4488120590Ref. 260728145020089C\u00f3digo do Canal SCI SINome do Canal SCI SIMOC\u00f3digo Transac\u00e7\u00e3o SCI RG",
+    "reference": "",
+    "amount": 8722.0,
+    "balance": 8777.27,
+    "signature": "adf432961da69aaa11abfa993b0ba0086614135623ae751a5db7cccebb940442",
+    "order_id": "",
+    "reconciled": fals...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-28T14:32:14.760Z - INFO: Arquivo extraído bank_9876c215-4290-4617-9a5f-4cb3074c0ece_00009244900_20260701_20260728.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-20 00:00:00",
+    "bank": "NEDBANK",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "9244900",
+    "description": "Transf InterB via ATM|FNB 001400002222934318131",
+    "reference": "FT2620144501",
+    "amount": 9506.0,
+    "balance": 10349.57,
+    "signature": "5b4cd2ee89f7eba56ba2377aef5eff51bb96584d63e92e14febd5957283e4238",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-20 00:00:00",
+    "bank": "NEDBA...
+STDERR: DEBUG: Banco Detetado: NEDBANK
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACCAO, Desc: DESCRICAO, Valor: MONTANTE, Saldo: SALDO, Ref: REFERENCIA DA TRANSACCAO
+
+2026-07-28T14:32:27.225Z - INFO: Arquivo extraído bank_93bb6250-b398-4b1b-8f85-bdc25dcaacb6_Extrato_330788916_28-07-26_28-07-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 415306180Ref. 260728133954623C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 3038.0,
+    "balance": 106139.88,
+    "signature": "43ef05ef48bdd9506205c621582c57a2562557e71ec06f992554c5b0af703755",
+    "order_id": "",
+    "reconcil...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-28T14:32:35.269Z - INFO: Arquivo extraído bank_ed6da2bf-0fd2-4992-95f3-c4eedf31b106_4533ff8a-19bd-4942-b54a-bf5a2cece08a.txt
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "734878042 Trf.Cred.734878042",
+    "reference": "734878042 Trf.Cred.734878042",
+    "amount": 331338.0,
+    "balance": 331358.01,
+    "signature": "36230f8abe594d5701ec68ce9de792e9873dd03b1925015c5970ec6a38baa9f9",
+    "order_id": "",
+    "reconciled": false
+  }
+]
+...
+STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 18909451710002
+
+2026-07-28T14:32:45.313Z - INFO: Arquivo extraído bank_a40079f7-f530-4080-89fe-ccdef7035a9f_4533ff8a-19bd-4942-b54a-bf5a2cece08a.txt
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "734878042 Trf.Cred.734878042",
+    "reference": "734878042 Trf.Cred.734878042",
+    "amount": 331338.0,
+    "balance": 331358.01,
+    "signature": "36230f8abe594d5701ec68ce9de792e9873dd03b1925015c5970ec6a38baa9f9",
+    "order_id": "",
+    "reconciled": false
+  }
+]
+...
+STDERR: DEBUG: MT940 Parser detetou Banco: BCI, Conta: 18909451710002
+
+2026-07-28T14:32:53.197Z - INFO: Arquivo extraído bank_6524edb5-ebd5-43b1-b682-37f3011f69f0_f15b4660-7c92-4c1a-ac2d-28cea069ff63.xls
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "Trf.Cred.732916017",
+    "reference": "732916017",
+    "amount": 1764.0,
+    "balance": 411839.57,
+    "signature": "6657d34e02b9f7a74914bbe1da2a37f4709f5eaafa4bffeabf6c63bf7d3a9495",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPI...
+STDERR: DEBUG: Diagn�stico de bank_6524edb5-ebd5-43b1-b682-37f3011f69f0_f15b4660-7c92-4c1a-ac2d-28cea069ff63.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-07-28T15:14:01.557Z - INFO: Arquivo extraído bank_2668b137-e84d-406c-80ec-d06067bb809d_Extrato_330788916_28-07-26_28-07-26__1_.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-28 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 415306180Ref. 260728133954623C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 3038.0,
+    "balance": 106139.88,
+    "signature": "43ef05ef48bdd9506205c621582c57a2562557e71ec06f992554c5b0af703755",
+    "order_id": "",
+    "reconcil...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-07-30T10:33:10.822Z - INFO: Arquivo extraído bank_9f61979a-f06e-44c7-94c4-17e393652042_Extrato_330788916_30-07-26_30-07-26__1_.xlsx
+STDOUT: [
+  {
+    "date": "2026-07-30 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 314670620Ref. 260730123138850C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 2254.0,
+    "balance": 73440.62,
+    "signature": "8ac1f93d6be34c37b23a23b65b13bafaef6724e3b7621658aa529d2c596910da",
+    "order_id": "",
+    "reconcile...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+

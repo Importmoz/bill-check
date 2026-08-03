@@ -3,7 +3,7 @@
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
 import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
-import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js';
+import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js?v=20260728_2';
 
 export function getPaymentBankDisplay(payment) {
     let rawBank = payment.bank;
@@ -49,6 +49,23 @@ window.updateQuoteActionsUI = function() {
             } else {
                 btnSave.style.display = 'none';
             }
+        }
+    }
+    
+    const btnAttach = document.getElementById('btn-attach-quote-global');
+    const btnView = document.getElementById('btn-view-quote-global');
+    
+    if (btnAttach) {
+        if (window.quoteEditorState && window.quoteEditorState.attachment) {
+            btnAttach.classList.remove('text-red-600', 'bg-red-50', 'hover:bg-red-100', 'active:bg-red-200', 'border-red-100', 'hover:text-red-800', 'text-blue-600', 'bg-blue-50', 'hover:bg-blue-100', 'active:bg-blue-200', 'border-blue-100', 'hover:text-blue-800');
+            btnAttach.classList.add('text-green-600', 'bg-green-50', 'hover:bg-green-100', 'active:bg-green-200', 'border-green-100', 'hover:text-green-800');
+            btnAttach.title = "Substituir Anexo: " + (window.quoteEditorState.attachment.name || "Fatura/Documento anexado");
+            if (btnView) btnView.style.display = 'flex';
+        } else {
+            btnAttach.classList.remove('text-green-600', 'bg-green-50', 'hover:bg-green-100', 'active:bg-green-200', 'border-green-100', 'hover:text-green-800', 'text-blue-600', 'bg-blue-50', 'hover:bg-blue-100', 'active:bg-blue-200', 'border-blue-100', 'hover:text-blue-800');
+            btnAttach.classList.add('text-red-600', 'bg-red-50', 'hover:bg-red-100', 'active:bg-red-200', 'border-red-100', 'hover:text-red-800');
+            btnAttach.title = "Sem Anexo (Clique para adicionar Fatura/Documento)";
+            if (btnView) btnView.style.display = 'none';
         }
     }
 };
@@ -158,12 +175,14 @@ export function toast(message, type = 'info') {
 /**
  * Controla o estado de carregamento de um botão
  */
-export function setBtnLoading(btn, isLoading, originalText = null) {
+export function setBtnLoading(btn, isLoading, loadingText = null) {
     if (!btn) return;
     
     if (isLoading) {
-        if (originalText) btn.dataset.originalText = originalText;
-        else if (!btn.dataset.originalText) btn.dataset.originalText = btn.innerText;
+        // Guardar sempre o HTML original para não perder ícones/formatação
+        if (!btn.dataset.originalHtml) {
+            btn.dataset.originalHtml = btn.innerHTML;
+        }
         
         btn.classList.add('btn-loading');
         if (btn.classList.contains('bg-black') || btn.classList.contains('bg-blue-600') || btn.classList.contains('bg-slate-900') || btn.classList.contains('bg-purple-600')) {
@@ -174,8 +193,12 @@ export function setBtnLoading(btn, isLoading, originalText = null) {
         btn.classList.remove('btn-loading');
         btn.classList.remove('btn-loading-white');
         btn.disabled = false;
-        if (btn.dataset.originalText) {
-            btn.innerText = btn.dataset.originalText;
+        
+        // Restaurar o HTML original
+        if (btn.dataset.originalHtml) {
+            btn.innerHTML = btn.dataset.originalHtml;
+            // Remover para permitir novas alterações de estado corretas no futuro
+            delete btn.dataset.originalHtml;
         }
     }
 }
@@ -4298,17 +4321,11 @@ export async function showBankDashboard() {
     if (searchInput) searchInput.value = '';
     if (bankSelect) bankSelect.value = '';
 
-    setLoader(true);
-    try {
-        // Por definição, puxar os últimos 10 para poupar tempo
-        await listBankIncomes('', 10);
-        renderBankIncomes();
-        renderBankOwnerSummary();
-    } catch (error) {
-        console.error('[BANK] Erro ao carregar dados:', error);
-    } finally {
-        setLoader(false);
-    }
+    const wrapper = document.getElementById('bank-incomes-wrapper');
+    if (wrapper) wrapper.classList.add('hidden');
+    
+    const container = document.getElementById('bank-incomes-container');
+    if (container) container.innerHTML = '';
 }
 
 /**
@@ -4317,6 +4334,14 @@ export async function showBankDashboard() {
 export async function refreshBankData() {
     const searchTerm = document.getElementById('input-bank-search')?.value || '';
     const bankFilter = document.getElementById('select-bank-filter')?.value || '';
+    const wrapper = document.getElementById('bank-incomes-wrapper');
+
+    if (!searchTerm.trim() && !bankFilter) {
+        if (wrapper) wrapper.classList.add('hidden');
+        return;
+    }
+
+    if (wrapper) wrapper.classList.remove('hidden');
 
     let filters = [];
     if (bankFilter) {
@@ -5355,10 +5380,45 @@ export function renderCambioSelect() {
     const select = document.getElementById('input-quote-currency');
     const inputEx = document.getElementById('input-quote-exchange');
     const txtDate = document.getElementById('txt-quote-exchange-date');
-    const customList = document.getElementById('custom-quote-currency-options');
+            const customList = document.getElementById('custom-quote-currency-options');
     const customLabel = document.getElementById('custom-quote-currency-label');
     
     if (!select || !inputEx) return;
+
+    // Handler to upload an attachment for a quote item
+    window.handleAttachmentUpload = async function(itemId, file) {
+        if (!file) return;
+        try {
+            // Use existing API to upload to Google Drive (folderId can be null for root)
+            const result = await api.uploadGDriveFile(file, null);
+            // Assume result contains `fileId` and `url`
+            const item = window.quoteEditorState.items.find(i => i.id === itemId);
+            if (item) {
+                item.attachment = result;
+                // Refresh the row to show the attached file name (optional)
+                window.updateRowDOM(item);
+            }
+        } catch (e) {
+            console.error('Failed to upload attachment', e);
+            if (window.toast) window.toast('Erro ao fazer upload do anexo', 'error');
+        }
+    };
+
+    window.handleGlobalAttachmentUpload = function(file) {
+        if (!file) return;
+        
+        // Guardar o ficheiro numa variável para enviar só quando gravar a simulação
+        window.quoteEditorState.pendingAttachment = file;
+        
+        // Criar um URL temporário para o utilizador poder visualizar o ficheiro imediatamente
+        window.quoteEditorState.attachment = {
+            name: file.name,
+            url: URL.createObjectURL(file)
+        };
+        
+        if (window.toast) window.toast('Anexo em memória! Não se esqueça de Gravar a simulação.', 'success');
+        if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
+    };
 
     // Se existirem dados, populamos o dropdown
     if (state.cambios && state.cambios.length > 0) {
@@ -6031,14 +6091,23 @@ window.updateQuoteRow = function(id, field, value) {
     
     if (field === 'freight' || field === 'insurance' || field === 'others') {
         item[field] = value === '' ? null : parseFloat(value);
-    } else if (field === 'qty') {
-        item.qty = value;
-        // Auto-sync qty to qtyFisica se a unidade física for Peças/Unidades (PST)
-        const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
-        if (iceData && iceData.specificUnit && iceData.specificUnit.includes('PST')) {
-            item.qtyFisica = item.qty;
+    } else if (field === 'qty' || field === 'unitPrice') {
+        // Clean the input (remove non‑numeric chars, convert comma to dot) and parse as float
+        const cleaned = typeof value === 'string' ? value.replace(/[^0-9.,]/g, '').replace(',', '.') : value;
+        const numericValue = cleaned !== '' ? parseFloat(cleaned) : 0;
+        item[field] = numericValue;
+        if (field === 'qty') {
+            // Auto-sync qty to qtyFisica se a unidade física for Peças/Unidades (PST)
+            const iceData = item.pauta ? getComplexRateFromPauta(item.pauta, ['consumo', 'ice']) : null;
+            if (iceData && iceData.specificUnit && iceData.specificUnit.includes('PST')) {
+                item.qtyFisica = item.qty;
+            }
         }
-    } else if (field === 'unitPrice' || field === 'qtyFisica' || field === 'iceAlcoholPercent' || field === 'iceSugarGrams') {
+        // Recalculate fob instantly for this row
+        const qtyVal = parseFloat(item.qty) || 0;
+        const priceVal = parseFloat(item.unitPrice) || 0;
+        item.fob = qtyVal * priceVal;
+    } else if (field === 'qtyFisica' || field === 'iceAlcoholPercent' || field === 'iceSugarGrams') {
         item[field] = value;
     } else {
         item[field] = value;
@@ -6053,12 +6122,12 @@ window.updateQuoteRow = function(id, field, value) {
                     } else {
                         item.pauta = null;
                     }
-                    window.calculateFullInvoice();
-                    window.updateRowDOM(item);
+                    setTimeout(() => {
+                        window.calculateFullInvoice();
+                    }, 0);
                 }).catch(() => {
                     item.pauta = null;
                     window.calculateFullInvoice();
-                    window.updateRowDOM(item);
                 });
             }
             return; // We exit because calculation happens async
@@ -6068,8 +6137,11 @@ window.updateQuoteRow = function(id, field, value) {
         }
     }
     
-    window.calculateFullInvoice();
-    window.updateRowDOM(item);
+    // Schedule recalculation and UI refresh on next animation frame
+    requestAnimationFrame(() => {
+        window.calculateFullInvoice();
+    });
+    return; // stop further execution
 };
 
 window.getQtyFisicaModeAndHTML = function(item) {
@@ -6212,12 +6284,21 @@ window.calculateFullInvoice = function() {
     const cbmVal = parseFloat(rawCbm.replace(',', '.')) || 0;
     const carClassVal = document.getElementById('input-quote-carclass')?.value || 'Ligeiro';
 
+    let usdExRate = 1;
+    if (window.quoteEditorState.currency === 'USD') {
+        usdExRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+    } else if (typeof state !== 'undefined' && state.cambios) {
+        const usdCambio = state.cambios.find(c => c.moeda && c.moeda.toUpperCase() === 'USD');
+        if (usdCambio) usdExRate = parseFloat(usdCambio.taxa) || 1;
+    }
+
     const globais = {
         freight: document.getElementById('input-global-freight').value,
         insurance: document.getElementById('input-global-insurance').value,
         others: document.getElementById('input-global-others').value,
         cbm: cbmVal,
-        carClass: carClassVal
+        carClass: carClassVal,
+        usdExRate: usdExRate
     };
     window.quoteEditorState.globais = globais;
 
@@ -6347,7 +6428,7 @@ window.renderQuoteItemsTable = function() {
     const tfoot = document.getElementById('quote-items-tfoot');
     
     if (window.quoteEditorState.items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="15" class="p-4 text-center text-gray-400 font-normal">Nenhum artigo adicionado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="16" class="p-4 text-center text-gray-400 font-normal">Nenhum artigo adicionado.</td></tr>`;
         if (tfoot) tfoot.classList.add('hidden');
         return;
     }
@@ -6486,7 +6567,8 @@ window.saveQuoteSimulation = async function(preventClose = false) {
             total_amount: window.quoteEditorState.totals.grandTotalMzn,
             cargo_description: window.quoteEditorState.items[0]?.description || 'Múltiplos Artigos',
             issuer: window.quoteEditorState.invoiceData?.issuer || 'jupiter',
-            payload: window.quoteEditorState
+            payload: window.quoteEditorState,
+            pendingAttachment: window.quoteEditorState.pendingAttachment
         };
         
         const saved = await saveQuote(quoteData);
@@ -6497,6 +6579,19 @@ window.saveQuoteSimulation = async function(preventClose = false) {
         if (saved.quote_number) window.quoteEditorState.invoiceData.docNumber = saved.quote_number;
         if (saved.date) window.quoteEditorState.invoiceData.dateIssue = saved.date;
         
+        // Atualizar anexo para a versão guardada do PocketBase se existir
+        if (saved.attachment || saved.documento || saved.anexo) {
+            const fileName = saved.attachment || saved.documento || saved.anexo;
+            const recordMeta = {
+                id: saved.id,
+                collectionId: saved.collectionId || saved.collectionName || 'quotes',
+                collectionName: saved.collectionName || 'quotes'
+            };
+            const fileUrl = api.pb.files.getUrl(recordMeta, fileName);
+            window.quoteEditorState.attachment = { name: fileName, url: fileUrl };
+        }
+        delete window.quoteEditorState.pendingAttachment;
+        
         // Sync DOM inputs immediately
         const elNum = document.getElementById('inv-doc-number');
         if (elNum && saved.quote_number) elNum.value = saved.quote_number;
@@ -6506,18 +6601,23 @@ window.saveQuoteSimulation = async function(preventClose = false) {
         window.quoteIsDirty = false;
         if (window.updateQuoteActionsUI) window.updateQuoteActionsUI();
         
-        // Se a cotação foi gravada agora, e o cliente estava vazio, nós definimos o client_name como o número
-        // Isso acontecerá dentro de saveQuote, mas podemos deixar como está para que no dashboard apareça sem nome
+        // Sempre dar feedback ao utilizador e sincronizar lista local
+        toast("Fatura guardada com sucesso!", "success");
+        await listQuotes(); // Refresh the state.quotes with the newly saved quote
         
         if (!preventClose) {
-            toast("Fatura guardada com sucesso!", "success");
             window.closeQuoteEditor();
-            await listQuotes(); // Refresh the state.quotes with the newly saved quote
             renderQuoteDashboard(); 
         }
     } catch (err) {
         console.error(err);
-        toast("Erro ao guardar cotação.", "error");
+        let msg = "Erro ao guardar cotação.";
+        if (err.data && err.data.data) {
+            msg += " Detalhes: " + JSON.stringify(err.data.data);
+        } else if (err.message) {
+            msg += " " + err.message;
+        }
+        toast(msg, "error");
     }
 };
 
@@ -6548,6 +6648,20 @@ window.loadSavedQuote = function(id) {
         if (quote.quote_number) window.quoteEditorState.invoiceData.docNumber = quote.quote_number;
         if (quote.date) window.quoteEditorState.invoiceData.dateIssue = quote.date.substring(0, 10);
         
+        // Restore attachment from PocketBase
+        if (quote.attachment || quote.documento || quote.anexo) {
+            const fileName = quote.attachment || quote.documento || quote.anexo;
+            const recordMeta = {
+                id: quote.id,
+                collectionId: quote.collectionId || quote.collectionName || 'quotes',
+                collectionName: quote.collectionName || 'quotes'
+            };
+            const fileUrl = api.pb.files.getUrl(recordMeta, fileName);
+            window.quoteEditorState.attachment = { name: fileName, url: fileUrl };
+        } else {
+            delete window.quoteEditorState.attachment;
+        }
+
         document.getElementById('input-quote-currency').value = window.quoteEditorState.currency || 'USD';
         document.getElementById('input-quote-exchange').value = window.quoteEditorState.exchangeRate || 64.00;
         
@@ -8376,13 +8490,21 @@ window.issuers = {
         name: 'JUPITER LOGISTICS LDA',
         nuit: 'NUIT: 400574472',
         address: 'Av. do Trabalho nº 1412, 3º Andar',
-        contact: 'Tel.: +258 21401334, Cel:+25884 0485 691'
+        contact: 'Tel.: +258 21401334, Cel:+25884 0485 691',
+        bankHtml: ''
     },
     'hlces': {
         name: 'HL COMÉRCIO E SERVIÇOS, LDA',
         nuit: 'NUIT: 401950133',
         address: 'Bairro Central, Avenida Guerra popular, 1.º andar, n.º 1346, Cidade de Maputo, Maputo, Moçambique',
-        contact: 'Email: info@hlces.com'
+        contact: 'Email: info@hlces.com',
+        bankHtml: `
+                            <div class="mb-4 text-[10px] text-gray-600 space-y-0.5">
+                                <p><strong class="text-gray-800 font-bold uppercase">Banco:</strong> BCI</p>
+                                <p><strong class="text-gray-800 font-bold uppercase">Titular:</strong> HL COMERCIO E SERVICOS, LDA</p>
+                                <p><strong class="text-gray-800 font-bold uppercase">N.º de Conta:</strong> 34391097910001</p>
+                                <p><strong class="text-gray-800 font-bold uppercase">Conta / NIB do Beneficiário:</strong> 0008 0000 43910979101 28</p>
+                            </div>`
     }
 };
 
@@ -8410,6 +8532,9 @@ window.changeIssuer = function(presetId) {
     }
     
     window.syncInvoiceHeaderToState();
+    if (typeof window.renderInvoiceLines === 'function') {
+        window.renderInvoiceLines();
+    }
 };
 
 window.syncInvoiceHeaderToState = function() {
@@ -8662,6 +8787,30 @@ window.numeroParaExtenso = function(valor) {
     return textoFinal.charAt(0).toUpperCase() + textoFinal.slice(1);
 };
 
+window.calculateDesembaraco = function(totals, usdExRate) {
+    if (!totals) return 16850;
+    const cifMzn = totals.cifMzn || 0;
+    const cifUsd = cifMzn / usdExRate;
+
+    let priceUsd = 0;
+    if (cifUsd <= 5000) priceUsd = 257.40;
+    else if (cifUsd <= 10000) priceUsd = 327.60;
+    else if (cifUsd <= 20000) priceUsd = 380.25;
+    else if (cifUsd <= 30000) priceUsd = 444.60;
+    else if (cifUsd <= 40000) priceUsd = 497.25;
+    else if (cifUsd <= 50000) priceUsd = 731.25;
+    else if (cifUsd <= 100000) priceUsd = 994.50;
+    else if (cifUsd <= 200000) priceUsd = 1140.75;
+    else if (cifUsd <= 500000) priceUsd = 1272.96;
+    else if (cifUsd <= 800000) priceUsd = 1412.19;
+    else if (cifUsd <= 1000000) priceUsd = 1725.75;
+    else if (cifUsd <= 1500000) priceUsd = 2164.50;
+    else if (cifUsd <= 2000000) priceUsd = 2778.75;
+    else priceUsd = cifUsd * 0.00152;
+
+    return priceUsd * usdExRate;
+};
+
 window.syncInvoiceLinesFromDraft = function() {
     const totals = window.quoteEditorState.totals || {};
     if (!window.quoteEditorState.invoiceData) {
@@ -8678,11 +8827,20 @@ window.syncInvoiceLinesFromDraft = function() {
 
         lines = lines.filter(l => l.group !== 'alfandegas');
         
-        const autoDescs = ['DP World 40', 'DP World 20', 'DP World LCL', 'Ordem de Entrega', 'Caução (Reembolsável)', 'Kudumba', 'Taxa JUE (MCnet)', 'MCnet', 'Agente', 'Taxa de Radio de Difusao', 'Titulo de Propriedade', 'INATRO', 'Maputo Car'];
+        const autoDescs = ['DP World 40', 'DP World 20', 'DP World LCL', 'Ordem de Entrega', 'Caução (Reembolsável)', 'Kudumba', 'Taxa JUE (MCnet)', 'MCnet', 'Agente', 'Taxa de Radio de Difusao', 'Titulo de Propriedade', 'INATRO', 'Maputo Car', 'Gestão de Terminais'];
         lines = lines.filter(l => !(l.group === 'terceiros' && autoDescs.includes(l.desc)));
         
         const mode = window.quoteEditorState.mode;
         const subMode = window.quoteEditorState.subMode;
+        
+        let usdExRate = 1;
+        if (window.quoteEditorState.currency === 'USD') {
+            usdExRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+        } else if (state && state.cambios) {
+            const usdCambio = state.cambios.find(c => c.moeda && c.moeda.toUpperCase() === 'USD');
+            if (usdCambio) usdExRate = parseFloat(usdCambio.taxa) || 1;
+        }
+        
         if (mode === 'Maritimo') {
             if (subMode === 'FCL-40') {
                 lines.push({ group: 'terceiros', desc: 'DP World 40', price: 32202.00, tax: 0 });
@@ -8696,7 +8854,7 @@ window.syncInvoiceLinesFromDraft = function() {
                 lines.push({ group: 'terceiros', desc: 'Kudumba', price: 7812.00, tax: 0 });
             } else if (subMode === 'LCL') {
                 const cbm = window.quoteEditorState.globais?.cbm || 0;
-                const exRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+                const exRate = usdExRate;
                 const dpWorldMzn = (23 + (44.50 * cbm)) * exRate * 1.16;
                 const kudumbaMzn = 15 * exRate * 1.16;
                 lines.push({ group: 'terceiros', desc: 'DP World LCL', price: dpWorldMzn, tax: 0 });
@@ -8705,7 +8863,7 @@ window.syncInvoiceLinesFromDraft = function() {
             } else if (subMode === 'CBM') {
                 lines.push({ group: 'terceiros', desc: 'Kudumba', price: 2601.00, tax: 0 });
             } else if (subMode === 'CAR') {
-                const exRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+                const exRate = usdExRate;
                 const carClass = window.quoteEditorState.globais?.carClass || 'Ligeiro';
                 const kudumbaMzn = 30 * exRate * 1.16;
                 const maputoCarMzn = 273 * exRate * 1.16;
@@ -8716,6 +8874,19 @@ window.syncInvoiceLinesFromDraft = function() {
                 lines.push({ group: 'terceiros', desc: 'Titulo de Propriedade', price: tituloPrice, tax: 0 });
                 lines.push({ group: 'terceiros', desc: 'INATRO', price: 11520.00, tax: 0 });
                 lines.push({ group: 'terceiros', desc: 'Maputo Car', price: maputoCarMzn, tax: 0 });
+            }
+        } else if (mode === 'Rodoviario') {
+            if (subMode === 'CAR') {
+                const exRate = usdExRate;
+                const carClass = window.quoteEditorState.globais?.carClass || 'Ligeiro';
+                const kudumbaMzn = 30 * exRate * 1.16;
+                const tituloPrice = carClass === 'Pesado' ? 3460.00 : 2460.00;
+                
+                lines.push({ group: 'terceiros', desc: 'Kudumba', price: kudumbaMzn, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Taxa de Radio de Difusao', price: 59.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Titulo de Propriedade', price: tituloPrice, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'INATRO', price: 11520.00, tax: 0 });
+                lines.push({ group: 'terceiros', desc: 'Gestão de Terminais', price: 6650.00, tax: 0 });
             }
         }
         
@@ -8728,10 +8899,20 @@ window.syncInvoiceLinesFromDraft = function() {
         if (totals.tsaFixedMzn > 0) { lines.push({ group: 'alfandegas', desc: 'Taxa de Serviço Aduaneiro (TSA)', price: totals.tsaFixedMzn, tax: 0 }); addedAlfandegas = true; }
         if (!addedAlfandegas) { lines.push({ group: 'alfandegas', desc: 'Despesas Aduaneiras', price: 0, tax: 0 }); }
         
+        const desPrice = window.calculateDesembaraco(totals, usdExRate);
+        
+        const existingDesembaraço = lines.find(l => l.desc === 'Desembaraço Moz');
+        if (existingDesembaraço) {
+            existingDesembaraço.price = desPrice;
+        }
+
         if (isFirstTime) {
             let others = parseFloat(document.getElementById('input-global-others')?.value) || 0;
             if (others > 0) lines.push({ group: 'terceiros', desc: 'Outros Serviços de Navegação / Agência', price: others, tax: 0 });
-            lines.push({ group: 'servicos', desc: 'Desembaraço Moz', price: 10850, tax: 16 });
+            
+            if (!existingDesembaraço) {
+                lines.push({ group: 'servicos', desc: 'Desembaraço Moz', price: desPrice, tax: 16 });
+            }
         }
         return lines;
     };
@@ -8818,7 +8999,15 @@ window.addCategoryFromDraft = function(groupName) {
         lines.push({ group: 'terceiros', desc: 'Taxas Portuárias / Kudumba', price: 2604, tax: 0 });
         if (totals.mcnetMzn > 0) { lines.push({ group: 'terceiros', desc: 'Taxa JUE (MCnet)', price: totals.mcnetMzn, tax: 0 }); }
     } else if (groupName === 'servicos') {
-        lines.push({ group: 'servicos', desc: 'Desembaraço Moz', price: 10850, tax: 16 });
+        let usdExRate = 1;
+        if (window.quoteEditorState.currency === 'USD') {
+            usdExRate = parseFloat(window.quoteEditorState.exchangeRate) || 1;
+        } else if (typeof state !== 'undefined' && state.cambios) {
+            const usdCambio = state.cambios.find(c => c.moeda && c.moeda.toUpperCase() === 'USD');
+            if (usdCambio) usdExRate = parseFloat(usdCambio.taxa) || 1;
+        }
+        const desPrice = window.calculateDesembaraco(totals, usdExRate);
+        lines.push({ group: 'servicos', desc: 'Desembaraço Moz', price: desPrice, tax: 16 });
     }
     
     window.quoteIsDirty = true;
@@ -8968,17 +9157,12 @@ window.renderInvoiceLines = function() {
         `;
         
         if (gKey === 'servicos') {
+            const currentIssuer = window.quoteEditorState?.invoiceData?.issuer || document.getElementById('inv-issuer-select')?.value || 'jupiter';
+            const issuerBankHtml = (isFatura && window.issuers[currentIssuer]?.bankHtml) ? window.issuers[currentIssuer].bankHtml : '';
             html += `
                     <div class="mt-8 flex flex-col md:flex-row print:flex-row justify-between items-end gap-4 border-t border-gray-100 pt-6">
                         <div class="flex-1 w-full relative h-full flex flex-col justify-end">
-                            ${isFatura ? `
-                            <div class="mb-4 text-[10px] text-gray-600 space-y-0.5">
-                                <p><strong class="text-gray-800 font-bold uppercase">Banco:</strong> BCI</p>
-                                <p><strong class="text-gray-800 font-bold uppercase">Titular:</strong> HL COMERCIO E SERVICOS, LDA</p>
-                                <p><strong class="text-gray-800 font-bold uppercase">N.º de Conta:</strong> 34391097910001</p>
-                                <p><strong class="text-gray-800 font-bold uppercase">Conta / NIB do Beneficiário:</strong> 0008 0000 43910979101 28</p>
-                            </div>
-                            ` : ''}
+                            ${issuerBankHtml}
                             <div class="border-b border-gray-800 pb-1 inline-block min-w-[70%] max-w-full">
                                 <p class="text-xs font-bold text-gray-800 italic" id="inv-val-extenso">Zero meticais</p>
                             </div>

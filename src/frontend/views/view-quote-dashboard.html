@@ -135,6 +135,20 @@
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
                             </button>
+                            <!-- View Quote Document Button -->
+                            <button id="btn-view-quote-global" style="display: none;" onclick="if(window.quoteEditorState && window.quoteEditorState.attachment && window.quoteEditorState.attachment.webViewLink) window.open(window.quoteEditorState.attachment.webViewLink, '_blank'); else if (window.quoteEditorState.attachment && window.quoteEditorState.attachment.url) window.open(window.quoteEditorState.attachment.url, '_blank');" title="Visualizar Anexo" class="btn-action-scale text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 active:bg-green-200 p-1.5 rounded-lg text-xs font-bold border border-green-100 items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                            </button>
+                            <!-- Attach Quote Document Button -->
+                            <button id="btn-attach-quote-global" onclick="document.getElementById('attach-quote-global').click();" title="Sem Anexo (Clique para adicionar Fatura/Documento)" class="btn-action-scale text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100 active:bg-red-200 p-1.5 rounded-lg text-xs font-bold border border-red-100 flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                </svg>
+                            </button>
+                            <input type="file" id="attach-quote-global" style="display:none" onchange="window.handleGlobalAttachmentUpload(this.files[0]);" />
                             <!-- Add Row Button -->
                             <button onclick="window.addQuoteRow()" title="Adicionar Linha" class="btn-action-scale text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 p-1.5 rounded-lg text-xs font-bold border border-indigo-100 flex items-center justify-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
