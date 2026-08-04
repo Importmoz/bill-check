@@ -3814,10 +3814,19 @@ export function renderDriveError(message, folderName = null, parentId = null, co
         `;
     }
 
+    const reconnectHtml = `
+        <button onclick="window.location.href='/api/google/auth'" 
+            class="mt-3 bg-blue-600/90 text-white px-3.5 py-2 rounded-xl font-extrabold uppercase text-[9px] tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-1.5 mx-auto shadow-sm">
+            <i class="fas fa-plug text-xs"></i>
+            RECONECTAR AO GOOGLE
+        </button>
+    `;
+
     container.innerHTML = `
-        <div class="p-8 text-center">
+        <div class="p-6 text-center space-y-2">
             <p class="text-gray-400 italic text-[10px] leading-tight">${message}</p>
             ${actionHtml}
+            ${reconnectHtml}
         </div>
     `;
 }
@@ -4739,17 +4748,17 @@ export async function searchPaymentMiniFilter() {
                 tr.dataset.id = rec.id;
 
                 const refText = rec.reference || rec.description || '';
+                const bankDisplay = getPaymentBankDisplay(rec);
                 
                 // Apenas permitir clique na linha se não estiver reconciliado (usado)
                 if (!rec.reconciled) {
-                    tr.onclick = () => togglePaymentSelection(rec.id, rec.date, refText, rec.amount);
+                    tr.onclick = () => togglePaymentSelection(rec.id, rec.date, refText, rec.amount, bankDisplay, rec.account_owner || '');
                 }
 
                 // Formatar Data
                 const dateStr = rec.date ? rec.date.split(' ')[0] : '—';
                 const amountFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(rec.amount);
 
-                const bankDisplay = getPaymentBankDisplay(rec);
                 let descHtml = rec.description || rec.reference || '—';
                 
                 if (rec.reconciled) {
@@ -4762,7 +4771,7 @@ export async function searchPaymentMiniFilter() {
 
                 tr.innerHTML = `
                     <td class="px-3 py-1 text-center" onclick="event.stopPropagation();">
-                        <input type="checkbox" ${checkedAttr} ${checkboxDisabled} onchange="ui.togglePaymentSelection('${rec.id}', '${rec.date}', '${refText.replace(/'/g, "\\'")}', parseFloat('${rec.amount}'))" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 ${rec.reconciled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}">
+                        <input type="checkbox" ${checkedAttr} ${checkboxDisabled} onchange="ui.togglePaymentSelection('${rec.id}', '${rec.date}', '${refText.replace(/'/g, "\\'")}', parseFloat('${rec.amount}'), '${bankDisplay.replace(/'/g, "\\'")}', '${(rec.account_owner || '').replace(/'/g, "\\'")}')" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 ${rec.reconciled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}">
                     </td>
                     <td class="px-4 py-1 whitespace-nowrap">${dateStr}</td>
                     <td class="px-4 py-1 font-normal text-slate-700">${bankDisplay}</td>
@@ -4796,7 +4805,7 @@ export function checkMiniFilterStatus() {
     }
 }
 
-export function togglePaymentSelection(id, date, ref, fullAmount) {
+export function togglePaymentSelection(id, date, ref, fullAmount, bank = '', accountOwner = '') {
     const idx = selectedPaymentsForLink.findIndex(p => p.id === id);
     if (idx !== -1) {
         selectedPaymentsForLink.splice(idx, 1);
@@ -4805,7 +4814,9 @@ export function togglePaymentSelection(id, date, ref, fullAmount) {
             id: id,
             date: date,
             ref: ref,
-            amount: parseFloat(fullAmount)
+            amount: parseFloat(fullAmount),
+            bank: bank,
+            accountOwner: accountOwner
         });
     }
 
@@ -5045,14 +5056,40 @@ export async function confirmPaymentSelection() {
                         }
                     }
 
-                    // Gravar Nota e Banco na Primeira Linha (apenas para Frete)
-                    if (isFreight && !firstRowPassed) {
-                        const noteSelect = document.getElementById('select-freight-note')?.value || '';
-                        const noteCustom = document.getElementById('input-freight-note-custom')?.value || '';
-                        const bankVal = document.getElementById('select-freight-bank')?.value || '';
-                        let finalNote = noteSelect === 'CUSTOM' ? noteCustom.trim() : noteSelect;
+                    // Gravar Nota e Banco no Frete (com resolucao inteligente de BOSS e JUPITER)
+                    if (isFreight) {
+                        const firstPayment = selectedPaymentsForLink.length > 0 ? selectedPaymentsForLink[0] : null;
+                        let rawSelectedBank = firstPayment ? String(firstPayment.bank || '').toUpperCase() : '';
+                        const selectBankVal = String(document.getElementById('select-freight-bank')?.value || '').toUpperCase();
                         
-                        if (bankFreightIdx !== -1 && bankVal) rowData[bankFreightIdx] = bankVal;
+                        let bankVal = (rawSelectedBank || selectBankVal || '').trim();
+                        
+                        // Banco Inteligente: garantir variações BOSS e JUPITER apenas para BCI e BIM
+                        if (bankVal && bankVal !== '—') {
+                            if ((bankVal === 'BCI' || bankVal === 'BIM') && !bankVal.includes('BOSS') && !bankVal.includes('JUPITER')) {
+                                const owner = firstPayment ? String(firstPayment.accountOwner || '').toUpperCase() : '';
+                                const ref = firstPayment ? String(firstPayment.ref || '').toUpperCase() : '';
+                                
+                                // 1. Usar a variação do menu suspenso se o banco raiz corresponder
+                                if (selectBankVal.startsWith(bankVal) && (selectBankVal.includes('BOSS') || selectBankVal.includes('JUPITER'))) {
+                                    bankVal = selectBankVal;
+                                }
+                                // 2. Detetar BOSS ou JUPITER pelo titular da conta ou referência do movimento
+                                else if (owner.includes('BOSS') || owner.includes('FILIPE') || ref.includes('BOSS') || ref.includes('FILIPE')) {
+                                    bankVal = `${bankVal} BOSS`;
+                                } else if (owner.includes('JUPITER') || ref.includes('JUPITER')) {
+                                    bankVal = `${bankVal} JUPITER`;
+                                }
+                                // 3. Em último caso, no frete o padrão é JUPITER
+                                else {
+                                    bankVal = `${bankVal} JUPITER`;
+                                }
+                            }
+                        }
+
+                        let finalNote = 'PAID TO JUPITER';
+                        
+                        if (bankFreightIdx !== -1 && bankVal && bankVal !== '—') rowData[bankFreightIdx] = bankVal;
                         if (notaFreightIdx !== -1 && finalNote) rowData[notaFreightIdx] = finalNote;
                     }
 
@@ -5072,12 +5109,12 @@ export async function confirmPaymentSelection() {
                     if (!isFreight && notaDutyIdx !== -1) {
                         batchUpdates.push({ range: `${prefixClean}${getColLetter(notaDutyIdx)}${sheetRowNumber}`, values: [['']] });
                     }
-                    if (isFreight && !firstRowPassed) {
+                    if (isFreight) {
                         if (bankFreightIdx !== -1) {
-                            batchUpdates.push({ range: `${prefixClean}${getColLetter(bankFreightIdx)}${sheetRowNumber}`, values: [[rowData[bankFreightIdx]]] });
+                            batchUpdates.push({ range: `${prefixClean}${getColLetter(bankFreightIdx)}${sheetRowNumber}`, values: [[rowData[bankFreightIdx] || '']] });
                         }
                         if (notaFreightIdx !== -1) {
-                            batchUpdates.push({ range: `${prefixClean}${getColLetter(notaFreightIdx)}${sheetRowNumber}`, values: [[rowData[notaFreightIdx]]] });
+                            batchUpdates.push({ range: `${prefixClean}${getColLetter(notaFreightIdx)}${sheetRowNumber}`, values: [[rowData[notaFreightIdx] || '']] });
                         }
                     }
                     
@@ -8300,9 +8337,12 @@ export function showSyncStatus(isOffline) {
     
     if (isOffline) {
         banner.innerHTML = `
-            <div class="bg-red-500 text-white px-4 py-2 rounded-b-xl shadow-lg flex items-center gap-2 pointer-events-auto">
+            <div class="bg-red-600 text-white px-4 py-2 rounded-b-xl shadow-xl flex items-center gap-3 pointer-events-auto border-b-2 border-red-800">
                 <i class="fas fa-exclamation-triangle text-sm"></i>
                 <span class="text-xs font-bold uppercase tracking-wide">Modo Backup Ativo (Offline)</span>
+                <button onclick="window.location.href='/api/google/auth'" class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm ml-1">
+                    <i class="fas fa-plug text-xs"></i> RECONECTAR GOOGLE
+                </button>
             </div>
         `;
         requestAnimationFrame(() => {
