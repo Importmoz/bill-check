@@ -307,22 +307,16 @@ async function showFinance() {
 }
 
 async function refreshAllFinanceSheets() {
-    const sheets = api.state.finance.sheets;
-    if (sheets.length === 0 || document.getElementById('view-finance').classList.contains('hidden')) return;
+    if (document.getElementById('view-finance').classList.contains('hidden')) return;
 
     const icon = document.getElementById('finance-refresh-icon');
     if (icon) icon.classList.add('animate-spin');
 
     try {
-        for (const sheet of sheets) {
-            try {
-                const newData = await api.processFinanceUrl(sheet.sourceUrl);
-                const updated = { ...newData, groupId: sheet.groupId };
-                await api.saveFinanceSheet(updated, sheet.id);
-            } catch (e) { console.warn(`Falha ao atualizar folha ${sheet.id}`); }
-        }
         await api.fetchFinanceData();
         ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+    } catch (err) {
+        console.warn("Falha ao atualizar dados financeiros do Confirm:", err);
     } finally {
         if (icon) icon.classList.remove('animate-spin');
     }
@@ -331,44 +325,32 @@ async function refreshAllFinanceSheets() {
 async function handleManualFinanceRefresh() {
     const btn = document.getElementById('btn-finance-refresh');
     ui.setBtnLoading(btn, true, "A actualizar...");
-    ui.setLoader(true, "A sincronizar folhas...");
+    ui.setLoader(true, "A sincronizar dados com Confirm...");
     try {
         await refreshAllFinanceSheets();
+        ui.toast("Painel Financeiro atualizado!", "success");
     } finally {
         ui.setLoader(false);
         ui.setBtnLoading(btn, false);
     }
 }
 
-// Modais e Acções Financeiras
+// Modais e Acções Financeiras (Integradas ao Confirm)
 function openFinanceSheetModal() {
-    document.getElementById('input-finance-sheet-url').value = '';
-    document.getElementById('modal-finance-sheet').classList.remove('hidden');
+    openConfirmProjectModal();
 }
 
 async function addFinanceSheet() {
-    const url = document.getElementById('input-finance-sheet-url').value.trim();
-    if (!url) return;
-
-    const btn = document.getElementById('btn-finance-sheet-add');
-    ui.setBtnLoading(btn, true, "A processar...");
-    try {
-        const data = await api.processFinanceUrl(url);
-        await api.saveFinanceSheet(data);
-        ui.closeModal('modal-finance-sheet');
-        await showFinance();
-    } catch (err) {
-        ui.toast("Erro ao processar folha", "error");
-    } finally {
-        ui.setBtnLoading(btn, false);
-    }
+    openConfirmProjectModal();
+    ui.closeModal('modal-finance-sheet');
 }
 
 async function removeFinanceSheet(id) {
-    if (!confirm("Remover esta folha do consolidado?")) return;
+    if (!confirm("Deseja ocultar este projeto da visualização do Finance? (O projeto no Confirm não será apagado)")) return;
     ui.setLoader(true);
     try {
         await api.deleteFinanceSheet(id);
+        ui.toast("Projeto ocultado do Finance.", "success");
         await showFinance();
     } catch (err) { ui.toast(err.message, "error"); }
     finally { ui.setLoader(false); }

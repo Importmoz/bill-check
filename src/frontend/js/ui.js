@@ -532,8 +532,15 @@ function createFinanceTable(sheets, onRemove) {
                 <tr class="group hover:bg-slate-50 transition-colors">
                     <td class="p-3">
                         <div class="flex flex-col">
-                            <span class="font-normal text-[10px] uppercase text-gray-900 leading-tight">${s.title}</span>
-                            <a href="${s.sourceUrl}" target="_blank" class="text-[8px] text-gray-400 hover:text-blue-600 transition-all font-normal mt-0.5 truncate max-w-[150px]">Link Original</a>
+                            <span onclick="window.selectConfirmProject('${s.sheetId}', '${s.folderId || ''}', '${(s.title || '').replace(/'/g, "\\'")}')" class="font-bold text-[10px] uppercase text-gray-900 leading-tight cursor-pointer hover:text-blue-600 transition-colors flex items-center gap-1.5" title="Abrir grelha operacional no módulo Confirm">
+                                ${s.title}
+                                <span class="text-[8px] px-1.5 py-0.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-md font-extrabold tracking-tight hover:bg-black hover:text-white transition-all">CONFIRM ↗</span>
+                            </span>
+                            <div class="flex items-center gap-2 mt-1">
+                                <a href="${s.sourceUrl}" target="_blank" class="text-[8px] text-gray-400 hover:text-blue-600 transition-all font-semibold underline decoration-dotted">Google Sheets</a>
+                                <span class="text-[8px] text-gray-300">•</span>
+                                <button onclick="window.selectConfirmProject('${s.sheetId}', '${s.folderId || ''}', '${(s.title || '').replace(/'/g, "\\'")}')" class="text-[8px] font-bold text-blue-600 hover:underline">Abrir Grelha</button>
+                            </div>
                         </div>
                     </td>
                     <td class="p-3">
@@ -3330,12 +3337,13 @@ export async function saveConfirmOrderEdit(e) {
                 values: [[dutyPrepaid]]
             });
         }
-        if (amountDutyIdx !== -1) {
-            batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(amountDutyIdx)}${rowNum}`,
-                values: [[amountDuty]]
-            });
-        }
+        // Coluna protegida (tem fórmula no GSheet):
+        // if (amountDutyIdx !== -1) {
+        //     batchUpdates.push({
+        //         range: `${cleanSheetName}!${getColLetter(amountDutyIdx)}${rowNum}`,
+        //         values: [[amountDuty]]
+        //     });
+        // }
         if (paidIdx !== -1) {
             batchUpdates.push({
                 range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,

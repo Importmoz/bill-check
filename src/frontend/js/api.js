@@ -626,6 +626,113 @@ async function debouncedSyncToPocketBase() {
     }, 3000);
 }
 
+function getColLetterFromIdx(idx) {
+    let colLetter = '';
+    while (idx >= 0) {
+        colLetter = String.fromCharCode(65 + (idx % 26)) + colLetter;
+        idx = Math.floor(idx / 26) - 1;
+    }
+    return colLetter;
+}
+
+function getIdxFromColLetter(letter) {
+    let idx = 0;
+    for (let i = 0; i < letter.length; i++) {
+        idx = idx * 26 + (letter.charCodeAt(i) - 65 + 1);
+    }
+    return idx - 1;
+}
+
+function protectGSheetUpdates(updates, isSingleUpdate = false) {
+    if (!updates) return updates;
+    const items = isSingleUpdate ? [updates] : (Array.isArray(updates) ? updates : [updates]);
+    
+    const protectedCols = new Set();
+    const protectedRows = new Set();
+    
+    if (state && state.confirm && state.confirm.data && state.confirm.data.length > 0) {
+        const headers = state.confirm.columns || state.confirm.data[0] || [];
+        headers.forEach((col, idx) => {
+            const h = String(col || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            if (
+                (h.includes('AMOUNT') && h.includes('DUTY')) || h === 'DUTY' || h === 'TOTAL DUTY' || h === 'VALOR DUTY' || h === 'ADUANEIROS' ||
+                h === 'BALANCE' || h === 'SALDO' || h === 'BALANCO' ||
+                (h.includes('AMOUNT') && h.includes('FREIGHT')) || (h.includes('VALOR') && h.includes('FRETE')) || h === 'FREIGHT' || h === 'FRETE' ||
+                (h.includes('BALANCE') && h.includes('FREIGHT')) || (h.includes('SALDO') && h.includes('FRETE'))
+            ) {
+                protectedCols.add(getColLetterFromIdx(idx).toUpperCase());
+                protectedCols.add(idx);
+            }
+        });
+
+        state.confirm.data.forEach((row, idx) => {
+            if (!row || idx === 0) return;
+            const rowStr = row.slice(0, 10).map(c => String(c || '').toUpperCase()).join(' ');
+            if (rowStr.includes('TOTAL')) {
+                protectedRows.add(idx + 1); // GSheet rows are 1-indexed
+            }
+        });
+    }
+
+    const cleanUpdates = [];
+
+    for (const item of items) {
+        if (!item || !item.range) continue;
+        const rangeStr = item.range.includes('!') ? item.range.split('!')[1] : item.range;
+        const sheetPrefix = item.range.includes('!') ? item.range.split('!')[0] + '!' : '';
+        
+        const match = rangeStr.match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/i);
+        if (!match) {
+            cleanUpdates.push(item);
+            continue;
+        }
+
+        const startColStr = match[1].toUpperCase();
+        const startRow = parseInt(match[2], 10);
+        const endColStr = match[3] ? match[3].toUpperCase() : startColStr;
+        const endRow = match[4] ? parseInt(match[4], 10) : startRow;
+
+        let touchesTotalRow = false;
+        for (let r = startRow; r <= endRow; r++) {
+            if (protectedRows.has(r)) {
+                touchesTotalRow = true;
+                break;
+            }
+        }
+        if (touchesTotalRow) {
+            console.warn(`[GSHEET-PROTECTED] Bloqueada tentativa de alteração na linha de TOTAL: ${item.range}`);
+            continue;
+        }
+
+        if (startColStr === endColStr) {
+            if (protectedCols.has(startColStr)) {
+                console.warn(`[GSHEET-PROTECTED] Bloqueada alteração na coluna com fórmula (${startColStr}): ${item.range}`);
+                continue;
+            }
+            cleanUpdates.push(item);
+        } else if (startRow === endRow && Array.isArray(item.values) && item.values[0]) {
+            const startColIdx = getIdxFromColLetter(startColStr);
+            const valuesRow = item.values[0];
+            for (let c = 0; c < valuesRow.length; c++) {
+                const currentColIdx = startColIdx + c;
+                const currentColLetter = getColLetterFromIdx(currentColIdx).toUpperCase();
+                if (protectedCols.has(currentColLetter) || protectedCols.has(currentColIdx)) {
+                    console.warn(`[GSHEET-PROTECTED] Pulada coluna com fórmula (${currentColLetter}) ao atualizar linha inteira.`);
+                    continue;
+                }
+                cleanUpdates.push({
+                    range: `${sheetPrefix}${currentColLetter}${startRow}`,
+                    values: [[valuesRow[c]]]
+                });
+            }
+        } else {
+            cleanUpdates.push(item);
+        }
+    }
+
+    return isSingleUpdate ? cleanUpdates[0] : cleanUpdates;
+}
+
 export async function updateGSheet(spreadsheetId, range, values) {
     if (state.confirm.isOfflineMode) {
         console.log("[SYNC] Modo offline ativo. Ignorando chamada ao GSheet e guardando localmente.");
@@ -633,11 +740,17 @@ export async function updateGSheet(spreadsheetId, range, values) {
         return { success: true, offline: true };
     }
 
+    const protectedItem = protectGSheetUpdates({ range, values }, true);
+    if (!protectedItem) {
+        console.warn(`[GSHEET-PROTECTED] Atualização única bloqueada em ${range} para proteger fórmulas/totais.`);
+        return { success: true, protected: true };
+    }
+
     try {
         const res = await fetch('/api/google/sheet/update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ spreadsheetId, range, values })
+            body: JSON.stringify({ spreadsheetId, range: protectedItem.range, values: protectedItem.values })
         });
         if (!res.ok) {
             const error = await res.json();
@@ -662,11 +775,17 @@ export async function updateGSheetBatch(spreadsheetId, dataUpdate) {
         return { success: true, offline: true };
     }
 
+    const protectedBatch = protectGSheetUpdates(dataUpdate, false);
+    if (!protectedBatch || protectedBatch.length === 0) {
+        console.warn(`[GSHEET-PROTECTED] Todos os itens em batch foram bloqueados para proteger fórmulas ou linha de TOTAL.`);
+        return { success: true, protected: true };
+    }
+
     try {
         const res = await fetch('/api/google/sheet/batch-update', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ spreadsheetId, data: dataUpdate })
+            body: JSON.stringify({ spreadsheetId, data: protectedBatch })
         });
         if (!res.ok) {
             const error = await res.json();
@@ -1024,19 +1143,128 @@ export async function registerPayment(tableId, amount, date) {
     });
 }
 
-// --- MÓDULO FINANCE (CONSOLIDATOR) ---
+// --- MÓDULO FINANCE (CONSOLIDATOR VIA CONFIRM PROJECTS) ---
 
 /**
- * Carrega todos os grupos e folhas financeiras
+ * Calcula os totais financeiros a partir dos dados do projeto Confirm (sheet_data)
+ */
+export function calculateConfirmProjectTotals(rowsInput) {
+    let rows = [];
+    if (Array.isArray(rowsInput)) {
+        rows = rowsInput;
+    } else if (rowsInput && Array.isArray(rowsInput.values)) {
+        rows = rowsInput.values;
+    }
+    if (!rows || rows.length === 0) {
+        return { dutyPrepaid: 0, amountDuty: 0, paid: 0, balance: 0 };
+    }
+
+    const columns = rows[0].map(c => String(c || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim());
+    const findCol = (targets) => {
+        for (const target of targets) {
+            const idx = columns.findIndex(c => c === target || c.includes(target));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
+    const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
+    const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
+    const paidIdx = columns.findIndex((c, i) => {
+        return (c.includes('PAID') || c.includes('PAGO')) && !c.includes('PREPAID') && !c.includes('DUTY') && i !== dutyIdx;
+    });
+
+    const parseVal = (val) => {
+        if (!val) return 0;
+        return parseFloat(String(val).replace(/[^0-9.-]+/g, '')) || 0;
+    };
+
+    let totalDuty = 0;
+    let totalPrepaid = 0;
+    let totalPaid = 0;
+    let totalBalance = 0;
+    let foundValidRows = false;
+
+    for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length === 0) continue;
+        const rowString = row.slice(0, 10).map(c => String(c || '').toUpperCase()).join(' ');
+        if (rowString.includes('TOTAL')) continue;
+        
+        const dutyVal = dutyIdx !== -1 ? parseVal(row[dutyIdx]) : 0;
+        const prepaidVal = dutyPrepaidIdx !== -1 ? parseVal(row[dutyPrepaidIdx]) : 0;
+        const paidVal = paidIdx !== -1 ? parseVal(row[paidIdx]) : 0;
+        const balanceVal = balanceIdx !== -1 ? parseVal(row[balanceIdx]) : 0;
+
+        if (dutyVal || prepaidVal || paidVal || balanceVal) {
+            foundValidRows = true;
+        }
+        totalDuty += dutyVal;
+        totalPrepaid += prepaidVal;
+        totalPaid += paidVal;
+        totalBalance += balanceVal;
+    }
+
+    // Fallback caso a tabela não tenha linhas de clientes parseadas mas possua uma linha TOTAL
+    if (!foundValidRows) {
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || row.length === 0) continue;
+            const rowString = row.map(c => String(c || '').toUpperCase()).join(' ');
+            if (rowString.includes('TOTAL')) {
+                totalDuty = dutyIdx !== -1 ? parseVal(row[dutyIdx]) : 0;
+                totalPrepaid = dutyPrepaidIdx !== -1 ? parseVal(row[dutyPrepaidIdx]) : 0;
+                totalPaid = paidIdx !== -1 ? parseVal(row[paidIdx]) : 0;
+                totalBalance = balanceIdx !== -1 ? parseVal(row[balanceIdx]) : 0;
+                break;
+            }
+        }
+    }
+
+    return {
+        dutyPrepaid: totalPrepaid,
+        amountDuty: totalDuty,
+        paid: totalPaid,
+        balance: totalBalance
+    };
+}
+
+/**
+ * Carrega todos os grupos financeiros e consolida automaticamente a partir de confirm_projects
  */
 export async function fetchFinanceData() {
     const userId = pb.authStore.model?.id;
     if (!userId) return { groups: [], sheets: [] };
 
-    const [groups, sheets] = await Promise.all([
+    const [groups, confirmProjects] = await Promise.all([
         pb.collection('groups').getFullList({ filter: `user_id = "${userId}"`, sort: 'order' }),
-        pb.collection('sheets').getFullList({ filter: `user_id = "${userId}"`, sort: '-created' })
+        pb.collection('confirm_projects').getFullList({ sort: '-created' })
     ]);
+
+    const hiddenProjects = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
+    const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
+
+    const sheets = confirmProjects
+        .filter(p => !hiddenProjects.includes(p.id))
+        .map(p => {
+            const totals = calculateConfirmProjectTotals(p.sheet_data);
+            const groupId = p.groupId || p.group_id || groupMapping[p.id] || null;
+            return {
+                id: p.id,
+                title: p.name || "Projeto Sem Nome",
+                sourceUrl: p.sheetId ? `https://docs.google.com/spreadsheets/d/${p.sheetId}/edit` : "#",
+                sheetId: p.sheetId,
+                folderId: p.folderId,
+                groupId: groupId,
+                dutyPrepaid: totals.dutyPrepaid,
+                amountDuty: totals.amountDuty,
+                paid: totals.paid,
+                balance: totals.balance,
+                lastUpdated: p.updated || p.created || new Date().toISOString(),
+                isConfirmProject: true
+            };
+        });
 
     state.finance.groups = groups;
     state.finance.sheets = sheets;
@@ -1062,7 +1290,6 @@ export async function updateFinanceGroupOrder(groupId, direction) {
     const orderA = groupA.order || 0;
     const orderB = groupB.order || 0;
 
-    // Swap orders
     await Promise.all([
         pb.collection('groups').update(groupA.id, { order: orderB }),
         pb.collection('groups').update(groupB.id, { order: orderA })
@@ -1070,26 +1297,54 @@ export async function updateFinanceGroupOrder(groupId, direction) {
 }
 
 export async function deleteFinanceGroup(groupId) {
-    // Ungroup sheets first
     const affected = state.finance.sheets.filter(s => s.groupId === groupId);
+    const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
     for (const sheet of affected) {
-        await pb.collection('sheets').update(sheet.id, { groupId: null });
+        delete groupMapping[sheet.id];
+        try {
+            await pb.collection('confirm_projects').update(sheet.id, { group_id: null });
+        } catch (e) {
+            console.warn("[FINANCE] Falha ao desvincular grupo no PB:", e);
+        }
     }
+    localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
     return await pb.collection('groups').delete(groupId);
 }
 
 export async function saveFinanceSheet(data, id = null) {
-    const payload = { ...data, user_id: pb.authStore.model.id };
-    if (id) return await pb.collection('sheets').update(id, payload);
-    return await pb.collection('sheets').create(payload);
+    if (!id) return null;
+    const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
+    if (data.groupId === null || data.groupId === '') {
+        delete groupMapping[id];
+    } else {
+        groupMapping[id] = data.groupId;
+    }
+    localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
+
+    try {
+        await pb.collection('confirm_projects').update(id, { group_id: data.groupId || null });
+    } catch (e) {
+        console.warn("[FINANCE] Campo group_id não disponível em confirm_projects. Mapeamento persistido no localStorage.");
+    }
+
+    const item = state.finance.sheets.find(s => s.id === id);
+    if (item) item.groupId = data.groupId || null;
+    return item;
 }
 
 export async function deleteFinanceSheet(id) {
-    return await pb.collection('sheets').delete(id);
+    // Opção 1: Arquivar/ocultar do painel Finance em localStorage sem apagar o projeto real do Confirm
+    const hiddenProjects = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
+    if (!hiddenProjects.includes(id)) {
+        hiddenProjects.push(id);
+        localStorage.setItem('finance_hidden_projects', JSON.stringify(hiddenProjects));
+    }
+    state.finance.sheets = state.finance.sheets.filter(s => s.id !== id);
+    return { success: true, hidden: true };
 }
 
 /**
- * Motor de Extração (Baseado no projeto original)
+ * Motor de Extração Legado (Mantido como utilitário de reserva)
  */
 export async function processFinanceUrl(url) {
     try {
