@@ -1,10 +1,10 @@
 /**
  * Ponto de Entrada - Bill Check (Modularizado)
  */
-import { initializeApp } from './init.js';
-import * as api from './api.js';
-import * as ui from './ui.js?v=20260730_8';
-import * as utils from './utils.js';
+import { initializeApp } from './init.js?v=20260817_1';
+import * as api from './api.js?v=20260817_1';
+import * as ui from './ui.js?v=20260817_1';
+import * as utils from './utils.js?v=20260817_1';
 
 const { state, pb } = api;
 
