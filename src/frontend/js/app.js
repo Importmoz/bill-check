@@ -1863,6 +1863,18 @@ function startGSheetPolling(spreadsheetId) {
             if (res.ok) {
                 const checkData = await res.json();
                 console.log(`[POLLING-DEBUG] lastTime enviado: ${lastTime} | Drive modifiedTime: ${checkData.modifiedTime} | updated: ${checkData.updated}`);
+                
+                // Se estávamos offline ou com alterações pendentes e o Google Sheets respondeu, sincronizar automaticamente!
+                if (api.state.confirm.hasPendingSync) {
+                    console.log("[POLLING] Google Sheets reconectado! Sincronizando alterações pendentes do PocketBase...");
+                    try {
+                        await api.syncPendingChangesToGSheet();
+                        ui.toast("Google Sheets reconectado! Alterações sincronizadas com sucesso. ✅", "success");
+                    } catch (syncErr) {
+                        console.warn("[POLLING] Erro ao sincronizar automaticamente com Google Sheets:", syncErr.message);
+                    }
+                }
+
                 if (checkData.updated) {
                     console.log(`[POLLING] Planilha modificada externamente! Novo modifiedTime: ${checkData.modifiedTime}. Recarregando silenciosamente...`);
                     

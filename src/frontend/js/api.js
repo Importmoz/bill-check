@@ -478,6 +478,13 @@ export async function readGSheet(projectRecord, range = 'A1:AZ1000', skipModifie
             // Mantemos em modo offline
         }
 
+        // Carregar dados locais do PB para a app funcionar imediatamente
+        const pbData = pbRecord.sheet_data;
+        state.confirm.data = pbData.values || pbData;
+        state.confirm.notes = pbData.notes || [];
+        state.confirm.range = pbData.range || 'Folha1!A1:AZ1000';
+        if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
+
         if (conflictDetected) {
             // Disparar evento global para UI mostrar modal de conflito
             window.dispatchEvent(new CustomEvent('confirmSyncConflict', { 
@@ -485,30 +492,15 @@ export async function readGSheet(projectRecord, range = 'A1:AZ1000', skipModifie
             }));
             state.confirm.isOfflineMode = true;
         } else {
-            console.log("[SYNC] Restaurando dados do PocketBase para o GSheet...");
-            try {
-                // Tenta restaurar o GSheet
-                const restoreData = pbRecord.sheet_data.values || pbRecord.sheet_data;
-                await fetch('/api/google/sheet/update', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ spreadsheetId, range: 'A1', values: restoreData })
-                });
-                console.log("[SYNC] Restauro no GSheet com sucesso. Limpando pending_sync...");
-                await pb.collection('confirm_projects').update(projectId, { has_pending_sync: false });
-                state.confirm.hasPendingSync = false;
-            } catch (restoreErr) {
-                console.error("[SYNC] Falha ao restaurar GSheet. Mantendo modo offline.", restoreErr);
+            console.log("[SYNC] Sincronizando dados pendentes do PocketBase para o GSheet...");
+            syncPendingChangesToGSheet().then(() => {
+                console.log("[SYNC] Restauro no GSheet concluído com sucesso.");
+            }).catch(syncErr => {
+                console.warn("[SYNC] GSheet inacessível no arranque. Mantendo modo PocketBase ativo.", syncErr.message);
                 state.confirm.isOfflineMode = true;
-            }
+                window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true, pendingSync: true } }));
+            });
         }
-
-        // Carregar dados locais do PB para a app funcionar
-        const pbData = pbRecord.sheet_data;
-        state.confirm.data = pbData.values || pbData;
-        state.confirm.notes = pbData.notes || [];
-        state.confirm.range = pbData.range || 'Folha1!A1:AZ1000';
-        if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
         
         window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: state.confirm.isOfflineMode } }));
         return state.confirm.data;
