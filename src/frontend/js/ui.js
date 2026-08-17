@@ -6942,21 +6942,30 @@ export async function saveFreightModal() {
         
         // Loop sobre todas as ordens deste cliente
         for (const rowObj of window.currentActiveClient.rows) {
-            const rowIndex = rowObj.originalIndex + 1; // +1 porque google sheets é 1-indexed
+            const originalIndex = rowObj.originalIndex;
+            const rowIndex = originalIndex + 1; // +1 porque google sheets é 1-indexed
 
             if (!isChina) {
                 // Update Bank in Freight
                 if (bankVal !== '' && bankFreightIdx !== -1) {
+                    if (state.confirm?.data && state.confirm.data[originalIndex]) {
+                        state.confirm.data[originalIndex][bankFreightIdx] = bankVal === '?' ? '' : bankVal;
+                    }
+                    const prefixClean = cleanSheetName ? `'${cleanSheetName}'!` : '';
                     updates.push({
-                        range: `${cleanSheetName}!${getColLetter(bankFreightIdx)}${rowIndex}`,
+                        range: `${prefixClean}${getColLetter(bankFreightIdx)}${rowIndex}`,
                         values: [[bankVal === '?' ? '' : bankVal]]
                     });
                 }
                 
                 // Update Nota Freight
                 if (finalNote !== '' && notaFreightIdx !== -1) {
+                    if (state.confirm?.data && state.confirm.data[originalIndex]) {
+                        state.confirm.data[originalIndex][notaFreightIdx] = finalNote;
+                    }
+                    const prefixClean = cleanSheetName ? `'${cleanSheetName}'!` : '';
                     updates.push({
-                        range: `${cleanSheetName}!${getColLetter(notaFreightIdx)}${rowIndex}`,
+                        range: `${prefixClean}${getColLetter(notaFreightIdx)}${rowIndex}`,
                         values: [[finalNote]]
                     });
                 }
@@ -6964,12 +6973,14 @@ export async function saveFreightModal() {
 
             // Update PAID FREIGHT (o BALANCE FREIGHT será calculado por fórmula para ambas as origens)
             if (paidFreightIdx !== -1 && amountFreightIdx !== -1) {
-                // Ir buscar o AMOUNT FREIGHT da linha
-                const amountVal = state.confirm.data[rowObj.originalIndex][amountFreightIdx];
+                const amountVal = state.confirm?.data?.[originalIndex]?.[amountFreightIdx] || rowObj.originalRow?.[amountFreightIdx];
                 const amt = parseFloat(String(amountVal).replace(/[^0-9.-]+/g, "")) || 0;
-                
+                if (state.confirm?.data && state.confirm.data[originalIndex]) {
+                    state.confirm.data[originalIndex][paidFreightIdx] = amt;
+                }
+                const prefixClean = cleanSheetName ? `'${cleanSheetName}'!` : '';
                 updates.push({
-                    range: `${cleanSheetName}!${getColLetter(paidFreightIdx)}${rowIndex}`,
+                    range: `${prefixClean}${getColLetter(paidFreightIdx)}${rowIndex}`,
                     values: [[amt]]
                 });
             }
@@ -6984,16 +6995,12 @@ export async function saveFreightModal() {
 
         closeFreightModal();
 
-        // Recarregar os dados para refletir na UI
-        if (typeof window.startGSheetPolling === 'function') {
-            const freshData = await api.readGSheet(currentProjectSheetId, 'A1:AZ1000', true);
-            if (freshData && typeof window.processGSheetData === 'function') {
-                window.processGSheetData(freshData);
-                const freshClient = window.currentConfirmClients.find(c => c.displayName === window.currentActiveClient.displayName);
-                if (freshClient) {
-                    await showConfirmDetail(freshClient, window.currentActiveClientIndex);
-                }
-            }
+        // Recarregar os dados para refletir na UI imediatamente
+        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+        renderConfirmList(state.confirm.data, "", statusFilter);
+        if (window.currentActiveClient) {
+            const freshClient = state.confirm.groupedClients?.find(c => c.displayName === window.currentActiveClient.displayName) || window.currentActiveClient;
+            await showConfirmDetail(freshClient, window.currentActiveClientIndex);
         }
 
     } catch (err) {
