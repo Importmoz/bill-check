@@ -13,6 +13,8 @@ const pautaRoutes = require('./src/backend/routes/pautaRoutes');
 const app = express();
 const PORT = process.env.PORT || 3000; // Restaurando para 3000
 
+app.set('trust proxy', 1);
+
 // Evitar que o servidor pare completamente (crash) em caso de erros não tratados (ex: falhas de rede na API Google)
 process.on('uncaughtException', (err) => {
   console.error('[V2] Uncaught Exception:', err.message);

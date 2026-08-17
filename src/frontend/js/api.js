@@ -594,7 +594,7 @@ export async function readGSheet(projectRecord, range = 'A1:AZ1000', skipModifie
 
 let pbSyncTimeout = null;
 
-async function debouncedSyncToPocketBase() {
+export async function debouncedSyncToPocketBase(forcePending = false) {
     if (!state.confirm.projectId) return;
     
     if (pbSyncTimeout) {
@@ -603,7 +603,7 @@ async function debouncedSyncToPocketBase() {
     
     pbSyncTimeout = setTimeout(async () => {
         try {
-            console.log("[SYNC] Guardando alterações pendentes no PocketBase...");
+            console.log("[SYNC] Guardando alterações no PocketBase...");
             
             const payload = {
                 sheet_data: {
@@ -613,7 +613,7 @@ async function debouncedSyncToPocketBase() {
                 }
             };
             
-            if (state.confirm.isOfflineMode) {
+            if (forcePending || state.confirm.isOfflineMode || state.confirm.hasPendingSync) {
                 payload.has_pending_sync = true;
                 state.confirm.hasPendingSync = true;
             }
@@ -623,7 +623,7 @@ async function debouncedSyncToPocketBase() {
         } catch (e) {
             console.error("[SYNC] Falha ao gravar no PocketBase:", e);
         }
-    }, 3000);
+    }, 400);
 }
 
 function getColLetterFromIdx(idx) {
@@ -654,10 +654,11 @@ function protectGSheetUpdates(updates, isSingleUpdate = false) {
         const headers = state.confirm.columns || state.confirm.data[0] || [];
         headers.forEach((col, idx) => {
             const h = String(col || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            // Fórmulas exatas protegidas: AMOUNT DUTY, BALANCE, AMOUNT FREIGHT, BALANCE FREIGHT
             if (
-                (h.includes('AMOUNT') && h.includes('DUTY')) || h === 'DUTY' || h === 'TOTAL DUTY' || h === 'VALOR DUTY' || h === 'ADUANEIROS' ||
+                (h.includes('AMOUNT') && h.includes('DUTY')) || h === 'VALOR DUTY' || h === 'TOTAL DUTY' ||
                 h === 'BALANCE' || h === 'SALDO' || h === 'BALANCO' ||
-                (h.includes('AMOUNT') && h.includes('FREIGHT')) || (h.includes('VALOR') && h.includes('FRETE')) || h === 'FREIGHT' || h === 'FRETE' ||
+                (h.includes('AMOUNT') && h.includes('FREIGHT')) || (h.includes('VALOR') && h.includes('FRETE')) ||
                 (h.includes('BALANCE') && h.includes('FREIGHT')) || (h.includes('SALDO') && h.includes('FRETE'))
             ) {
                 protectedCols.add(getColLetterFromIdx(idx).toUpperCase());
@@ -667,8 +668,9 @@ function protectGSheetUpdates(updates, isSingleUpdate = false) {
 
         state.confirm.data.forEach((row, idx) => {
             if (!row || idx === 0) return;
-            const rowStr = row.slice(0, 10).map(c => String(c || '').toUpperCase()).join(' ');
-            if (rowStr.includes('TOTAL')) {
+            const c0 = String(row[0] || '').toUpperCase().trim();
+            const c1 = String(row[1] || '').toUpperCase().trim();
+            if (c0 === 'TOTAL' || c0 === 'TOTAIS' || c0.startsWith('TOTAL ') || c1 === 'TOTAL') {
                 protectedRows.add(idx + 1); // GSheet rows are 1-indexed
             }
         });
@@ -691,6 +693,12 @@ function protectGSheetUpdates(updates, isSingleUpdate = false) {
         const startRow = parseInt(match[2], 10);
         const endColStr = match[3] ? match[3].toUpperCase() : startColStr;
         const endRow = match[4] ? parseInt(match[4], 10) : startRow;
+
+        // Linha 1 é linha de cabeçalhos (headers) - permitida
+        if (startRow === 1 && endRow === 1) {
+            cleanUpdates.push(item);
+            continue;
+        }
 
         let touchesTotalRow = false;
         for (let r = startRow; r <= endRow; r++) {
@@ -730,16 +738,10 @@ function protectGSheetUpdates(updates, isSingleUpdate = false) {
         }
     }
 
-    return isSingleUpdate ? cleanUpdates[0] : cleanUpdates;
+    return isSingleUpdate ? (cleanUpdates.length > 0 ? cleanUpdates[0] : null) : cleanUpdates;
 }
 
 export async function updateGSheet(spreadsheetId, range, values) {
-    if (state.confirm.isOfflineMode) {
-        console.log("[SYNC] Modo offline ativo. Ignorando chamada ao GSheet e guardando localmente.");
-        debouncedSyncToPocketBase();
-        return { success: true, offline: true };
-    }
-
     const protectedItem = protectGSheetUpdates({ range, values }, true);
     if (!protectedItem) {
         console.warn(`[GSHEET-PROTECTED] Atualização única bloqueada em ${range} para proteger fórmulas/totais.`);
@@ -757,24 +759,18 @@ export async function updateGSheet(spreadsheetId, range, values) {
             throw new Error(error.error || "Erro ao atualizar GSheet");
         }
         const data = await res.json();
-        debouncedSyncToPocketBase();
+        debouncedSyncToPocketBase(false);
         return data;
     } catch (err) {
-        console.warn("[SYNC] GSheet update failed. Ativando Modo Offline.", err);
-        state.confirm.isOfflineMode = true;
-        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
-        debouncedSyncToPocketBase();
-        return { success: true, offline: true };
+        console.warn("[SYNC] GSheet update falhou. Guardando no PocketBase como pendência.", err.message);
+        state.confirm.hasPendingSync = true;
+        debouncedSyncToPocketBase(true);
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true, pendingSync: true } }));
+        return { success: true, offline: true, pendingSync: true };
     }
 }
 
 export async function updateGSheetBatch(spreadsheetId, dataUpdate) {
-    if (state.confirm.isOfflineMode) {
-        console.log("[SYNC] Modo offline ativo. Ignorando batchUpdate ao GSheet e guardando localmente.");
-        debouncedSyncToPocketBase();
-        return { success: true, offline: true };
-    }
-
     const protectedBatch = protectGSheetUpdates(dataUpdate, false);
     if (!protectedBatch || protectedBatch.length === 0) {
         console.warn(`[GSHEET-PROTECTED] Todos os itens em batch foram bloqueados para proteger fórmulas ou linha de TOTAL.`);
@@ -792,26 +788,21 @@ export async function updateGSheetBatch(spreadsheetId, dataUpdate) {
             throw new Error(error.error || "Erro ao atualizar GSheet em lote");
         }
         const responseData = await res.json();
-        debouncedSyncToPocketBase();
+        debouncedSyncToPocketBase(false);
         return responseData;
     } catch (err) {
-        console.warn("[SYNC] GSheet batchUpdate failed. Ativando Modo Offline.", err);
-        state.confirm.isOfflineMode = true;
-        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
-        debouncedSyncToPocketBase();
-        return { success: true, offline: true };
+        console.warn("[SYNC] GSheet batchUpdate falhou. Guardando no PocketBase como pendência.", err.message);
+        state.confirm.hasPendingSync = true;
+        debouncedSyncToPocketBase(true);
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true, pendingSync: true } }));
+        return { success: true, offline: true, pendingSync: true };
     }
 }
 
 export async function updateGSheetNote(spreadsheetId, sheetName, row, col, note, color = null) {
-    if (state.confirm.isOfflineMode) {
-        console.log("[SYNC] Modo offline ativo. Ignorando updateNote ao GSheet e guardando localmente.");
-        // Atualizar estado em memória
-        if (!state.confirm.notes[row]) state.confirm.notes[row] = [];
-        state.confirm.notes[row][col] = note;
-        debouncedSyncToPocketBase();
-        return { success: true, offline: true };
-    }
+    if (!state.confirm.notes[row]) state.confirm.notes[row] = [];
+    state.confirm.notes[row][col] = note;
+    debouncedSyncToPocketBase(false);
 
     try {
         const res = await fetch('/api/google/sheet/update-notes', {
@@ -823,22 +814,102 @@ export async function updateGSheetNote(spreadsheetId, sheetName, row, col, note,
             const error = await res.json();
             throw new Error(error.error || "Erro ao atualizar nota no GSheet");
         }
-        const data = await res.json();
-        
-        if (!state.confirm.notes[row]) state.confirm.notes[row] = [];
-        state.confirm.notes[row][col] = note;
-        debouncedSyncToPocketBase();
-        
-        return data;
+        return await res.json();
     } catch (err) {
-        console.warn("[SYNC] GSheet updateNote failed. Ativando Modo Offline.", err);
-        state.confirm.isOfflineMode = true;
-        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
-        if (!state.confirm.notes[row]) state.confirm.notes[row] = [];
-        state.confirm.notes[row][col] = note;
-        debouncedSyncToPocketBase();
+        console.warn("[SYNC] GSheet updateNote falhou. Guardando no PocketBase.", err.message);
+        debouncedSyncToPocketBase(true);
         return { success: true, offline: true };
     }
+}
+
+export async function syncPendingChangesToGSheet() {
+    if (!state.confirm.sheetId) {
+        throw new Error("Nenhum projeto Google Sheets ativo.");
+    }
+
+    let valuesToSync = state.confirm.data;
+    if (state.confirm.projectId) {
+        try {
+            const pbRec = await pb.collection('confirm_projects').getOne(state.confirm.projectId);
+            if (pbRec?.sheet_data?.values) {
+                valuesToSync = pbRec.sheet_data.values;
+            }
+        } catch (e) {
+            console.warn("[SYNC-ALL] Usando dados em memória local:", e);
+        }
+    }
+
+    if (!valuesToSync || valuesToSync.length === 0) {
+        throw new Error("Nenhum dado encontrado para sincronizar.");
+    }
+
+    let sheetName = 'Folha1';
+    if (state.confirm.range && state.confirm.range.includes('!')) {
+        sheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
+    }
+
+    const batch = [];
+    const headers = valuesToSync[0] || [];
+    const protectedCols = new Set();
+    
+    headers.forEach((col, idx) => {
+        const h = String(col || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        if (
+            (h.includes('AMOUNT') && h.includes('DUTY')) || h === 'VALOR DUTY' || h === 'TOTAL DUTY' ||
+            h === 'BALANCE' || h === 'SALDO' || h === 'BALANCO' ||
+            (h.includes('AMOUNT') && h.includes('FREIGHT')) || (h.includes('VALOR') && h.includes('FRETE')) ||
+            (h.includes('BALANCE') && h.includes('FREIGHT')) || (h.includes('SALDO') && h.includes('FRETE'))
+        ) {
+            protectedCols.add(idx);
+        }
+    });
+
+    for (let r = 1; r < valuesToSync.length; r++) {
+        const row = valuesToSync[r];
+        if (!row || row.length === 0) continue;
+        const c0 = String(row[0] || '').toUpperCase().trim();
+        if (c0 === 'TOTAL' || c0 === 'TOTAIS' || c0.startsWith('TOTAL ')) continue;
+
+        const rowNum = r + 1;
+        for (let c = 0; c < row.length; c++) {
+            if (protectedCols.has(c)) continue;
+            const val = row[c];
+            if (val !== undefined && val !== null && String(val) !== '') {
+                const colLetter = getColLetterFromIdx(c);
+                batch.push({
+                    range: `${sheetName}!${colLetter}${rowNum}`,
+                    values: [[val]]
+                });
+            }
+        }
+    }
+
+    if (batch.length === 0) {
+        return { success: true, message: "Nenhuma alteração para enviar." };
+    }
+
+    const res = await fetch('/api/google/sheet/batch-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spreadsheetId: state.confirm.sheetId, data: batch })
+    });
+
+    if (!res.ok) {
+        const errJson = await res.json();
+        throw new Error(errJson.error || "Falha ao enviar alterações para o Google Sheets");
+    }
+
+    state.confirm.hasPendingSync = false;
+    state.confirm.isOfflineMode = false;
+    if (state.confirm.projectId) {
+        await pb.collection('confirm_projects').update(state.confirm.projectId, {
+            has_pending_sync: false,
+            last_sync: new Date().toISOString()
+        });
+    }
+
+    window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: false, pendingSync: false } }));
+    return { success: true, count: batch.length };
 }
 
 // --- REALTIME EVENTOS (CONFIRM) ---

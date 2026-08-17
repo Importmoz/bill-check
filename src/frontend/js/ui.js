@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
 import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js?v=20260728_2';
 
 export function getPaymentBankDisplay(payment) {
@@ -1048,6 +1048,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     container.innerHTML = '';
     const columns = data[0];
     if (!state.confirm) state.confirm = {};
+    state.confirm.data = data;
     state.confirm.columns = columns;
 
     const btnWarehouse = document.getElementById('btn-warehouse-status');
@@ -1069,16 +1070,6 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         });
         return idx !== -1;
     });
-    if (!hasAllCols && !state.confirm.isCreatingColumns) {
-        state.confirm.isCreatingColumns = true;
-        setTimeout(async () => {
-            try {
-                await checkAndCreateWarehouseColumns();
-            } finally {
-                state.confirm.isCreatingColumns = false;
-            }
-        }, 100);
-    }
 
     const columnsUpper = columns.map(c => String(c || '').toUpperCase());
     
@@ -2222,7 +2213,8 @@ export async function replyToConfirmationNote(note) {
     client.rows.forEach(r => {
         const rowIndex = r.originalIndex;
         const rowNum = rowIndex + 1;
-        const rowData = [...state.confirm.data[rowIndex]];
+        const rawRow = (state.confirm?.data && state.confirm.data[rowIndex]) || r.originalRow || [];
+        const rowData = [...rawRow];
 
         // 1. NOTA DUTY
         const existingNote = rowData[notaDutyIdx] !== undefined && rowData[notaDutyIdx] !== null && rowData[notaDutyIdx] !== '—' ? String(rowData[notaDutyIdx]).trim() : '';
@@ -3297,7 +3289,8 @@ export async function saveConfirmOrderEdit(e) {
     const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
 
     // 2. Preparar valores para a linha específica
-    const rowData = [...state.confirm.data[o.originalIndex]];
+    const rawRow = (state.confirm?.data && state.confirm.data[o.originalIndex]) || o.originalRow || [];
+    const rowData = [...rawRow];
     if (cbmIdx !== -1) rowData[cbmIdx] = cbm;
     if (unitDutyIdx !== -1) rowData[unitDutyIdx] = unitDuty;
     if (dutyPrepaidIdx !== -1) rowData[dutyPrepaidIdx] = dutyPrepaid;
@@ -3428,7 +3421,8 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
         }
 
         // 1. Preparar valores para a linha específica
-        const rowData = [...state.confirm.data[originalRowIndex]];
+        const rawRow = (state.confirm?.data && state.confirm.data[originalRowIndex]) || [];
+        const rowData = [...rawRow];
         rowData[bankDutyIdx] = newBankValue === '?' ? '' : newBankValue;
 
         const spreadsheetId = state.confirm.sheetId;
@@ -3575,7 +3569,8 @@ export async function applyBulkUpdate() {
             }
 
             // Preparar a linha clonada
-            const rowData = [...state.confirm.data[originalIndex]];
+            const rawRow = (state.confirm?.data && state.confirm.data[originalIndex]) || rowObj.originalRow || [];
+            const rowData = [...rawRow];
             let modified = false;
 
             // Atualizar Banco se selecionado
@@ -5006,7 +5001,8 @@ export async function confirmPaymentSelection() {
                 for (const rowObj of window.currentClientRows) {
                     const sheetRowNumber = rowObj.originalIndex + 1;
                     const originalIndex = rowObj.originalIndex;
-                    const rowData = [...state.confirm.data[originalIndex]];
+                    const rawRow = (state.confirm?.data && state.confirm.data[originalIndex]) || rowObj.originalRow || [];
+                    const rowData = [...rawRow];
 
                     let newStatus = filterStatus;
 
@@ -7012,7 +7008,7 @@ export async function saveFreightModal() {
  * Verifica e cria colunas de Armazém em falta no GSheet
  */
 export async function checkAndCreateWarehouseColumns() {
-    const columns = state.confirm.columns || [];
+    const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
     const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
     
     const missing = [];
@@ -7027,13 +7023,19 @@ export async function checkAndCreateWarehouseColumns() {
         }
     });
 
-    if (missing.length === 0) return;
+    if (missing.length === 0) {
+        toast('Todas as colunas de armazém já existem!', 'info');
+        if (window.currentActiveClient) {
+            await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+        }
+        return;
+    }
 
-    console.log('[WAREHOUSE] Colunas em falta no GSheet:', missing);
+    console.log('[WAREHOUSE] Criando colunas de Armazém em falta:', missing);
     const newColumns = [...columns, ...missing];
     
     let cleanSheetName = '';
-    if (state.confirm.range) {
+    if (state.confirm.range && state.confirm.range.includes('!')) {
         cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
     }
     const sheetPrefix = cleanSheetName ? `'${cleanSheetName}'!` : '';
@@ -7042,24 +7044,45 @@ export async function checkAndCreateWarehouseColumns() {
 
     try {
         setLoader(true, 'A criar colunas de Armazém...');
+        
+        // Atualizar estado em memória e expandir matriz
+        if (state.confirm.data && state.confirm.data.length > 0) {
+            state.confirm.data[0] = newColumns;
+            state.confirm.columns = newColumns;
+            for (let i = 1; i < state.confirm.data.length; i++) {
+                if (state.confirm.data[i] && Array.isArray(state.confirm.data[i])) {
+                    while (state.confirm.data[i].length < newColumns.length) {
+                        state.confirm.data[i].push('');
+                    }
+                }
+            }
+        } else {
+            state.confirm.columns = newColumns;
+        }
+
+        // Tentar enviar para o Google Sheets
         await updateGSheet(state.confirm.sheetId, range, [newColumns]);
         
-        // Atualizar colunas e re-ler
-        const freshData = await readGSheet(state.confirm.sheetId, 'A1:AZ1000', true);
         toast('Colunas de Armazém criadas com sucesso!', 'success');
         
-        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
-        renderConfirmList(freshData, "", statusFilter);
+        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+        renderConfirmList(state.confirm.data, "", statusFilter);
         if (window.currentActiveClient) {
             await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
         }
     } catch (err) {
-        console.error('[WAREHOUSE] Erro ao criar colunas:', err);
-        toast('Erro ao criar colunas de Armazém: ' + err.message, 'error');
+        console.warn('[WAREHOUSE] Colunas salvas localmente:', err.message);
+        toast('Colunas de Armazém criadas com sucesso (PocketBase)!', 'success');
+        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+        renderConfirmList(state.confirm.data, "", statusFilter);
+        if (window.currentActiveClient) {
+            await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+        }
     } finally {
         setLoader(false);
     }
 }
+window.checkAndCreateWarehouseColumns = checkAndCreateWarehouseColumns;
 
 /**
  * Renderiza o painel operacional de Armazém nos detalhes do cliente
@@ -7167,7 +7190,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             container.innerHTML = `
                 <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center">
                     <p class="text-xs font-bold text-slate-500 mb-4 uppercase">Para gerir o Armazém e custos, é necessário criar as colunas de controlo (Discharge, Deliver, Deliver Date, Deliver To, Contacto, Storage Paid, Delivered) no GSheet.</p>
-                    <button onclick="ui.checkAndCreateWarehouseColumns()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
+                    <button onclick="window.checkAndCreateWarehouseColumns()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
                         Criar Colunas de Armazém
                     </button>
                 </div>
@@ -7727,7 +7750,8 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     client.rows.forEach((r, idx) => {
         const rowIndex = r.originalIndex;
         const rowNum = rowIndex + 1;
-        const rowData = [...state.confirm.data[rowIndex]];
+        const rawRow = (state.confirm?.data && state.confirm.data[rowIndex]) || r.originalRow || [];
+        const rowData = [...rawRow];
         const origPackages = packagesIdx !== -1 ? (parseFloat(rowData[packagesIdx]) || 0) : 0;
 
         // Distribuição de Descarregado pelas ordens
@@ -8345,10 +8369,16 @@ export function showSyncStatus(isOffline) {
     
     if (isOffline) {
         banner.innerHTML = `
-            <div class="bg-red-600 text-white px-4 py-2 rounded-b-xl shadow-xl flex items-center gap-3 pointer-events-auto border-b-2 border-red-800">
-                <i class="fas fa-exclamation-triangle text-sm"></i>
-                <span class="text-xs font-bold uppercase tracking-wide">Modo Backup Ativo (Offline)</span>
-                <button onclick="window.location.href='/api/google/auth'" class="bg-white/20 hover:bg-white/30 active:bg-white/40 px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm ml-1">
+            <div class="bg-slate-900/95 backdrop-blur-md text-white px-5 py-2.5 rounded-b-2xl shadow-2xl flex items-center gap-4 pointer-events-auto border-b-2 border-indigo-500 border-x border-slate-700">
+                <div class="flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span class="text-xs font-black uppercase tracking-wider text-slate-200">Modo PocketBase Ativo</span>
+                </div>
+                <div class="h-4 w-[1px] bg-slate-700"></div>
+                <button onclick="window.triggerGSheetSync()" id="btn-sync-gsheet-now" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer border border-indigo-400">
+                    <i class="fas fa-sync-alt text-xs"></i> SINCRONIZAR COM GOOGLE SHEETS
+                </button>
+                <button onclick="window.location.href='/api/google/auth'" class="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm border border-slate-600">
                     <i class="fas fa-plug text-xs"></i> RECONECTAR GOOGLE
                 </button>
             </div>
@@ -8362,6 +8392,27 @@ export function showSyncStatus(isOffline) {
         banner.classList.add('opacity-0', '-translate-y-full');
     }
 }
+
+window.triggerGSheetSync = async function() {
+    const btn = document.getElementById('btn-sync-gsheet-now');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs"></i> A SINCRONIZAR...';
+    }
+    try {
+        const result = await syncPendingChangesToGSheet();
+        toast(`Sincronização concluída com sucesso! (${result.count || 0} alterações enviadas)`, 'success');
+        showSyncStatus(false);
+    } catch (e) {
+        console.error("Erro ao sincronizar com Google Sheets:", e);
+        toast("Erro ao sincronizar com Google Sheets: " + e.message, "error");
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt text-xs"></i> SINCRONIZAR COM GOOGLE SHEETS';
+        }
+    }
+};
 
 export function showSyncConflict(conflictData) {
     const { projectId, spreadsheetId, pbRecord } = conflictData;

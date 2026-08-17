@@ -12,12 +12,31 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // Limite 50MB
 });
 
+function resolveRedirectUri(req) {
+  if (process.env.GOOGLE_REDIRECT_URI) {
+    return process.env.GOOGLE_REDIRECT_URI;
+  }
+  
+  let protocol = req.headers['x-forwarded-proto'] || req.protocol;
+  let host = req.get('host') || 'localhost:3000';
+  
+  // Normalizar 127.0.0.1 para localhost se acessado localmente
+  if (host.startsWith('127.0.0.1')) {
+    host = host.replace('127.0.0.1', 'localhost');
+  }
+
+  // Se o host for domínio com SSL (ou atrás de proxy HTTPS)
+  if (host.includes('mycloudspaces.com') || host.includes('sslip.io') || req.headers['x-forwarded-proto'] === 'https') {
+    protocol = 'https';
+  }
+  
+  return `${protocol}://${host}/api/google/auth/callback`;
+}
+
 // Rota para iniciar autenticação
 router.get('/auth', (req, res) => {
   try {
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.get('host');
-    const dynamicRedirectUri = `${protocol}://${host}/api/google/auth/callback`;
+    const dynamicRedirectUri = resolveRedirectUri(req);
     
     console.log(`[AUTH] Iniciando OAuth com redirect_uri: ${dynamicRedirectUri}`);
     
@@ -38,11 +57,26 @@ router.get('/auth', (req, res) => {
 
 // Rota de callback do Google
 router.get('/auth/callback', async (req, res) => {
-  const { code } = req.query;
+  const { code, error: authError } = req.query;
+
+  if (authError) {
+    console.warn(`[AUTH] Autenticação retornou erro do Google: ${authError}`);
+    return res.status(400).send(`
+      <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+        <h1 style="color: #ef4444;">Autenticação Cancelada ou Recusada ⚠️</h1>
+        <p>O Google retornou: <strong>${authError}</strong></p>
+        <a href="/api/google/auth" style="display: inline-block; background: black; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 20px; font-weight: bold;">TENTAR NOVAMENTE</a>
+      </div>
+    `);
+  }
+
+  if (!code) {
+    console.warn('[AUTH] Callback acedido diretamente sem código. Redirecionando para /api/google/auth...');
+    return res.redirect('/api/google/auth');
+  }
+
   try {
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    const host = req.get('host');
-    const dynamicRedirectUri = `${protocol}://${host}/api/google/auth/callback`;
+    const dynamicRedirectUri = resolveRedirectUri(req);
     
     const oauth2Client = getOAuthClient(dynamicRedirectUri);
     const { tokens } = await oauth2Client.getToken(code);
@@ -50,13 +84,20 @@ router.get('/auth/callback', async (req, res) => {
     res.send(`
       <div style="font-family: sans-serif; text-align: center; padding: 50px;">
         <h1 style="color: #22c55e;">Autenticação com Sucesso! ✅</h1>
-        <p>A aplicação agora tem acesso à tua conta Google para uploads.</p>
-        <p>Podes fechar esta janela e voltar ao Dashboard.</p>
-        <a href="/" style="display: inline-block; background: black; color: white; padding: 10px 20px; text-decoration: none; border-radius: 8px; margin-top: 20px;">VOLTAR AO DASHBOARD</a>
+        <p>A aplicação agora tem acesso à tua conta Google para planilhas e suportes.</p>
+        <p>Podes fechar esta janela ou clicar no botão abaixo para voltar.</p>
+        <a href="/" style="display: inline-block; background: black; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 20px; font-weight: bold;">VOLTAR AO SISTEMA</a>
       </div>
     `);
   } catch (error) {
-    res.status(500).send(`Erro na autenticação: ${error.message}`);
+    console.error("[AUTH] Erro ao processar token OAuth:", error.message);
+    res.status(500).send(`
+      <div style="font-family: sans-serif; text-align: center; padding: 50px;">
+        <h1 style="color: #ef4444;">Erro na Autenticação</h1>
+        <p>${error.message}</p>
+        <a href="/api/google/auth" style="display: inline-block; background: black; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 20px; font-weight: bold;">TENTAR NOVAMENTE</a>
+      </div>
+    `);
   }
 });
 
@@ -389,10 +430,22 @@ router.post('/sheet/batch-requests', async (req, res) => {
   }
 });
 
+function extractSpreadsheetId(idOrUrl) {
+  if (!idOrUrl) return '';
+  if (idOrUrl.includes('/d/')) {
+    const match = idOrUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) return match[1];
+  }
+  return idOrUrl;
+}
+
 // Atualizar Sheets
 router.post('/sheet/update', async (req, res) => {
   try {
-    const { spreadsheetId, range, values } = req.body;
+    let { spreadsheetId, range, values } = req.body;
+    spreadsheetId = extractSpreadsheetId(spreadsheetId);
+    if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
+
     const auth = await getGoogleAuth();
     const sheets = google.sheets({ version: 'v4', auth });
     const response = await sheets.spreadsheets.values.update({
@@ -410,7 +463,8 @@ router.post('/sheet/update', async (req, res) => {
 // Atualizar planilhas em lote (Batch Update)
 router.post('/sheet/batch-update', async (req, res) => {
   try {
-    const { spreadsheetId, data } = req.body;
+    let { spreadsheetId, data } = req.body;
+    spreadsheetId = extractSpreadsheetId(spreadsheetId);
     if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
     if (!data || !Array.isArray(data)) return res.status(400).json({ error: "Data array is required" });
 
