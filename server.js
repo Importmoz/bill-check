@@ -55,7 +55,7 @@ app.use(express.static(path.join(__dirname, 'src', 'frontend'), {
 
 // Rota de configuração para o PocketBase
 app.get('/config.js', (req, res) => {
-  const pocketbaseUrl = process.env.POCKETBASE_URL || 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+  const pocketbaseUrl = process.env.POCKETBASE_URL || 'https://pocketbase.mycloudspaces.com';
   const config = {
     POCKETBASE_URL: pocketbaseUrl
   };

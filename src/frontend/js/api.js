@@ -2,7 +2,7 @@
  * Módulo de API e Gestão de Estado para Bill Check
  */
 
-const PB_URL = (window.POCKETBASE_CONFIG && window.POCKETBASE_CONFIG.POCKETBASE_URL) || 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+const PB_URL = (window.POCKETBASE_CONFIG && window.POCKETBASE_CONFIG.POCKETBASE_URL) || 'https://pocketbase.mycloudspaces.com';
 
 // @ts-ignore - PocketBase carregado via CDN
 export const pb = new PocketBase(PB_URL);

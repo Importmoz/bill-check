@@ -8415,7 +8415,7 @@ export function showSyncConflict(conflictData) {
         icon.className = 'fas fa-spinner fa-spin text-indigo-600';
         try {
             // Fetch PB explicitamente, é mais seguro que usar pb globals
-            const pb_url = window.POCKETBASE_CONFIG && window.POCKETBASE_CONFIG.POCKETBASE_URL ? window.POCKETBASE_CONFIG.POCKETBASE_URL : 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+            const pb_url = window.POCKETBASE_CONFIG && window.POCKETBASE_CONFIG.POCKETBASE_URL ? window.POCKETBASE_CONFIG.POCKETBASE_URL : 'https://pocketbase.mycloudspaces.com';
             const restoreData = pbRecord.sheet_data.values || pbRecord.sheet_data;
             await fetch('/api/google/sheet/update', {
                 method: 'POST',
