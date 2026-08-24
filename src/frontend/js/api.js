@@ -128,7 +128,9 @@ export const state = {
     activeBalance: 0,
     finance: {
         groups: [],
-        sheets: []
+        sheets: [],
+        selectedSheets: new Set(),
+        expandedGroups: new Set(JSON.parse(localStorage.getItem('finance_expanded_groups') || '[]'))
     },
     team: {
         tables: [],
@@ -1296,23 +1298,72 @@ export function calculateConfirmProjectTotals(rowsInput) {
 /**
  * Carrega todos os grupos financeiros e consolida automaticamente a partir de confirm_projects
  */
+/**
+ * Carrega todos os grupos financeiros e consolida automaticamente a partir de confirm_projects
+ */
 export async function fetchFinanceData() {
     const userId = pb.authStore.model?.id;
-    if (!userId) return { groups: [], sheets: [] };
 
-    const [groups, confirmProjects] = await Promise.all([
-        pb.collection('groups').getFullList({ filter: `user_id = "${userId}"`, sort: 'order' }),
-        pb.collection('confirm_projects').getFullList({ sort: '-created' })
-    ]);
+    // 1. Tentar buscar grupos do PocketBase (com fallback amplo para não perder grupos criados)
+    let pbGroups = [];
+    try {
+        if (userId) {
+            pbGroups = await pb.collection('groups').getFullList({ filter: `user_id = "${userId}"`, sort: 'order' });
+        }
+        if (!pbGroups || pbGroups.length === 0) {
+            pbGroups = await pb.collection('groups').getFullList({ sort: 'order' });
+        }
+    } catch (e) {
+        console.warn("[FINANCE] Falha ao carregar grupos do PocketBase, usando servidor/local:", e);
+    }
 
-    const hiddenProjects = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
-    const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
+    // 2. Buscar estado persistente do servidor backend
+    let serverConfig = { groups: [], groupMapping: {}, hiddenProjects: [] };
+    try {
+        const sRes = await fetch('/api/finance/state');
+        if (sRes.ok) {
+            serverConfig = await sRes.json();
+        }
+    } catch (sErr) {
+        console.warn("[FINANCE] Falha ao consultar /api/finance/state:", sErr);
+    }
+
+    // 3. Mesclar grupos (PocketBase > Servidor > Local)
+    let groups = [];
+    if (pbGroups && pbGroups.length > 0) {
+        groups = pbGroups;
+        // Sincronizar grupos com o servidor em background para redundância
+        fetch('/api/finance/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groups })
+        }).catch(() => {});
+    } else if (serverConfig.groups && serverConfig.groups.length > 0) {
+        groups = serverConfig.groups;
+    }
+
+    // 4. Buscar projetos do Confirm
+    let confirmProjects = [];
+    try {
+        confirmProjects = await pb.collection('confirm_projects').getFullList({ sort: '-created' });
+    } catch (e) {
+        console.warn("[FINANCE] Falha ao carregar confirm_projects:", e);
+    }
+
+    const localHidden = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
+    const hiddenProjects = Array.from(new Set([...(serverConfig.hiddenProjects || []), ...localHidden]));
+
+    const localGroupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
+    const groupMapping = { ...(serverConfig.groupMapping || {}), ...localGroupMapping };
+
+    // Manter localStorage sincronizado
+    localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
 
     const sheets = confirmProjects
         .filter(p => !hiddenProjects.includes(p.id))
         .map(p => {
             const totals = calculateConfirmProjectTotals(p.sheet_data);
-            const groupId = p.groupId || p.group_id || groupMapping[p.id] || null;
+            const groupId = p.groupId || p.group_id || groupMapping[p.id] || (p.sheetId && groupMapping[p.sheetId]) || null;
             return {
                 id: p.id,
                 title: p.name || "Projeto Sem Nome",
@@ -1336,7 +1387,33 @@ export async function fetchFinanceData() {
 
 export async function createFinanceGroup(name) {
     const maxOrder = state.finance.groups.length > 0 ? Math.max(...state.finance.groups.map(g => g.order || 0)) : 0;
-    return await pb.collection('groups').create({ name, order: maxOrder + 100, user_id: pb.authStore.model.id });
+    let newGroup = null;
+    try {
+        newGroup = await pb.collection('groups').create({ 
+            name, 
+            order: maxOrder + 100, 
+            user_id: pb.authStore.model?.id || '' 
+        });
+    } catch (e) {
+        console.warn("[FINANCE] Falha ao gravar grupo no PocketBase, criando localmente:", e);
+        newGroup = {
+            id: 'grp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            name: name,
+            order: maxOrder + 100
+        };
+    }
+
+    state.finance.groups.push(newGroup);
+    // Sincronizar com o backend
+    try {
+        await fetch('/api/finance/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groups: state.finance.groups })
+        });
+    } catch (e) {}
+
+    return newGroup;
 }
 
 export async function updateFinanceGroupOrder(groupId, direction) {
@@ -1353,55 +1430,190 @@ export async function updateFinanceGroupOrder(groupId, direction) {
     const orderA = groupA.order || 0;
     const orderB = groupB.order || 0;
 
-    await Promise.all([
-        pb.collection('groups').update(groupA.id, { order: orderB }),
-        pb.collection('groups').update(groupB.id, { order: orderA })
-    ]);
+    groupA.order = orderB;
+    groupB.order = orderA;
+
+    groups[index] = groupB;
+    groups[targetIndex] = groupA;
+
+    try {
+        await Promise.all([
+            pb.collection('groups').update(groupA.id, { order: orderB }),
+            pb.collection('groups').update(groupB.id, { order: orderA })
+        ]);
+    } catch (e) {
+        console.warn("[FINANCE] Falha ao atualizar ordem de grupos no PB:", e);
+    }
+
+    try {
+        await fetch('/api/finance/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groups: state.finance.groups })
+        });
+    } catch (e) {}
 }
 
 export async function deleteFinanceGroup(groupId) {
     const affected = state.finance.sheets.filter(s => s.groupId === groupId);
     const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
+    
     for (const sheet of affected) {
         delete groupMapping[sheet.id];
+        if (sheet.sheetId) delete groupMapping[sheet.sheetId];
+        sheet.groupId = null;
         try {
-            await pb.collection('confirm_projects').update(sheet.id, { group_id: null });
-        } catch (e) {
-            console.warn("[FINANCE] Falha ao desvincular grupo no PB:", e);
-        }
+            await pb.collection('confirm_projects').update(sheet.id, { group_id: null, groupId: null });
+        } catch (e) {}
+        try {
+            await fetch('/api/finance/group-mapping', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ projectId: sheet.id, sheetId: sheet.sheetId, groupId: null })
+            });
+        } catch (e) {}
     }
     localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
-    return await pb.collection('groups').delete(groupId);
+
+    state.finance.groups = state.finance.groups.filter(g => g.id !== groupId);
+
+    try {
+        await pb.collection('groups').delete(groupId);
+    } catch (e) {
+        console.warn("[FINANCE] Falha ao apagar grupo no PB:", e);
+    }
+
+    try {
+        await fetch('/api/finance/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ groups: state.finance.groups })
+        });
+    } catch (e) {}
+
+    return { success: true };
 }
 
 export async function saveFinanceSheet(data, id = null) {
     if (!id) return null;
+    const item = state.finance.sheets.find(s => s.id === id);
+    const sheetId = item ? item.sheetId : null;
+
     const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
-    if (data.groupId === null || data.groupId === '') {
+    const targetGroupId = data.groupId || null;
+
+    if (!targetGroupId) {
         delete groupMapping[id];
+        if (sheetId) delete groupMapping[sheetId];
     } else {
-        groupMapping[id] = data.groupId;
+        groupMapping[id] = targetGroupId;
+        if (sheetId) groupMapping[sheetId] = targetGroupId;
     }
     localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
 
+    // 1. Sincronizar com o backend do servidor (persistência permanente)
     try {
-        await pb.collection('confirm_projects').update(id, { group_id: data.groupId || null });
-    } catch (e) {
-        console.warn("[FINANCE] Campo group_id não disponível em confirm_projects. Mapeamento persistido no localStorage.");
+        await fetch('/api/finance/group-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId: id, sheetId: sheetId, groupId: targetGroupId })
+        });
+    } catch (sErr) {
+        console.warn("[FINANCE] Falha ao salvar mapeamento no backend:", sErr);
     }
 
-    const item = state.finance.sheets.find(s => s.id === id);
-    if (item) item.groupId = data.groupId || null;
+    // 2. Tentar atualizar no PocketBase
+    try {
+        await pb.collection('confirm_projects').update(id, { group_id: targetGroupId, groupId: targetGroupId });
+    } catch (e) {
+        // Fallback se PocketBase não aceitar ambos os campos
+        try {
+            await pb.collection('confirm_projects').update(id, { group_id: targetGroupId });
+        } catch (e2) {
+            try {
+                await pb.collection('confirm_projects').update(id, { groupId: targetGroupId });
+            } catch (e3) {
+                console.warn("[FINANCE] PocketBase não possui coluna de grupo no confirm_projects. Persistido no servidor e local.");
+            }
+        }
+    }
+
+    if (item) item.groupId = targetGroupId;
     return item;
 }
 
+export async function saveBulkFinanceSheets(sheetIds, targetGroupId = null) {
+    if (!Array.isArray(sheetIds) || sheetIds.length === 0) return [];
+    
+    const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
+    const backendMappings = [];
+    const updatedItems = [];
+
+    for (const id of sheetIds) {
+        const item = state.finance.sheets.find(s => s.id === id);
+        const sheetId = item ? item.sheetId : null;
+
+        if (!targetGroupId) {
+            delete groupMapping[id];
+            if (sheetId) delete groupMapping[sheetId];
+        } else {
+            groupMapping[id] = targetGroupId;
+            if (sheetId) groupMapping[sheetId] = targetGroupId;
+        }
+
+        backendMappings.push({
+            projectId: id,
+            sheetId: sheetId,
+            groupId: targetGroupId
+        });
+
+        if (item) {
+            item.groupId = targetGroupId;
+            updatedItems.push(item);
+        }
+
+        // Tentar atualizar no PocketBase em background
+        pb.collection('confirm_projects').update(id, { group_id: targetGroupId, groupId: targetGroupId })
+            .catch(() => {
+                pb.collection('confirm_projects').update(id, { group_id: targetGroupId })
+                    .catch(() => {
+                        pb.collection('confirm_projects').update(id, { groupId: targetGroupId }).catch(() => {});
+                    });
+            });
+    }
+
+    localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
+
+    // Sincronizar com o backend em um único request
+    try {
+        await fetch('/api/finance/group-mapping', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mappings: backendMappings })
+        });
+    } catch (sErr) {
+        console.warn("[FINANCE] Falha ao salvar lote no backend:", sErr);
+    }
+
+    return updatedItems;
+}
+
 export async function deleteFinanceSheet(id) {
-    // Opção 1: Arquivar/ocultar do painel Finance em localStorage sem apagar o projeto real do Confirm
+    const item = state.finance.sheets.find(s => s.id === id);
     const hiddenProjects = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
     if (!hiddenProjects.includes(id)) {
         hiddenProjects.push(id);
         localStorage.setItem('finance_hidden_projects', JSON.stringify(hiddenProjects));
     }
+
+    try {
+        await fetch('/api/finance/hidden-projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hiddenProjects })
+        });
+    } catch (e) {}
+
     state.finance.sheets = state.finance.sheets.filter(s => s.id !== id);
     return { success: true, hidden: true };
 }

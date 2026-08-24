@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const googleRoutes = require('./src/backend/routes/googleRoutes');
 const bankRoutes = require('./src/backend/routes/bankRoutes');
 const pautaRoutes = require('./src/backend/routes/pautaRoutes');
+const financeRoutes = require('./src/backend/routes/financeRoutes');
 // Force reload: 2026-05-12 14:20
 
 const app = express();
@@ -123,6 +124,7 @@ app.get('/api/version', (req, res) => {
 app.use('/api/google', googleRoutes);
 app.use('/api/bank', bankRoutes);
 app.use('/api/pauta', pautaRoutes);
+app.use('/api/finance', financeRoutes);
 
 // Rota base para SPA
 app.get(/.*/, (req, res) => {

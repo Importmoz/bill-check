@@ -1,5 +1,5 @@
 const PocketBase = require('pocketbase/cjs');
-const pb = new PocketBase('http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io');
+const pb = new PocketBase('https://pocketbase.mycloudspaces.com');
 
 async function main() {
     try {
