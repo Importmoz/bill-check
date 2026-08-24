@@ -53,6 +53,12 @@ window.removeFinanceSheet = removeFinanceSheet;
 window.moveFinanceSheet = moveFinanceSheet;
 window.renameFinanceGroup = renameFinanceGroup;
 window.handleManualFinanceRefresh = handleManualFinanceRefresh;
+window.toggleFinanceGroupCollapse = toggleFinanceGroupCollapse;
+window.toggleAllFinanceGroups = toggleAllFinanceGroups;
+window.toggleFinanceSheetSelect = toggleFinanceSheetSelect;
+window.toggleSelectAllFinanceGroup = toggleSelectAllFinanceGroup;
+window.applyBulkFinanceGroupMove = applyBulkFinanceGroupMove;
+window.clearFinanceSelection = clearFinanceSelection;
 window.openTable = openTable;
 window.createNewTable = createNewTable;
 window.saveContainer = saveContainer;
@@ -411,6 +417,103 @@ async function renameFinanceGroup(id) {
         await showFinance();
     } catch (err) { ui.toast(err.message, "error"); }
     finally { ui.setLoader(false); }
+}
+
+function toggleFinanceGroupCollapse(groupId) {
+    if (state.finance.expandedGroups.has(groupId)) {
+        state.finance.expandedGroups.delete(groupId);
+    } else {
+        state.finance.expandedGroups.add(groupId);
+    }
+    localStorage.setItem('finance_expanded_groups', JSON.stringify(Array.from(state.finance.expandedGroups)));
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
+function toggleAllFinanceGroups() {
+    const allIds = [...state.finance.groups.map(g => g.id), 'ungrouped'];
+    const allExpanded = allIds.length > 0 && allIds.every(id => state.finance.expandedGroups.has(id));
+    if (allExpanded) {
+        state.finance.expandedGroups.clear();
+    } else {
+        allIds.forEach(id => state.finance.expandedGroups.add(id));
+    }
+    localStorage.setItem('finance_expanded_groups', JSON.stringify(Array.from(state.finance.expandedGroups)));
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
+function toggleFinanceSheetSelect(sheetId, isChecked) {
+    if (isChecked) {
+        state.finance.selectedSheets.add(sheetId);
+    } else {
+        state.finance.selectedSheets.delete(sheetId);
+    }
+    const row = document.getElementById(`finance-row-${sheetId}`);
+    if (row) {
+        if (isChecked) row.classList.add('bg-blue-50/70');
+        else row.classList.remove('bg-blue-50/70');
+    }
+    ui.updateFinanceBulkBar();
+}
+
+function toggleSelectAllFinanceGroup(groupId, isChecked) {
+    const validGroupIds = new Set(state.finance.groups.map(g => g.id));
+    const sheets = state.finance.sheets || [];
+    const groupSheets = groupId === 'ungrouped'
+        ? sheets.filter(s => !s.groupId || !validGroupIds.has(s.groupId))
+        : sheets.filter(s => s.groupId === groupId);
+
+    groupSheets.forEach(s => {
+        if (isChecked) {
+            state.finance.selectedSheets.add(s.id);
+        } else {
+            state.finance.selectedSheets.delete(s.id);
+        }
+        const row = document.getElementById(`finance-row-${s.id}`);
+        if (row) {
+            if (isChecked) row.classList.add('bg-blue-50/70');
+            else row.classList.remove('bg-blue-50/70');
+            const chk = row.querySelector('.finance-sheet-checkbox');
+            if (chk) chk.checked = isChecked;
+        }
+    });
+
+    ui.updateFinanceBulkBar();
+}
+
+async function applyBulkFinanceGroupMove() {
+    const select = document.getElementById('finance-bulk-target-group');
+    const targetGroupId = select ? (select.value || null) : null;
+    const selectedIds = Array.from(state.finance.selectedSheets || []);
+
+    if (selectedIds.length === 0) {
+        return ui.toast("Nenhuma folha selecionada.", "warning");
+    }
+
+    const targetGroupName = targetGroupId 
+        ? (state.finance.groups.find(g => g.id === targetGroupId)?.name || 'Grupo Selecionado')
+        : 'Sem Grupo';
+
+    const btn = document.getElementById('btn-finance-bulk-apply');
+    ui.setBtnLoading(btn, true);
+    ui.setLoader(true, `A alocar ${selectedIds.length} folha(s) para "${targetGroupName}"...`);
+
+    try {
+        await api.saveBulkFinanceSheets(selectedIds, targetGroupId);
+        state.finance.selectedSheets.clear();
+        ui.toast(`${selectedIds.length} folha(s) alocada(s) com sucesso para "${targetGroupName}"!`, "success");
+        await showFinance();
+    } catch (err) {
+        console.error("Erro ao alocar em lote:", err);
+        ui.toast("Erro ao alocar folhas ao grupo: " + err.message, "error");
+    } finally {
+        ui.setLoader(false);
+        ui.setBtnLoading(btn, false);
+    }
+}
+
+function clearFinanceSelection() {
+    state.finance.selectedSheets.clear();
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
 }
 
 async function showDashboard() {

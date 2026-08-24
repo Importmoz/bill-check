@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const googleRoutes = require('./src/backend/routes/googleRoutes');
 const bankRoutes = require('./src/backend/routes/bankRoutes');
 const pautaRoutes = require('./src/backend/routes/pautaRoutes');
+const financeRoutes = require('./src/backend/routes/financeRoutes');
 // Force reload: 2026-05-12 14:20
 
 const app = express();
@@ -55,7 +56,7 @@ app.use(express.static(path.join(__dirname, 'src', 'frontend'), {
 
 // Rota de configuração para o PocketBase
 app.get('/config.js', (req, res) => {
-  const pocketbaseUrl = process.env.POCKETBASE_URL || 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+  const pocketbaseUrl = process.env.POCKETBASE_URL || 'https://pocketbase.mycloudspaces.com';
   const config = {
     POCKETBASE_URL: pocketbaseUrl
   };
@@ -121,6 +122,7 @@ app.get('/api/version', (req, res) => {
 app.use('/api/google', googleRoutes);
 app.use('/api/bank', bankRoutes);
 app.use('/api/pauta', pautaRoutes);
+app.use('/api/finance', financeRoutes);
 
 // Rota base para SPA
 app.get(/.*/, (req, res) => {

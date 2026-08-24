@@ -446,71 +446,118 @@ export function renderFinanceDashboard(onDeleteGroup, onRemoveSheet, onMoveSheet
 
     if (groups.length === 0 && sheets.length === 0) {
         list.innerHTML = '<div class="text-center py-12 bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl uppercase font-black text-gray-300 tracking-tighter text-lg">Nenhum dado consolidado</div>';
+        updateFinanceBulkBar();
         return;
     }
 
-    // Renderizar grupos
+    const validGroupIds = new Set(groups.map(g => g.id));
+
+    // Renderizar grupos normais
     groups.forEach(group => {
         const groupSheets = sheets.filter(s => s.groupId === group.id);
-        list.appendChild(createFinanceGroupSection(group, groupSheets, onDeleteGroup, onRemoveSheet, onRenameGroup));
+        list.appendChild(createFinanceGroupSection(group, groupSheets, onDeleteGroup, onRemoveSheet, onRenameGroup, false));
     });
 
-    // Renderizar folhas sem grupo
-    const ungrouped = sheets.filter(s => !s.groupId);
+    // Renderizar folhas sem grupo (ou cujo grupo associado já não existe)
+    const ungrouped = sheets.filter(s => !s.groupId || !validGroupIds.has(s.groupId));
     if (ungrouped.length > 0) {
-        const section = document.createElement('div');
-        section.className = "mt-6";
-        section.innerHTML = `
-            <div class="flex items-center gap-2 mb-2 px-1">
-                <span class="text-[9px] font-black uppercase tracking-widest text-gray-400">Folhas Sem Grupo</span>
-            </div>
-        `;
-        section.appendChild(createFinanceTable(ungrouped, onRemoveSheet));
-        list.appendChild(section);
+        const ungroupedGroup = { id: 'ungrouped', name: 'Folhas Sem Grupo' };
+        list.appendChild(createFinanceGroupSection(ungroupedGroup, ungrouped, null, onRemoveSheet, null, true));
     }
 
     renderFinanceSummary(sheets);
+    updateFinanceBulkBar();
+
+    // Atualizar texto do botão global de expandir/recolher
+    const toggleAllBtnText = document.getElementById('btn-finance-toggle-all-text');
+    if (toggleAllBtnText) {
+        const allIds = [...groups.map(g => g.id), 'ungrouped'];
+        const allExpanded = allIds.length > 0 && allIds.every(id => state.finance.expandedGroups.has(id));
+        toggleAllBtnText.innerText = allExpanded ? 'Recolher Todos' : 'Expandir Todos';
+    }
 }
 
-function createFinanceGroupSection(group, sheets, onDelete, onRemoveSheet, onRename) {
+function createFinanceGroupSection(group, sheets, onDelete, onRemoveSheet, onRename, isUngrouped = false) {
     const section = document.createElement('div');
-    section.className = "mb-8 border-b border-slate-100 pb-6";
+    const isCollapsed = !state.finance.expandedGroups.has(group.id);
+
+    // Espaçamento compacto quando fechado, e destacado quando aberto
+    section.className = isCollapsed 
+        ? "bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-2.5 px-3.5 shadow-sm transition-all"
+        : "bg-white border border-slate-400 rounded-xl p-4 shadow-md transition-all";
+
+    // Totais do grupo para exibição resumida quando colapsado
+    const groupTotals = sheets.reduce((acc, s) => {
+        acc.dutyPrepaid += (s.dutyPrepaid || 0);
+        acc.amountDuty += (s.amountDuty || 0);
+        acc.paid += (s.paid || 0);
+        acc.balance += (s.balance || 0);
+        return acc;
+    }, { dutyPrepaid: 0, amountDuty: 0, paid: 0, balance: 0 });
+
+    const moveButtons = !isUngrouped ? `
+        <div class="flex items-center gap-0.5 mr-1" onclick="event.stopPropagation()">
+            <button onclick="window.moveFinanceGroup('${group.id}', 'up')" class="p-1 text-slate-300 hover:text-slate-900 transition-all rounded" title="Mover grupo para cima">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+            </button>
+            <button onclick="window.moveFinanceGroup('${group.id}', 'down')" class="p-1 text-slate-300 hover:text-slate-900 transition-all rounded" title="Mover grupo para baixo">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+        </div>
+    ` : '';
+
+    const actionButtons = !isUngrouped ? `
+        <button onclick="window.renameFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-slate-400 hover:text-slate-900 transition-all">Renomear</button>
+        <button onclick="window.deleteFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-red-500/40 hover:text-red-500 transition-all">Remover</button>
+    ` : '';
 
     section.innerHTML = `
-        <div class="flex justify-between items-center mb-3 px-1">
-            <div class="flex items-center gap-4">
-                <div class="flex flex-col gap-0.5 mr-2">
-                    <button onclick="window.moveFinanceGroup('${group.id}', 'up')" class="text-slate-300 hover:text-slate-900 transition-all">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
-                    </button>
-                    <button onclick="window.moveFinanceGroup('${group.id}', 'down')" class="text-slate-300 hover:text-slate-900 transition-all">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                    </button>
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center ${isCollapsed ? '' : 'mb-3.5 border-b border-slate-100 pb-2.5'} px-0.5 gap-2">
+            <div class="flex items-center gap-3 cursor-pointer select-none group flex-wrap flex-1" onclick="window.toggleFinanceGroupCollapse('${group.id}')">
+                ${moveButtons}
+                <div class="flex items-center gap-2">
+                    <h3 class="text-sm font-black uppercase tracking-tight text-slate-900">${group.name}</h3>
+                    <span class="text-[9px] bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-bold uppercase text-slate-500">${sheets.length} Itens</span>
                 </div>
-                <h3 class="text-sm font-black uppercase tracking-tight text-slate-900 border-b border-slate-900 pb-0.5">${group.name}</h3>
-                <span class="text-[9px] bg-slate-50 border border-slate-200 px-2 py-0.5 rounded font-bold uppercase text-slate-400">${sheets.length} Itens</span>
+                ${isCollapsed ? `
+                    <div class="flex items-center gap-2.5 text-[9px] font-bold uppercase text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md ml-1">
+                        <span>Dever: <strong class="text-slate-900">${formatMZN(groupTotals.amountDuty)}</strong></span>
+                        <span class="text-slate-300">•</span>
+                        <span>Pago: <strong class="text-green-700">${formatMZN(groupTotals.paid)}</strong></span>
+                        <span class="text-slate-300">•</span>
+                        <span>Saldo: <strong class="${groupTotals.balance > 0 ? 'text-red-700' : 'text-blue-700'}">${formatMZN(groupTotals.balance)}</strong></span>
+                    </div>
+                ` : ''}
             </div>
-            <div class="flex gap-4">
-                <button onclick="window.renameFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-slate-400 hover:text-slate-900 transition-all">Renomear</button>
-                <button onclick="window.deleteFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-red-500/40 hover:text-red-500 transition-all">Remover</button>
+            <div class="flex items-center gap-3 ml-auto md:ml-0" onclick="event.stopPropagation()">
+                <button onclick="window.toggleFinanceGroupCollapse('${group.id}')" class="text-[9px] font-black uppercase text-slate-700 hover:text-black transition-all bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
+                    ${isCollapsed ? 'Visualizar Lista' : 'Ocultar Lista'}
+                </button>
+                ${actionButtons}
             </div>
         </div>
     `;
 
-    const tableContainer = createFinanceTable(sheets, onRemoveSheet);
+    const tableContainer = createFinanceTable(sheets, onRemoveSheet, group.id);
+    if (isCollapsed) {
+        tableContainer.classList.add('hidden');
+    }
+    tableContainer.id = `finance-group-table-${group.id}`;
     section.appendChild(tableContainer);
 
     return section;
 }
 
-function createFinanceTable(sheets, onRemove) {
+function createFinanceTable(sheets, onRemove, groupId = '') {
     const tableContainer = document.createElement('div');
-    tableContainer.className = "bg-white border border-slate-700 rounded-lg overflow-hidden shadow-[3px_3px_0px_0px_rgba(15,23,42,0.1)]";
+    tableContainer.className = "bg-white border border-slate-700 rounded-lg overflow-hidden shadow-[3px_3px_0px_0px_rgba(15,23,42,0.1)] transition-all";
 
     if (sheets.length === 0) {
-        tableContainer.innerHTML = '<div class="p-6 text-center text-slate-300 uppercase font-black text-[9px] tracking-widest italic">Vazio - Mova folhas para aqui</div>';
+        tableContainer.innerHTML = '<div class="p-6 text-center text-slate-300 uppercase font-black text-[9px] tracking-widest italic">Vazio - Selecione folhas e aloque para este grupo</div>';
         return tableContainer;
     }
+
+    const allInGroupSelected = sheets.length > 0 && sheets.every(s => state.finance.selectedSheets.has(s.id));
 
     const table = document.createElement('table');
     table.className = "w-full text-left border-collapse";
@@ -518,6 +565,9 @@ function createFinanceTable(sheets, onRemove) {
     table.innerHTML = `
         <thead>
             <tr class="bg-slate-50 text-[9px] font-normal uppercase tracking-widest text-slate-500 border-b border-slate-700">
+                <th class="p-3 w-10 text-center">
+                    <input type="checkbox" id="chk-group-${groupId}" ${allInGroupSelected ? 'checked' : ''} onchange="window.toggleSelectAllFinanceGroup('${groupId}', this.checked)" class="w-3.5 h-3.5 rounded border-gray-300 text-black focus:ring-black cursor-pointer align-middle" title="Selecionar todas as folhas deste grupo">
+                </th>
                 <th class="p-3">Documento</th>
                 <th class="p-3 w-32">Grupo</th>
                 <th class="p-3 text-center">Duty Prep</th>
@@ -528,8 +578,13 @@ function createFinanceTable(sheets, onRemove) {
             </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
-            ${sheets.map(s => `
-                <tr class="group hover:bg-slate-50 transition-colors">
+            ${sheets.map(s => {
+                const isSelected = state.finance.selectedSheets.has(s.id);
+                return `
+                <tr class="group hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/70' : ''}" id="finance-row-${s.id}">
+                    <td class="p-3 text-center">
+                        <input type="checkbox" data-sheet-id="${s.id}" ${isSelected ? 'checked' : ''} onchange="window.toggleFinanceSheetSelect('${s.id}', this.checked)" class="finance-sheet-checkbox w-3.5 h-3.5 rounded border-gray-300 text-black focus:ring-black cursor-pointer align-middle">
+                    </td>
                     <td class="p-3">
                         <div class="flex flex-col">
                             <span onclick="window.selectConfirmProject('${s.sheetId}', '${s.folderId || ''}', '${(s.title || '').replace(/'/g, "\\'")}')" class="font-bold text-[10px] uppercase text-gray-900 leading-tight cursor-pointer hover:text-blue-600 transition-colors flex items-center gap-1.5" title="Abrir grelha operacional no módulo Confirm">
@@ -554,21 +609,23 @@ function createFinanceTable(sheets, onRemove) {
                     <td class="p-3 text-center font-normal text-[10px] text-green-700">${formatMZN(s.paid)}</td>
                     <td class="p-3 text-center font-normal text-[10px] ${s.balance > 0 ? 'text-red-700' : 'text-blue-700'}">${formatMZN(s.balance)}</td>
                     <td class="p-3 text-right">
-                        <button onclick="window.removeFinanceSheet('${s.id}')" class="text-gray-200 hover:text-red-600 transition-all">
+                        <button onclick="window.removeFinanceSheet('${s.id}')" class="text-gray-200 hover:text-red-600 transition-all" title="Ocultar folha do painel financeiro">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
                         </button>
                     </td>
                 </tr>
-            `).join('')}
+                `;
+            }).join('')}
         </tbody>
         <tfoot class="bg-slate-700 text-white font-black text-[9px] uppercase">
             <tr>
+                <td class="p-3"></td>
                 <td class="p-3" colspan="2">Consolidado</td>
-                <td class="p-3 text-center">${formatMZN(sheets.reduce((a, b) => a + b.dutyPrepaid, 0))}</td>
-                <td class="p-3 text-center">${formatMZN(sheets.reduce((a, b) => a + b.amountDuty, 0))}</td>
-                <td class="p-3 text-center text-green-300">${formatMZN(sheets.reduce((a, b) => a + b.paid, 0))}</td>
-                <td class="p-3 text-center ${sheets.reduce((a, b) => a + b.balance, 0) > 0 ? 'text-red-300' : 'text-blue-200'}">
-                    ${formatMZN(sheets.reduce((a, b) => a + b.balance, 0))}
+                <td class="p-3 text-center">${formatMZN(sheets.reduce((a, b) => a + (b.dutyPrepaid || 0), 0))}</td>
+                <td class="p-3 text-center">${formatMZN(sheets.reduce((a, b) => a + (b.amountDuty || 0), 0))}</td>
+                <td class="p-3 text-center text-green-300">${formatMZN(sheets.reduce((a, b) => a + (b.paid || 0), 0))}</td>
+                <td class="p-3 text-center ${sheets.reduce((a, b) => a + (b.balance || 0), 0) > 0 ? 'text-red-300' : 'text-blue-200'}">
+                    ${formatMZN(sheets.reduce((a, b) => a + (b.balance || 0), 0))}
                 </td>
                 <td></td>
             </tr>
@@ -577,6 +634,30 @@ function createFinanceTable(sheets, onRemove) {
 
     tableContainer.appendChild(table);
     return tableContainer;
+}
+
+export function updateFinanceBulkBar() {
+    const bar = document.getElementById('finance-bulk-bar');
+    if (!bar) return;
+
+    const count = state.finance.selectedSheets ? state.finance.selectedSheets.size : 0;
+    if (count > 0) {
+        bar.classList.remove('hidden');
+        const countEl = document.getElementById('finance-bulk-count');
+        if (countEl) countEl.innerText = count;
+
+        const selectEl = document.getElementById('finance-bulk-target-group');
+        if (selectEl) {
+            const currentVal = selectEl.value;
+            selectEl.innerHTML = `
+                <option value="">Sem Grupo (Desagrupar)</option>
+                ${state.finance.groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('')}
+            `;
+            if (currentVal) selectEl.value = currentVal;
+        }
+    } else {
+        bar.classList.add('hidden');
+    }
 }
 
 export function renderFinanceSummary(sheets) {

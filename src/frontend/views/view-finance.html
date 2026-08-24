@@ -10,7 +10,14 @@
                 </button>
                 <h1 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">FINANCE</h1>
             </div>
-            <div class="flex gap-2 w-full md:w-auto">
+            <div class="flex flex-wrap gap-2 w-full md:w-auto">
+                <button id="btn-finance-toggle-all" onclick="window.toggleAllFinanceGroups()" class="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl text-[10px] font-bold uppercase transition-all hover:border-black active:scale-95 text-gray-700" title="Expandir ou Recolher todos os grupos">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M7 15l5 5 5-5"></path>
+                        <path d="M7 9l5-5 5 5"></path>
+                    </svg>
+                    <span id="btn-finance-toggle-all-text">Recolher Todos</span>
+                </button>
                 <button id="btn-finance-refresh" onclick="handleManualFinanceRefresh()" class="flex-1 md:flex-none justify-center flex items-center gap-2 px-4 py-3 bg-white border-2 border-gray-200 rounded-xl text-[10px] font-bold uppercase transition-all hover:border-black active:scale-95">
                     <svg id="finance-refresh-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
@@ -33,6 +40,32 @@
             </div>
         </div>
 
-        <div id="finance-summary" class="mb-10"></div>
-        <div id="finance-content" class="space-y-12"></div>
+        <div id="finance-summary" class="mb-8"></div>
+        <div id="finance-content" class="space-y-2.5 pb-24"></div>
+
+        <!-- Barra de Ações em Massa (Bulk Selection) -->
+        <div id="finance-bulk-bar" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-900/95 backdrop-blur text-white px-6 py-4 rounded-2xl shadow-2xl border-2 border-gray-700 hidden flex items-center gap-4 transition-all duration-300 transform translate-y-0 max-w-2xl w-[90%]">
+            <div class="flex items-center gap-2 pr-4 border-r border-gray-700">
+                <span class="w-6 h-6 rounded-full bg-blue-500 text-white font-black text-[11px] flex items-center justify-center" id="finance-bulk-count">0</span>
+                <span class="text-[11px] font-bold uppercase tracking-wider text-gray-300">Selecionados</span>
+            </div>
+            <div class="flex-1 flex items-center gap-2">
+                <label class="text-[10px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">Mover para:</label>
+                <select id="finance-bulk-target-group" class="bg-gray-800 border border-gray-600 text-white text-xs font-bold rounded-xl px-3 py-2 outline-none focus:border-blue-400 w-full uppercase">
+                    <option value="">Sem Grupo (Desagrupar)</option>
+                </select>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btn-finance-bulk-apply" onclick="window.applyBulkFinanceGroupMove()" class="bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase px-4 py-2.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 whitespace-nowrap">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M5 12h14"></path>
+                        <path d="m12 5 7 7-7 7"></path>
+                    </svg>
+                    Alocar
+                </button>
+                <button onclick="window.clearFinanceSelection()" class="text-gray-400 hover:text-white text-[10px] font-bold uppercase px-2 py-2 transition-all">
+                    Cancelar
+                </button>
+            </div>
+        </div>
     </div>
