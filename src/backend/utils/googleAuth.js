@@ -32,7 +32,7 @@ function getOAuthClient(redirect_uri_param = null) {
     }
 
     if (credentials) {
-      const web = credentials.web || {};
+      const web = credentials.web || credentials.installed || {};
       client_id = client_id || credentials.client_id || web.client_id;
       client_secret = client_secret || credentials.client_secret || web.client_secret;
       
@@ -40,6 +40,17 @@ function getOAuthClient(redirect_uri_param = null) {
         redirect_uri = credentials.redirect_uri || (web.redirect_uris ? web.redirect_uris[0] : null);
       }
     }
+  }
+
+  // Sanitizar espaços em branco, quebras de linha e aspas acidentais
+  if (client_id && typeof client_id === 'string') {
+    client_id = client_id.trim().replace(/^["']|["']$/g, '');
+  }
+  if (client_secret && typeof client_secret === 'string') {
+    client_secret = client_secret.trim().replace(/^["']|["']$/g, '');
+  }
+  if (redirect_uri && typeof redirect_uri === 'string') {
+    redirect_uri = redirect_uri.trim().replace(/^["']|["']$/g, '');
   }
 
   if (!client_id || !client_secret) {

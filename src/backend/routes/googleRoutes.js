@@ -37,13 +37,15 @@ function resolveRedirectUri(req) {
 router.get('/auth', (req, res) => {
   try {
     const dynamicRedirectUri = resolveRedirectUri(req);
-    
     console.log(`[AUTH] Iniciando OAuth com redirect_uri: ${dynamicRedirectUri}`);
     
     const oauth2Client = getOAuthClient(dynamicRedirectUri);
+    const statePayload = Buffer.from(JSON.stringify({ redirect_uri: dynamicRedirectUri })).toString('base64');
+
     const url = oauth2Client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
+      state: statePayload,
       scope: [
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
@@ -57,7 +59,7 @@ router.get('/auth', (req, res) => {
 
 // Rota de callback do Google
 router.get('/auth/callback', async (req, res) => {
-  const { code, error: authError } = req.query;
+  const { code, state, error: authError } = req.query;
 
   if (authError) {
     console.warn(`[AUTH] Autenticação retornou erro do Google: ${authError}`);
@@ -75,10 +77,19 @@ router.get('/auth/callback', async (req, res) => {
     return res.redirect('/api/google/auth');
   }
 
+  let redirectUriToUse = resolveRedirectUri(req);
+  if (state) {
+    try {
+      const parsed = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+      if (parsed && parsed.redirect_uri) {
+        redirectUriToUse = parsed.redirect_uri;
+      }
+    } catch (e) {}
+  }
+
   try {
-    const dynamicRedirectUri = resolveRedirectUri(req);
-    
-    const oauth2Client = getOAuthClient(dynamicRedirectUri);
+    console.log(`[AUTH] Trocando código OAuth com redirect_uri: ${redirectUriToUse}`);
+    const oauth2Client = getOAuthClient(redirectUriToUse);
     const { tokens } = await oauth2Client.getToken(code);
     fs.writeFileSync(TOKENS_PATH, JSON.stringify(tokens, null, 2));
     res.send(`
@@ -91,11 +102,18 @@ router.get('/auth/callback', async (req, res) => {
     `);
   } catch (error) {
     console.error("[AUTH] Erro ao processar token OAuth:", error.message);
+    const clientIdHint = process.env.GOOGLE_CLIENT_ID ? `${process.env.GOOGLE_CLIENT_ID.substring(0, 15)}...` : '(não definido)';
     res.status(500).send(`
-      <div style="font-family: sans-serif; text-align: center; padding: 50px;">
-        <h1 style="color: #ef4444;">Erro na Autenticação</h1>
-        <p>${error.message}</p>
-        <a href="/api/google/auth" style="display: inline-block; background: black; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin-top: 20px; font-weight: bold;">TENTAR NOVAMENTE</a>
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 40px 20px; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #ef4444; font-size: 24px; margin-bottom: 8px;">Erro na Autenticação</h1>
+        <p style="color: #64748b; font-size: 14px; margin-bottom: 24px;">O Google recusou a troca de token: <strong>${error.message}</strong></p>
+        
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; text-align: left; font-size: 12px; margin-bottom: 24px;">
+          <p style="margin: 4px 0;"><strong>URI Utilizado:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${redirectUriToUse}</code></p>
+          <p style="margin: 4px 0;"><strong>Client ID:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${clientIdHint}</code></p>
+        </div>
+
+        <a href="/api/google/auth" style="display: inline-block; background: black; color: white; padding: 12px 28px; text-decoration: none; border-radius: 10px; font-weight: bold; font-size: 13px;">TENTAR NOVAMENTE</a>
       </div>
     `);
   }
