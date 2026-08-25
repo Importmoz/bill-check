@@ -219,6 +219,11 @@ function hideAllViews() {
 export function showView(viewId) {
     hideAllViews();
     
+    const financeBulkBar = document.getElementById('finance-bulk-bar');
+    if (financeBulkBar && viewId !== 'view-finance') {
+        financeBulkBar.classList.add('hidden');
+    }
+    
     // Se estivermos a sair do módulo CONFIRM (GSheet específico), cancelamos a subscrição
     if (!viewId.startsWith('view-confirm-')) {
         if (typeof unsubscribeConfirmEvents === 'function') {
