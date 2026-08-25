@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// URL do servidor principal
-const PB_URL = 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+import { getPocketBaseUrl } from '../config';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -18,7 +16,8 @@ export default function LoginScreen({ navigation }) {
     
     setLoading(true);
     try {
-      const response = await fetch(`${PB_URL}/api/collections/users/auth-with-password`, {
+      const pbUrl = await getPocketBaseUrl();
+      const response = await fetch(`${pbUrl}/api/collections/users/auth-with-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, ActivityIndicator, Alert, SafeAreaView, TextInput } from 'react-native';
-
-const API_BASE = 'http://10.140.113.44:3000';
+import { getApiBaseUrl } from '../config';
 
 export default function WarehouseGuidesScreen({ route, navigation }) {
   const { project } = route.params;
@@ -17,22 +16,31 @@ export default function WarehouseGuidesScreen({ route, navigation }) {
   const loadSheetData = async () => {
     try {
       setLoading(true);
-      
-      const response = await fetch(`${API_BASE}/api/google/sheet/read`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          spreadsheetId: project.sheetId || project.sheet_id,
-          range: 'A1:AZ1000'
-        })
-      });
+      const apiBase = await getApiBaseUrl();
+      let rows = [];
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Erro ao ler GSheet');
+      try {
+        const response = await fetch(`${apiBase}/api/google/sheet/read`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            spreadsheetId: project.sheetId || project.sheet_id,
+            range: 'A1:AZ1000'
+          })
+        });
 
-      const sheetId = project.sheetId || project.sheet_id;
+        if (response.ok) {
+          const data = await response.json();
+          rows = data.values || [];
+        }
+      } catch (e) {
+        console.warn('Falha na leitura direta do GSheet, usando dados locais do PocketBase:', e);
+      }
 
-      const rows = data.values || [];
+      // Fallback para os dados já armazenados no PocketBase (project.sheet_data)
+      if (rows.length === 0 && project.sheet_data) {
+        rows = project.sheet_data.values || (Array.isArray(project.sheet_data) ? project.sheet_data : []);
+      }
       if (rows.length < 2) {
          setProcesses([]);
          return;

@@ -3,23 +3,16 @@ import { StyleSheet, Text, View, TouchableOpacity, Alert, ActivityIndicator, Tex
 import * as DocumentPicker from 'expo-document-picker';
 import { File, UploadType } from 'expo-file-system';
 import { useState, useEffect } from 'react';
+import { getApiBaseUrl, getPocketBaseUrl, formatUrl, DEFAULT_PB_URL, DEFAULT_API_BASE } from '../config';
 
 export default function UploadScreen() {
-  const [serverIP, setServerIP] = useState('m447cyfq0dvffd1xwstwi1ca.144.91.110.199.sslip.io');
+  const [serverIP, setServerIP] = useState(DEFAULT_API_BASE);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
   
   const [connStatus, setConnStatus] = useState('checking'); // 'checking', 'ok', 'error'
   const [isCheckingConn, setIsCheckingConn] = useState(false);
-
-  const formatUrl = (ip) => {
-    let cleanIp = ip.trim().replace(/\/$/, '');
-    if (!cleanIp.startsWith('http://') && !cleanIp.startsWith('https://')) {
-      cleanIp = 'http://' + cleanIp;
-    }
-    return cleanIp;
-  };
 
   const testConnection = async (ip, silent = false) => {
     if (!ip) return;
@@ -115,7 +108,7 @@ export default function UploadScreen() {
           const configRes = await fetch(`${formatUrl(serverIP)}/config.js`);
           const configText = await configRes.text();
           const pbUrlMatch = configText.match(/"POCKETBASE_URL":\s*"([^"]+)"/);
-          const pbUrl = pbUrlMatch ? pbUrlMatch[1] : 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+          const pbUrl = pbUrlMatch ? pbUrlMatch[1] : DEFAULT_PB_URL;
 
           // 2. Iterar sobre os movimentos e gravar
           if (data && data.length > 0) {

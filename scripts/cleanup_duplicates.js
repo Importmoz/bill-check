@@ -1,7 +1,7 @@
 const PocketBase = require('pocketbase').default;
 
 // URL do servidor (conforme api.js)
-const PB_URL = 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+const PB_URL = process.env.POCKETBASE_URL || 'https://pocketbase.mycloudspaces.com';
 const pb = new PocketBase(PB_URL);
 
 async function runCleanup(email, password) {

@@ -3,7 +3,7 @@
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
 import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
-import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js?v=20260728_2';
+import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js';
 
 export function getPaymentBankDisplay(payment) {
     let rawBank = payment.bank;

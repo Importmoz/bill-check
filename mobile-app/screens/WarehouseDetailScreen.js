@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, ActivityIndicator, SafeAreaView, ScrollView } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadAsync, FileSystemUploadType } from 'expo-file-system/legacy';
-
-const API_BASE = 'http://10.140.113.44:3000';
+import { getApiBaseUrl } from '../config';
 
 function getColumnLetter(colIndex) {
   let letter = '';
@@ -52,6 +51,7 @@ export default function WarehouseDetailScreen({ route, navigation }) {
 
     try {
       setLoading(true);
+      const apiBase = await getApiBaseUrl();
 
       // 0. Encontrar ou criar a pasta do cliente no Google Drive do projeto
       const rootFolderId = project.folderId || project.folder_id || '';
@@ -59,7 +59,7 @@ export default function WarehouseDetailScreen({ route, navigation }) {
       
       let clientFolderId = null;
 
-      const listRes = await fetch(`${API_BASE}/api/google/drive/list`, {
+      const listRes = await fetch(`${apiBase}/api/google/drive/list`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ folderId: rootFolderId })
@@ -94,7 +94,7 @@ export default function WarehouseDetailScreen({ route, navigation }) {
       if (!clientFolderId) {
          const cleanCode = String(process.noValue || '').split('.')[0].split(',')[0].trim();
          const newFolderName = cleanCode ? `${cleanCode}-${process.clientName}` : process.clientName;
-         const createRes = await fetch(`${API_BASE}/api/google/drive/create-folder`, {
+         const createRes = await fetch(`${apiBase}/api/google/drive/create-folder`, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
            body: JSON.stringify({ name: newFolderName, parentId: rootFolderId })
@@ -116,7 +116,7 @@ export default function WarehouseDetailScreen({ route, navigation }) {
         // Usar uploadAsync diretamente. Caso FileSystemUploadType seja undefined, usar valor 1 (MULTIPART) fallback.
         const uploadTypeToUse = (typeof FileSystemUploadType !== 'undefined' && FileSystemUploadType.MULTIPART) ? FileSystemUploadType.MULTIPART : 1;
         
-        const uploadRes = await uploadAsync(`${API_BASE}/api/google/drive/upload`, photoUri, {
+        const uploadRes = await uploadAsync(`${apiBase}/api/google/drive/upload`, photoUri, {
           httpMethod: 'POST',
           uploadType: uploadTypeToUse,
           fieldName: 'file',
@@ -191,7 +191,7 @@ export default function WarehouseDetailScreen({ route, navigation }) {
 
       // Se houverem mudanças estruturais, executamos a API de estruturação primeiro
       if (structuralRequests.length > 0) {
-          const structRes = await fetch(`${API_BASE}/api/google/sheet/batch-requests`, {
+          const structRes = await fetch(`${apiBase}/api/google/sheet/batch-requests`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -254,7 +254,7 @@ export default function WarehouseDetailScreen({ route, navigation }) {
         throw new Error('As colunas DELIVERED ou FOTO não foram encontradas no ficheiro.');
       }
 
-      const updateRes = await fetch(`${API_BASE}/api/google/sheet/batch-update`, {
+      const updateRes = await fetch(`${apiBase}/api/google/sheet/batch-update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

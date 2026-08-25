@@ -1110,13 +1110,28 @@ export async function deleteConfirmProject(id) {
  * Procura todas as tabelas e calcula balanços
  */
 export async function fetchDashboardData() {
-    const userId = pb.authStore.model?.id;
-    if (!userId) return [];
+    const user = pb.authStore.model;
+    if (!user) return [];
+    const userId = user.id;
+    const isAdmin = user.role === 'ADMIN';
 
-    const [tables, containers, balance] = await Promise.all([
-        pb.collection('tables').getFullList({ filter: `user_id = "${userId}"`, sort: '-created' }),
-        pb.collection('containers').getFullList({ filter: `user_id = "${userId}"`, sort: 'created' }),
-        pb.collection('balance').getFullList({ filter: `user_id = "${userId}"`, sort: 'created' })
+    let tables = [];
+    try {
+        const filter = isAdmin ? '' : `user_id = "${userId}" || user_id = ""`;
+        tables = await pb.collection('tables').getFullList(filter ? { filter, sort: '-created' } : { sort: '-created' });
+    } catch (e) {
+        tables = await pb.collection('tables').getFullList({ sort: '-created' });
+    }
+
+    if (tables.length === 0 && !isAdmin) {
+        try {
+            tables = await pb.collection('tables').getFullList({ sort: '-created' });
+        } catch (e) {}
+    }
+
+    const [containers, balance] = await Promise.all([
+        pb.collection('containers').getFullList({ sort: 'created' }),
+        pb.collection('balance').getFullList({ sort: 'created' })
     ]);
     
     console.log(`[API] Tabelas encontradas: ${tables.length}, Contentores: ${containers.length}, Balanços: ${balance.length}`);
@@ -1152,12 +1167,11 @@ export async function fetchDashboardData() {
  * Carrega dados de uma tabela específica
  */
 export async function fetchTableData(tableId) {
-    const userId = pb.authStore.model.id;
     state.currentTableId = tableId;
     
     const [containers, balance] = await Promise.all([
-        pb.collection('containers').getFullList({ filter: `table_id = "${tableId}" && user_id = "${userId}"`, sort: 'created' }),
-        pb.collection('balance').getFullList({ filter: `table_id = "${tableId}" && user_id = "${userId}"`, sort: 'created' })
+        pb.collection('containers').getFullList({ filter: `table_id = "${tableId}"`, sort: 'created' }),
+        pb.collection('balance').getFullList({ filter: `table_id = "${tableId}"`, sort: 'created' })
     ]);
 
     state.containers = containers;
@@ -1215,6 +1229,9 @@ export async function registerPayment(tableId, amount, date) {
  */
 export function calculateConfirmProjectTotals(rowsInput) {
     let rows = [];
+    if (typeof rowsInput === 'string') {
+        try { rowsInput = JSON.parse(rowsInput); } catch (e) {}
+    }
     if (Array.isArray(rowsInput)) {
         rows = rowsInput;
     } else if (rowsInput && Array.isArray(rowsInput.values)) {
@@ -1296,15 +1313,35 @@ export function calculateConfirmProjectTotals(rowsInput) {
 }
 
 /**
- * Carrega todos os grupos financeiros e consolida automaticamente a partir de confirm_projects
+ * Carrega todos os grupos financeiros e consolida automaticamente a partir do backend ou confirm_projects
  */
-/**
- * Carrega todos os grupos financeiros e consolida automaticamente a partir de confirm_projects
- */
-export async function fetchFinanceData() {
+export async function fetchFinanceData(forceRefresh = false) {
     const userId = pb.authStore.model?.id;
 
-    // 1. Tentar buscar grupos do PocketBase (com fallback amplo para não perder grupos criados)
+    // 1. Tentar primeiro o endpoint rápido e otimizado do backend (/api/finance/consolidated)
+    try {
+        const cRes = await fetch(`/api/finance/consolidated${forceRefresh ? '?refresh=1' : ''}`);
+        if (cRes.ok) {
+            const consolidated = await cRes.json();
+            if (consolidated && Array.isArray(consolidated.sheets) && consolidated.sheets.length > 0) {
+                const localHidden = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
+                const localGroupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
+
+                state.finance.groups = consolidated.groups || [];
+                state.finance.sheets = consolidated.sheets
+                    .filter(s => !localHidden.includes(s.id))
+                    .map(s => ({
+                        ...s,
+                        groupId: localGroupMapping[s.id] || (s.sheetId && localGroupMapping[s.sheetId]) || s.groupId
+                    }));
+                return { groups: state.finance.groups, sheets: state.finance.sheets };
+            }
+        }
+    } catch (cErr) {
+        console.warn("[FINANCE] Falha ao consultar /api/finance/consolidated, usando fallback:", cErr);
+    }
+
+    // 2. Fallback direto ao PocketBase e ao Estado Local
     let pbGroups = [];
     try {
         if (userId) {
@@ -1314,40 +1351,32 @@ export async function fetchFinanceData() {
             pbGroups = await pb.collection('groups').getFullList({ sort: 'order' });
         }
     } catch (e) {
-        console.warn("[FINANCE] Falha ao carregar grupos do PocketBase, usando servidor/local:", e);
+        console.warn("[FINANCE] Falha ao carregar grupos do PocketBase:", e);
     }
 
-    // 2. Buscar estado persistente do servidor backend
     let serverConfig = { groups: [], groupMapping: {}, hiddenProjects: [] };
     try {
         const sRes = await fetch('/api/finance/state');
         if (sRes.ok) {
             serverConfig = await sRes.json();
         }
-    } catch (sErr) {
-        console.warn("[FINANCE] Falha ao consultar /api/finance/state:", sErr);
-    }
+    } catch (sErr) {}
 
-    // 3. Mesclar grupos (PocketBase > Servidor > Local)
     let groups = [];
     if (pbGroups && pbGroups.length > 0) {
         groups = pbGroups;
-        // Sincronizar grupos com o servidor em background para redundância
-        fetch('/api/finance/groups', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ groups })
-        }).catch(() => {});
     } else if (serverConfig.groups && serverConfig.groups.length > 0) {
         groups = serverConfig.groups;
     }
 
-    // 4. Buscar projetos do Confirm
     let confirmProjects = [];
     try {
-        confirmProjects = await pb.collection('confirm_projects').getFullList({ sort: '-created' });
+        confirmProjects = await pb.collection('confirm_projects').getFullList({
+            batch: 15,
+            sort: '-created'
+        });
     } catch (e) {
-        console.warn("[FINANCE] Falha ao carregar confirm_projects:", e);
+        console.warn("[FINANCE] Falha no fallback confirm_projects:", e);
     }
 
     const localHidden = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
@@ -1355,8 +1384,6 @@ export async function fetchFinanceData() {
 
     const localGroupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
     const groupMapping = { ...(serverConfig.groupMapping || {}), ...localGroupMapping };
-
-    // Manter localStorage sincronizado
     localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
 
     const sheets = confirmProjects
@@ -1794,11 +1821,25 @@ function extractDataFromRows(rows, sourceUrl, normalize) {
  * Procura todos os relatórios de equipe
  */
 export async function fetchTeamDashboardData() {
-    const userId = pb.authStore.model.id;
-    const tables = await pb.collection('team_tables').getFullList({ 
-        filter: `user_id = "${userId}"`, 
-        sort: '-created' 
-    });
+    const user = pb.authStore.model;
+    if (!user) return [];
+    const userId = user.id;
+    const isAdmin = user.role === 'ADMIN';
+
+    let tables = [];
+    try {
+        const filter = isAdmin ? '' : `user_id = "${userId}" || user_id = ""`;
+        tables = await pb.collection('team_tables').getFullList(filter ? { filter, sort: '-created' } : { sort: '-created' });
+    } catch (e) {
+        tables = await pb.collection('team_tables').getFullList({ sort: '-created' });
+    }
+
+    if (tables.length === 0 && !isAdmin) {
+        try {
+            tables = await pb.collection('team_tables').getFullList({ sort: '-created' });
+        } catch (e) {}
+    }
+
     state.team.tables = tables;
     return tables;
 }
@@ -1807,21 +1848,19 @@ export async function fetchTeamDashboardData() {
  * Carrega dados de um relatório de equipe específico
  */
 export async function fetchTeamTableData(tableId) {
-    const userId = pb.authStore.model.id;
     state.team.currentTableId = tableId;
     
-        console.log("Fetching data for table:", tableId, "User:", userId);
-        const [groups, records] = await Promise.all([
-            pb.collection('team_groups').getFullList({ 
-                filter: `table_id = "${tableId}" && user_id = "${userId}"`, 
-                sort: 'created' 
-            }),
-            pb.collection('team_records').getFullList({ 
-                filter: `table_id = "${tableId}" && user_id = "${userId}"`, 
-                sort: 'created' 
-            })
-        ]);
-        console.log("Groups found:", groups.length, "Records found:", records.length);
+    const [groups, records] = await Promise.all([
+        pb.collection('team_groups').getFullList({ 
+            filter: `table_id = "${tableId}"`, 
+            sort: 'created' 
+        }),
+        pb.collection('team_records').getFullList({ 
+            filter: `table_id = "${tableId}"`, 
+            sort: 'created' 
+        })
+    ]);
+    console.log("[TEAM] Groups found:", groups.length, "Records found:", records.length);
 
     state.team.groups = groups;
     state.team.records = records;
@@ -1889,16 +1928,29 @@ export async function deleteTeamRecord(id) {
  */
 export async function fetchTermDashboardData() {
     try {
-        const userId = pb.authStore.model.id;
-        const tables = await pb.collection('term_v2_tables').getFullList({ 
-            filter: `user_id = "${userId}"`, 
-            sort: '-created' 
-        });
+        const user = pb.authStore.model;
+        if (!user) return [];
+        const userId = user.id;
+        const isAdmin = user.role === 'ADMIN';
+
+        let tables = [];
+        try {
+            const filter = isAdmin ? '' : `user_id = "${userId}" || user_id = ""`;
+            tables = await pb.collection('term_v2_tables').getFullList(filter ? { filter, sort: '-created' } : { sort: '-created' });
+        } catch (e) {
+            tables = await pb.collection('term_v2_tables').getFullList({ sort: '-created' });
+        }
+
+        if (tables.length === 0 && !isAdmin) {
+            try {
+                tables = await pb.collection('term_v2_tables').getFullList({ sort: '-created' });
+            } catch (e) {}
+        }
+
         state.term.tables = tables;
         return tables;
     } catch (err) {
         if (err.status === 404) {
-            console.warn("Coleção 'term_tables' não encontrada. O utilizador deve criá-la no PocketBase.");
             state.term.tables = [];
             return [];
         }
@@ -1911,11 +1963,10 @@ export async function fetchTermDashboardData() {
  */
 export async function fetchTermTableData(tableId) {
     try {
-        const userId = pb.authStore.model.id;
         state.term.currentTableId = tableId;
         
         const records = await pb.collection('term_v2_records').getFullList({ 
-            filter: `table_id = "${tableId}" && user_id = "${userId}"`, 
+            filter: `table_id = "${tableId}"`, 
             sort: 'created' 
         });
 

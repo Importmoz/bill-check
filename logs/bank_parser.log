@@ -5569,3 +5569,20 @@ DEBUG: Banco detetado via conte�do global: BCI
 DEBUG: Banco Detetado: BCI
 DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
 
+2026-08-25T08:53:06.158Z - INFO: Arquivo extraído bank_0c8143ea-0c53-4c0d-99a2-0cb283d91355_Extrato_75470366_24-08-26_28-08-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-08-25 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 199485254Ref. 260825090551374C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 980.0,
+    "balance": 76604.66,
+    "signature": "08cadfe37df6c965d80782febf7ad4e39d0ed0eedc42271ba04ea4565b4d2573",
+    "order_id": "",
+    "reconciled": false...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+

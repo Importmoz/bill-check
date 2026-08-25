@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, ActivityIndicator, Alert, SafeAreaView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const PB_URL = 'http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io';
+import { getPocketBaseUrl } from '../config';
 
 export default function WarehouseProjectsScreen({ navigation }) {
   const [projects, setProjects] = useState([]);
@@ -18,8 +17,9 @@ export default function WarehouseProjectsScreen({ navigation }) {
       const token = await AsyncStorage.getItem('pb_token');
       if (!token) throw new Error('Não autenticado');
 
+      const pbUrl = await getPocketBaseUrl();
       // Buscar apenas os ativos. (No PB filter: archived != true ou algo semelhante, mas vamos buscar todos por agora e o utilizador escolhe).
-      const response = await fetch(`${PB_URL}/api/collections/confirm_projects/records?sort=-created`, {
+      const response = await fetch(`${pbUrl}/api/collections/confirm_projects/records?sort=-created`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

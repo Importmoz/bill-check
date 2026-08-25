@@ -1,5 +1,6 @@
 const PocketBase = require('pocketbase/cjs');
-const pb = new PocketBase('http://pocketbase-cgk4w0o8koocsg4wggsgg888.144.91.110.199.sslip.io');
+const pbUrl = process.env.POCKETBASE_URL || 'https://pocketbase.mycloudspaces.com';
+const pb = new PocketBase(pbUrl);
 
 async function cleanup() {
     console.log('--- Iniciando Limpeza de Duplicados ---');
