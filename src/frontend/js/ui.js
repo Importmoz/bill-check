@@ -485,11 +485,7 @@ export function renderFinanceDashboard(onDeleteGroup, onRemoveSheet, onMoveSheet
 function createFinanceGroupSection(group, sheets, onDelete, onRemoveSheet, onRename, isUngrouped = false) {
     const section = document.createElement('div');
     const isCollapsed = !state.finance.expandedGroups.has(group.id);
-
-    // Espaçamento compacto quando fechado, e destacado quando aberto
-    section.className = isCollapsed 
-        ? "bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-2.5 px-3.5 shadow-sm transition-all"
-        : "bg-white border border-slate-400 rounded-xl p-4 shadow-md transition-all";
+    section.className = isCollapsed ? "mb-1.5 max-w-4xl mx-auto" : "mb-6 max-w-4xl mx-auto";
 
     // Totais do grupo para exibição resumida quando colapsado
     const groupTotals = sheets.reduce((acc, s) => {
@@ -511,33 +507,32 @@ function createFinanceGroupSection(group, sheets, onDelete, onRemoveSheet, onRen
         </div>
     ` : '';
 
-    const actionButtons = !isUngrouped ? `
+    const actionButtons = (!isUngrouped && !isCollapsed) ? `
         <button onclick="window.renameFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-slate-400 hover:text-slate-900 transition-all">Renomear</button>
         <button onclick="window.deleteFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-red-500/40 hover:text-red-500 transition-all">Remover</button>
     ` : '';
 
+    const headerClass = "flex flex-col md:flex-row justify-between items-start md:items-center gap-2 px-2 py-2 cursor-pointer select-none rounded-xl hover:bg-slate-200/50 transition-all mb-1";
+
     section.innerHTML = `
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center ${isCollapsed ? '' : 'mb-3.5 border-b border-slate-100 pb-2.5'} px-0.5 gap-2">
-            <div class="flex items-center gap-3 cursor-pointer select-none group flex-wrap flex-1" onclick="window.toggleFinanceGroupCollapse('${group.id}')">
+        <div class="${headerClass}" onclick="window.toggleFinanceGroupCollapse('${group.id}')">
+            <div class="flex items-center gap-3 select-none group flex-wrap flex-1">
                 ${moveButtons}
                 <div class="flex items-center gap-2">
                     <h3 class="text-sm font-black uppercase tracking-tight text-slate-900">${group.name}</h3>
-                    <span class="text-[9px] bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-bold uppercase text-slate-500">${sheets.length} Itens</span>
+                    <span class="text-[9px] bg-slate-200/80 border border-slate-300/60 px-2 py-0.5 rounded font-bold uppercase text-slate-600">${sheets.length} Itens</span>
                 </div>
                 ${isCollapsed ? `
-                    <div class="flex items-center gap-2.5 text-[9px] font-bold uppercase text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-md ml-1">
-                        <span>Dever: <strong class="text-slate-900">${formatMZN(groupTotals.amountDuty)}</strong></span>
-                        <span class="text-slate-300">•</span>
-                        <span>Pago: <strong class="text-green-700">${formatMZN(groupTotals.paid)}</strong></span>
-                        <span class="text-slate-300">•</span>
-                        <span>Saldo: <strong class="${groupTotals.balance > 0 ? 'text-red-700' : 'text-blue-700'}">${formatMZN(groupTotals.balance)}</strong></span>
-                    </div>
+                <div class="flex items-center gap-2.5 text-[9px] font-bold uppercase text-slate-500 bg-slate-200/65 border border-slate-300/50 px-2.5 py-1 rounded-lg ml-1">
+                    <span>Dever: <strong class="text-slate-900">${formatMZN(groupTotals.amountDuty)}</strong></span>
+                    <span class="text-slate-300">•</span>
+                    <span>Pago: <strong class="text-green-700">${formatMZN(groupTotals.paid)}</strong></span>
+                    <span class="text-slate-300">•</span>
+                    <span>Saldo: <strong class="${groupTotals.balance > 0 ? 'text-red-700' : 'text-blue-700'}">${formatMZN(groupTotals.balance)}</strong></span>
+                </div>
                 ` : ''}
             </div>
             <div class="flex items-center gap-3 ml-auto md:ml-0" onclick="event.stopPropagation()">
-                <button onclick="window.toggleFinanceGroupCollapse('${group.id}')" class="text-[9px] font-black uppercase text-slate-700 hover:text-black transition-all bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg border border-slate-200 shadow-xs">
-                    ${isCollapsed ? 'Visualizar Lista' : 'Ocultar Lista'}
-                </button>
                 ${actionButtons}
             </div>
         </div>
@@ -570,16 +565,15 @@ function createFinanceTable(sheets, onRemove, groupId = '') {
     table.innerHTML = `
         <thead>
             <tr class="bg-slate-50 text-[9px] font-normal uppercase tracking-widest text-slate-500 border-b border-slate-700">
-                <th class="p-3 w-10 text-center">
+                <th class="py-2 px-3 w-10 text-center">
                     <input type="checkbox" id="chk-group-${groupId}" ${allInGroupSelected ? 'checked' : ''} onchange="window.toggleSelectAllFinanceGroup('${groupId}', this.checked)" class="w-3.5 h-3.5 rounded border-gray-300 text-black focus:ring-black cursor-pointer align-middle" title="Selecionar todas as folhas deste grupo">
                 </th>
-                <th class="p-3">Documento</th>
-                <th class="p-3 w-32">Grupo</th>
-                <th class="p-3 text-center">Duty Prep</th>
-                <th class="p-3 text-center">Amount</th>
-                <th class="p-3 text-center">Paid</th>
-                <th class="p-3 text-center">Balance</th>
-                <th class="p-3 text-right w-10"></th>
+                <th class="py-2 px-3">Documento</th>
+                <th class="py-2 px-3 text-center">Duty Prep</th>
+                <th class="py-2 px-3 text-center">Amount</th>
+                <th class="py-2 px-3 text-center">Paid</th>
+                <th class="py-2 px-3 text-center">Balance</th>
+                <th class="py-2 px-3 text-right w-10"></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -587,33 +581,19 @@ function createFinanceTable(sheets, onRemove, groupId = '') {
                 const isSelected = state.finance.selectedSheets.has(s.id);
                 return `
                 <tr class="group hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/70' : ''}" id="finance-row-${s.id}">
-                    <td class="p-3 text-center">
+                    <td class="py-1 px-3 text-center">
                         <input type="checkbox" data-sheet-id="${s.id}" ${isSelected ? 'checked' : ''} onchange="window.toggleFinanceSheetSelect('${s.id}', this.checked)" class="finance-sheet-checkbox w-3.5 h-3.5 rounded border-gray-300 text-black focus:ring-black cursor-pointer align-middle">
                     </td>
-                    <td class="p-3">
-                        <div class="flex flex-col">
-                            <span onclick="window.selectConfirmProject('${s.sheetId}', '${s.folderId || ''}', '${(s.title || '').replace(/'/g, "\\'")}')" class="font-bold text-[10px] uppercase text-gray-900 leading-tight cursor-pointer hover:text-blue-600 transition-colors flex items-center gap-1.5" title="Abrir grelha operacional no módulo Confirm">
-                                ${s.title}
-                                <span class="text-[8px] px-1.5 py-0.5 bg-slate-100 border border-slate-300 text-slate-700 rounded-md font-extrabold tracking-tight hover:bg-black hover:text-white transition-all">CONFIRM ↗</span>
-                            </span>
-                            <div class="flex items-center gap-2 mt-1">
-                                <a href="${s.sourceUrl}" target="_blank" class="text-[8px] text-gray-400 hover:text-blue-600 transition-all font-semibold underline decoration-dotted">Google Sheets</a>
-                                <span class="text-[8px] text-gray-300">•</span>
-                                <button onclick="window.selectConfirmProject('${s.sheetId}', '${s.folderId || ''}', '${(s.title || '').replace(/'/g, "\\'")}')" class="text-[8px] font-bold text-blue-600 hover:underline">Abrir Grelha</button>
-                            </div>
-                        </div>
+                    <td class="py-1 px-3">
+                        <span onclick="window.selectConfirmProject('${s.sheetId}', '${s.folderId || ''}', '${(s.title || '').replace(/'/g, "\\'")}')" class="font-bold text-[10px] uppercase text-gray-900 leading-tight cursor-pointer hover:text-blue-600 transition-colors" title="Abrir grelha operacional no módulo Confirm">
+                            ${s.title}
+                        </span>
                     </td>
-                    <td class="p-3">
-                        <select onchange="window.moveFinanceSheet('${s.id}', this.value)" class="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1 text-[8px] font-normal uppercase outline-none focus:border-black transition-all">
-                            <option value="">Sem Grupo</option>
-                            ${state.finance.groups.map(g => `<option value="${g.id}" ${s.groupId === g.id ? 'selected' : ''}>${g.name}</option>`).join('')}
-                        </select>
-                    </td>
-                    <td class="p-3 text-center font-normal text-[10px] text-gray-600">${formatMZN(s.dutyPrepaid)}</td>
-                    <td class="p-3 text-center font-normal text-[10px] text-gray-900">${formatMZN(s.amountDuty)}</td>
-                    <td class="p-3 text-center font-normal text-[10px] text-green-700">${formatMZN(s.paid)}</td>
-                    <td class="p-3 text-center font-normal text-[10px] ${s.balance > 0 ? 'text-red-700' : 'text-blue-700'}">${formatMZN(s.balance)}</td>
-                    <td class="p-3 text-right">
+                    <td class="py-1 px-3 text-center font-normal text-[10px] text-gray-600">${formatMZN(s.dutyPrepaid)}</td>
+                    <td class="py-1 px-3 text-center font-normal text-[10px] text-gray-900">${formatMZN(s.amountDuty)}</td>
+                    <td class="py-1 px-3 text-center font-normal text-[10px] text-green-700">${formatMZN(s.paid)}</td>
+                    <td class="py-1 px-3 text-center font-normal text-[10px] ${s.balance > 0 ? 'text-red-700' : 'text-blue-700'}">${formatMZN(s.balance)}</td>
+                    <td class="py-1 px-3 text-right">
                         <button onclick="window.removeFinanceSheet('${s.id}')" class="text-gray-200 hover:text-red-600 transition-all" title="Ocultar folha do painel financeiro">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
                         </button>
@@ -624,15 +604,15 @@ function createFinanceTable(sheets, onRemove, groupId = '') {
         </tbody>
         <tfoot class="bg-slate-700 text-white font-black text-[9px] uppercase">
             <tr>
-                <td class="p-3"></td>
-                <td class="p-3" colspan="2">Consolidado</td>
-                <td class="p-3 text-center">${formatMZN(sheets.reduce((a, b) => a + (b.dutyPrepaid || 0), 0))}</td>
-                <td class="p-3 text-center">${formatMZN(sheets.reduce((a, b) => a + (b.amountDuty || 0), 0))}</td>
-                <td class="p-3 text-center text-green-300">${formatMZN(sheets.reduce((a, b) => a + (b.paid || 0), 0))}</td>
-                <td class="p-3 text-center ${sheets.reduce((a, b) => a + (b.balance || 0), 0) > 0 ? 'text-red-300' : 'text-blue-200'}">
+                <td class="py-2 px-3"></td>
+                <td class="py-2 px-3">Consolidado</td>
+                <td class="py-2 px-3 text-center">${formatMZN(sheets.reduce((a, b) => a + (b.dutyPrepaid || 0), 0))}</td>
+                <td class="py-2 px-3 text-center">${formatMZN(sheets.reduce((a, b) => a + (b.amountDuty || 0), 0))}</td>
+                <td class="py-2 px-3 text-center text-green-300">${formatMZN(sheets.reduce((a, b) => a + (b.paid || 0), 0))}</td>
+                <td class="py-2 px-3 text-center ${sheets.reduce((a, b) => a + (b.balance || 0), 0) > 0 ? 'text-red-300' : 'text-blue-200'}">
                     ${formatMZN(sheets.reduce((a, b) => a + (b.balance || 0), 0))}
                 </td>
-                <td></td>
+                <td class="py-2 px-3"></td>
             </tr>
         </tfoot>
     `;

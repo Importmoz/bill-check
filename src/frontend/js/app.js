@@ -423,21 +423,16 @@ function toggleFinanceGroupCollapse(groupId) {
     if (state.finance.expandedGroups.has(groupId)) {
         state.finance.expandedGroups.delete(groupId);
     } else {
-        state.finance.expandedGroups.add(groupId);
+        state.finance.expandedGroups.clear(); // Fechar todos os outros
+        state.finance.expandedGroups.add(groupId); // Abrir apenas o selecionado
     }
     localStorage.setItem('finance_expanded_groups', JSON.stringify(Array.from(state.finance.expandedGroups)));
     ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
 }
 
 function toggleAllFinanceGroups() {
-    const allIds = [...state.finance.groups.map(g => g.id), 'ungrouped'];
-    const allExpanded = allIds.length > 0 && allIds.every(id => state.finance.expandedGroups.has(id));
-    if (allExpanded) {
-        state.finance.expandedGroups.clear();
-    } else {
-        allIds.forEach(id => state.finance.expandedGroups.add(id));
-    }
-    localStorage.setItem('finance_expanded_groups', JSON.stringify(Array.from(state.finance.expandedGroups)));
+    state.finance.expandedGroups.clear(); // Apenas fecha todos para manter a regra de um por vez
+    localStorage.setItem('finance_expanded_groups', JSON.stringify([]));
     ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
 }
 
