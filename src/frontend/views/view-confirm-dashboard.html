@@ -8,7 +8,18 @@
                     </svg>
                     Menu Principal
                 </button>
-                <h2 class="text-3xl font-black uppercase tracking-tighter">CONFIRM</h2>
+                <div class="flex items-center gap-4">
+                    <h2 class="text-3xl font-black uppercase tracking-tighter">CONFIRM</h2>
+                    <!-- Switch Tabs: Normal vs Verify -->
+                    <div class="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-[9px] font-bold uppercase shrink-0">
+                        <button onclick="window.setConfirmDashboardTab('normal')" id="tab-confirm-normal" class="px-3 py-1 rounded-md transition-all bg-white shadow-sm text-black">
+                            Normal
+                        </button>
+                        <button onclick="window.setConfirmDashboardTab('verify')" id="tab-confirm-verify" class="px-3 py-1 rounded-md transition-all text-gray-500 hover:text-black">
+                            Verify
+                        </button>
+                    </div>
+                </div>
             </div>
             
             <!-- Barra de Pesquisa de Projetos e Modos de Exibição -->
@@ -46,6 +57,72 @@
             <div class="col-span-full py-20 text-center">
                 <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-black mx-auto mb-4"></div>
                 <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">A carregar os seus projetos...</p>
+            </div>
+        </div>
+
+        <!-- Container do Modo Verify (Todos os Clientes por Status) -->
+        <div id="confirm-verify-container" class="hidden px-4">
+            <!-- Barra de Filtros do Modo Verify -->
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
+                <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[9px] font-black uppercase text-slate-400">Filtrar por Status</label>
+                        <select id="select-verify-status" onchange="window.filterVerifyClients(true)" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase outline-none focus:border-black transition-all">
+                            <option value="TODOS">TODOS OS STATUS</option>
+                            <option value="PENDENTE" selected>PENDENTE</option>
+                            <option value="VERIFICAR">VERIFICAR</option>
+                            <option value="PODE LEVANTAR">PODE LEVANTAR</option>
+                            <option value="OK">OK</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[9px] font-black uppercase text-slate-400">Projeto Origem</label>
+                        <select id="select-verify-project" onchange="window.filterVerifyClients(true)" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase outline-none focus:border-black transition-all w-48">
+                            <option value="TODOS">TODOS OS PROJETOS</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1 w-full md:max-w-md">
+                    <label class="text-[9px] font-black uppercase text-slate-400">Procurar Cliente (Nome, Código, Telefone...)</label>
+                    <div class="relative w-full">
+                        <input type="text" id="input-verify-search" oninput="window.filterVerifyClients(true)" placeholder="DIGITE O NOME OU CÓDIGO DO CLIENTE..." class="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-slate-200 rounded-xl font-bold text-[10px] uppercase outline-none focus:border-black transition-all">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabela de Resultados de Clientes -->
+            <div class="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden max-w-6xl mx-auto">
+                <div class="overflow-x-auto">
+                    <table class="w-full border-collapse text-left" id="table-verify-clients">
+                        <thead>
+                            <tr class="bg-slate-50 text-[9px] font-normal uppercase tracking-widest text-slate-500 border-b border-slate-200">
+                                <th class="py-2 px-3">Projeto</th>
+                                <th class="py-2 px-3">Status</th>
+                                <th class="py-2 px-3">Código ID</th>
+                                <th class="py-2 px-3">Nome do Cliente</th>
+                                <th class="py-2 px-3">Contacto</th>
+                                <th class="py-2 px-3">Descrição da Carga</th>
+                                <th class="py-2 px-3 text-center">Duty MZN</th>
+                                <th class="py-2 px-3 text-right w-20">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-[10px]" id="tbody-verify-clients">
+                            <!-- Inserido dinamicamente -->
+                        </tbody>
+                    </table>
+                </div>
+                <div id="verify-clients-empty" class="py-12 text-center hidden">
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-widest text-slate-400">Nenhum cliente encontrado com os filtros selecionados.</p>
+                </div>
+                <!-- Paginação ou Contador -->
+                <div class="bg-slate-50 border-t border-slate-100 px-4 py-2.5 flex justify-between items-center text-[9px] font-black uppercase text-slate-500">
+                    <span id="verify-clients-count">Total: 0 Clientes</span>
+                </div>
             </div>
         </div>
     </div>

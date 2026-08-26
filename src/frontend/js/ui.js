@@ -1613,6 +1613,26 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         });
     }
 
+    // Verificação de Auto-Abertura Pendente do Modo Verify
+    if (state.confirm?.pendingAutoOpenClient) {
+        const term = state.confirm.pendingAutoOpenClient.toLowerCase();
+        const clientToOpen = groups.find(c => 
+            (c.displayName || '').toLowerCase().includes(term) || 
+            (c.displayIdCode || '').toLowerCase().includes(term)
+        );
+        if (clientToOpen) {
+            console.log("[VERIFY] Abertura automática de detalhes solicitada para:", clientToOpen.displayName);
+            state.confirm.pendingAutoOpenClient = null; // Limpar estado pendente
+            setTimeout(() => {
+                if (typeof showConfirmDetail === 'function') {
+                    showConfirmDetail(clientToOpen, clientToOpen.originalGlobalIndex || clientToOpen.no || '—');
+                } else if (typeof window.showConfirmDetail === 'function') {
+                    window.showConfirmDetail(clientToOpen, clientToOpen.originalGlobalIndex || clientToOpen.no || '—');
+                }
+            }, 200);
+        }
+    }
+
     return groups;
 }
 
@@ -3951,6 +3971,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
     if (!isSearch) {
         if (!state.confirm) state.confirm = {};
         state.confirm.projects = projects;
+        state.confirm.allClientsCache = null; // Invalida cache de parsing consolidado
     }
 
     container.innerHTML = '';
@@ -9568,4 +9589,375 @@ window.saveClientModal = async function() {
         console.error(e);
         toast("Erro ao guardar dados do cliente. Verifique a consola.", "error");
     }
+};
+
+// =========================================================================
+// MÓDULO CONFIRM: MODO VERIFY (CONSOLIDADO DE CLIENTES POR STATUS)
+// =========================================================================
+
+export function getAllProjectsClients() {
+    if (!state.confirm) state.confirm = {};
+    if (state.confirm.allClientsCache) {
+        return state.confirm.allClientsCache;
+    }
+    const projects = state.confirm?.projects || [];
+    const allClients = [];
+
+    projects.forEach(p => {
+        let sheetData = p.sheet_data;
+        if (!sheetData) return;
+        
+        if (typeof sheetData === 'string') {
+            try {
+                sheetData = JSON.parse(sheetData);
+            } catch (err) {
+                console.error("Erro ao fazer parse de sheet_data:", err);
+                return;
+            }
+        }
+        
+        const data = sheetData.values || sheetData;
+        if (!Array.isArray(data) || data.length <= 1) return;
+
+        const columns = data[0];
+        const cleanString = (str) => String(str || '')
+            .toUpperCase()
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^A-Z0-9]/g, "")
+            .trim();
+
+        const findCol = (targets) => {
+            const cleanedTargets = targets.map(cleanString);
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => cleanString(c) === target);
+                if (idx !== -1) return idx;
+            }
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => cleanString(c).includes(target));
+                if (idx !== -1) return idx;
+            }
+            return -1;
+        };
+
+        const idCodeIdx = findCol(['ID CODE', 'CODE ID', 'ID']);
+        const nameIdx = findCol(['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
+        const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+        const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
+        const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
+        const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
+        const phoneIdx = findCol(['PHONE NUMBER', 'TELEFONE', 'PHONE', 'CONTACTO', 'CONTACT']);
+        const cargoIdx = columns.findIndex(c => {
+            const h = cleanString(c);
+            return h.includes('CARGO') || h.includes('DESCRICAO') || h.includes('DESCRIÇÃO') || h.includes('PACKAGES');
+        });
+
+        const paidIdx = columns.findIndex((c, i) => {
+            const h = cleanString(c);
+            return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY') && i !== dutyIdx;
+        });
+
+        let noIdx = columns.findIndex(c => {
+            const h = String(c || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            return h === 'NO' || h === 'Nº' || h === 'N' || h === 'NUMERO' || h.startsWith('NO.') || h.startsWith('Nº.') || h.startsWith('N.');
+        });
+        if (noIdx === -1 && columns.length > 0) noIdx = 0;
+
+        let lastIdCode = '';
+        let lastName = '';
+        let lastNo = '';
+
+        const groupedClients = new Map();
+
+        for (let i = 1; i < data.length; i++) {
+            const row = data[i];
+            if (!row || row.length === 0) continue;
+
+            const rowString = row.slice(0, 10).map(c => String(c || '').toUpperCase()).join(' ');
+            if (rowString.includes('TOTAL')) continue;
+
+            let idCode = idCodeIdx !== -1 ? String(row[idCodeIdx] || '').trim() : '';
+            let name = nameIdx !== -1 ? String(row[nameIdx] || '').trim() : '';
+            let noValue = noIdx !== -1 ? String(row[noIdx] || '').trim() : '';
+
+            if (idCode !== '') lastIdCode = idCode;
+            else idCode = lastIdCode;
+
+            if (name !== '') lastName = name;
+            else name = lastName;
+
+            if (noValue !== '') lastNo = noValue;
+            else noValue = lastNo;
+
+            // Ignorar linhas vazias sem id e nome
+            if (!idCode && !name) continue;
+
+            const groupId = `${p.id}_${idCode}_${name}`.replace(/\s+/g, '_') || `ROW_${p.id}_${i}`;
+
+            if (!groupedClients.has(groupId)) {
+                groupedClients.set(groupId, {
+                    projectId: p.id,
+                    projectName: p.name,
+                    sheetId: p.sheetId,
+                    folderId: p.folderId,
+                    idCode: idCode,
+                    name: name,
+                    no: noValue,
+                    phone: phoneIdx !== -1 ? String(row[phoneIdx] || '').trim() : '',
+                    cargo: cargoIdx !== -1 ? String(row[cargoIdx] || '').trim() : '',
+                    duty: 0,
+                    statuses: [],
+                    rows: []
+                });
+            }
+
+            const client = groupedClients.get(groupId);
+
+            let rowStatus = String(row[statusIdx] || '').trim();
+            if (rowStatus === '?') rowStatus = 'PENDENTE';
+
+            const rawPaid = paidIdx !== -1 ? row[paidIdx] : 0;
+            const paidVal = parseFloat(String(rawPaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+            const rawPrepaid = dutyPrepaidIdx !== -1 ? row[dutyPrepaidIdx] : 0;
+            const prepaidVal = parseFloat(String(rawPrepaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+            const rawBalance = balanceIdx !== -1 ? row[balanceIdx] : 0;
+            const balanceVal = parseFloat(String(rawBalance || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+            if (rowStatus === '' || rowStatus.toUpperCase() === 'PENDENTE') {
+                if (balanceVal === 0) {
+                    if (prepaidVal > 0) {
+                        rowStatus = 'CONFIRMADO';
+                    } else if (paidVal > 0) {
+                        rowStatus = 'PENDENTE';
+                    } else {
+                        rowStatus = 'PENDENTE';
+                    }
+                } else {
+                    rowStatus = 'AGUARDA PAGAMENTO';
+                }
+            }
+
+            if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
+                rowStatus = 'PARCIAL';
+            }
+
+            if (rowStatus) {
+                client.statuses.push(rowStatus);
+            }
+
+            const rawDuty = dutyIdx !== -1 ? row[dutyIdx] : 0;
+            const dutyVal = parseFloat(String(rawDuty || '0').replace(/[^0-9.-]+/g, '')) || 0;
+            client.duty += dutyVal;
+            
+            client.rows.push(row);
+        }
+
+        groupedClients.forEach(c => {
+            c.uniqueStatuses = Array.from(new Set(c.statuses));
+            allClients.push(c);
+        });
+    });
+
+    state.confirm.allClientsCache = allClients;
+    return allClients;
+}
+
+export function setConfirmDashboardTab(tab) {
+    const tabNormal = document.getElementById('tab-confirm-normal');
+    const tabVerify = document.getElementById('tab-confirm-verify');
+    
+    const projectsList = document.getElementById('confirm-projects-list');
+    const verifyContainer = document.getElementById('confirm-verify-container');
+    
+    const searchBar = document.getElementById('input-confirm-project-search')?.parentElement?.parentElement;
+    const btnNewProject = document.querySelector('button[onclick="openConfirmProjectModal()"]');
+
+    if (tab === 'normal') {
+        tabNormal?.classList.add('bg-white', 'shadow-sm', 'text-black');
+        tabNormal?.classList.remove('text-gray-500');
+        tabVerify?.classList.remove('bg-white', 'shadow-sm', 'text-black');
+        tabVerify?.classList.add('text-gray-500');
+        
+        projectsList?.classList.remove('hidden');
+        verifyContainer?.classList.add('hidden');
+        
+        if (searchBar) searchBar.classList.remove('hidden');
+        if (btnNewProject) {
+            const role = pb.authStore.model?.role || 'USER';
+            btnNewProject.style.display = role === 'ADMIN' ? 'flex' : 'none';
+        }
+    } else {
+        tabVerify?.classList.add('bg-white', 'shadow-sm', 'text-black');
+        tabVerify?.classList.remove('text-gray-500');
+        tabNormal?.classList.remove('bg-white', 'shadow-sm', 'text-black');
+        tabNormal?.classList.add('text-gray-500');
+        
+        projectsList?.classList.add('hidden');
+        verifyContainer?.classList.remove('hidden');
+        
+        if (searchBar) searchBar.classList.add('hidden');
+        if (btnNewProject) btnNewProject.style.display = 'none';
+        
+        renderVerifyClients();
+    }
+}
+window.setConfirmDashboardTab = setConfirmDashboardTab;
+
+export function renderVerifyClients() {
+    const container = document.getElementById('tbody-verify-clients');
+    if (!container) return;
+
+    const allClients = getAllProjectsClients();
+    if (!state.confirm) state.confirm = {};
+    state.confirm.allClients = allClients;
+    
+    const projSelect = document.getElementById('select-verify-project');
+    if (projSelect) {
+        projSelect.innerHTML = '<option value="TODOS">TODOS OS PROJETOS</option>';
+        const projects = state.confirm.projects || [];
+        projects.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.id;
+            opt.textContent = p.name.toUpperCase();
+            projSelect.appendChild(opt);
+        });
+    }
+
+    filterVerifyClients();
+}
+window.renderVerifyClients = renderVerifyClients;
+
+export function filterVerifyClients(resetLimit = false) {
+    const tbody = document.getElementById('tbody-verify-clients');
+    const emptyEl = document.getElementById('verify-clients-empty');
+    const countEl = document.getElementById('verify-clients-count');
+    if (!tbody) return;
+
+    if (resetLimit) {
+        state.confirm.verifyLimit = 100;
+    }
+
+    const statusFilter = document.getElementById('select-verify-status')?.value || 'PENDENTE';
+    const projectFilter = document.getElementById('select-verify-project')?.value || 'TODOS';
+    const searchText = (document.getElementById('input-verify-search')?.value || '').toLowerCase().trim();
+
+    const allClients = state.confirm.allClients || [];
+    
+    let filtered = allClients;
+
+    // 1. Filtrar por Projeto
+    if (projectFilter !== 'TODOS') {
+        filtered = filtered.filter(c => c.projectId === projectFilter);
+    }
+
+    // 2. Filtrar por Status
+    if (statusFilter !== 'TODOS') {
+        const targetClean = statusFilter.toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
+        filtered = filtered.filter(c => {
+            return c.uniqueStatuses.some(s => {
+                const current = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
+                if (targetClean === 'PENDENTE' && current.includes('PARCIAL')) return true;
+                return current.includes(targetClean) || targetClean.includes(current);
+            });
+        });
+    }
+
+    // 3. Filtrar por Pesquisa de Texto
+    if (searchText) {
+        filtered = filtered.filter(c => {
+            return (c.name || '').toLowerCase().includes(searchText) ||
+                   (c.idCode || '').toLowerCase().includes(searchText) ||
+                   (c.phone || '').toLowerCase().includes(searchText) ||
+                   (c.cargo || '').toLowerCase().includes(searchText);
+        });
+    }
+
+    tbody.innerHTML = '';
+
+    if (filtered.length === 0) {
+        emptyEl?.classList.remove('hidden');
+        if (countEl) countEl.textContent = 'Total: 0 Clientes';
+        return;
+    }
+
+    emptyEl?.classList.add('hidden');
+    
+    const limit = state.confirm.verifyLimit || 100;
+    const visible = filtered.slice(0, limit);
+    
+    if (countEl) {
+        countEl.textContent = `Mostrando ${visible.length} de ${filtered.length} Clientes`;
+    }
+
+    visible.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50 transition-colors";
+        
+        const statusBadges = c.uniqueStatuses.map(s => {
+            let colorClass = "bg-slate-100 text-slate-700 border-slate-300";
+            if (s === 'PENDENTE') colorClass = "bg-amber-100 text-amber-800 border-amber-300";
+            else if (s === 'CONFIRMADO') colorClass = "bg-green-100 text-green-800 border-green-300";
+            else if (s === 'AGUARDA PAGAMENTO') colorClass = "bg-blue-100 text-blue-800 border-blue-300";
+            else if (s === 'PARCIAL') colorClass = "bg-yellow-100 text-yellow-800 border-yellow-300";
+            else if (s === 'VERIFICAR' || s === 'RE-VERIFICANDO') colorClass = "bg-rose-100 text-rose-800 border-rose-300";
+            
+            return `<span class="px-2 py-0.5 border rounded-md text-[8px] font-bold uppercase shrink-0 ${colorClass}">${s}</span>`;
+        }).join(' ');
+
+        tr.innerHTML = `
+            <td class="py-2 px-3 font-black text-slate-900 uppercase">${c.projectName}</td>
+            <td class="py-2 px-3"><div class="flex flex-wrap gap-1">${statusBadges}</div></td>
+            <td class="py-2 px-3 font-bold text-slate-700">${c.idCode || '-'}</td>
+            <td class="py-2 px-3 font-bold text-slate-900 uppercase">${c.name || '-'}</td>
+            <td class="py-2 px-3 text-slate-500">${c.phone || '-'}</td>
+            <td class="py-2 px-3 text-slate-500 truncate max-w-xs" title="${c.cargo}">${c.cargo || '-'}</td>
+            <td class="py-2 px-3 font-bold text-slate-900 text-center">${formatMZN(c.duty)}</td>
+            <td class="py-2 px-3 text-right">
+                <button onclick="window.openVerifyClientProject('${c.sheetId}', '${c.folderId || ''}', '${c.projectName.replace(/'/g, "\\'")}', '${(c.idCode || c.name || '').replace(/'/g, "\\'")}')" class="bg-black text-white hover:bg-gray-800 px-3 py-1 rounded-lg text-[9px] font-bold uppercase transition-all">
+                    Abrir
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    if (filtered.length > limit) {
+        const trMore = document.createElement('tr');
+        trMore.className = "bg-slate-50";
+        trMore.innerHTML = `
+            <td colspan="8" class="py-3 text-center">
+                <button onclick="window.incrementVerifyLimit()" class="text-blue-600 hover:text-blue-800 hover:underline font-black uppercase text-[10px] tracking-widest outline-none active:scale-95 transition-all">
+                    Mostrar Mais (+100 resultados)
+                </button>
+            </td>
+        `;
+        tbody.appendChild(trMore);
+    }
+}
+window.filterVerifyClients = filterVerifyClients;
+
+window.incrementVerifyLimit = function() {
+    state.confirm.verifyLimit = (state.confirm.verifyLimit || 100) + 100;
+    filterVerifyClients(false);
+};
+
+window.openVerifyClientProject = function(sheetId, folderId, projectName, clientSearch) {
+    if (!state.confirm) state.confirm = {};
+    state.confirm.pendingAutoOpenClient = clientSearch;
+
+    if (typeof window.selectConfirmProject === 'function') {
+        window.selectConfirmProject(sheetId, folderId, projectName);
+    }
+    
+    setTimeout(() => {
+        const searchInput = document.getElementById('input-confirm-search');
+        if (searchInput) {
+            searchInput.value = clientSearch;
+            if (typeof window.handleConfirmSearch === 'function') {
+                window.handleConfirmSearch();
+            }
+        }
+    }, 1200);
 };

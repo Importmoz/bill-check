@@ -1142,6 +1142,9 @@ let projectFoldersCache = null; // Cache de pastas para abertura instantânea
 async function showConfirm() {
     if (!checkModulePermission('CONFIRM')) return ui.toast('Acesso negado ao módulo CONFIRM.', 'error');
     ui.showView('view-confirm-dashboard');
+    if (typeof window.setConfirmDashboardTab === 'function') {
+        window.setConfirmDashboardTab('normal');
+    }
     loadConfirmProjects();
 }
 
