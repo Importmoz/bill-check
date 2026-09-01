@@ -222,9 +222,12 @@
                     </div>
                     <!-- Equipe MAPUTO -->
                     <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Maputo</h4>
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-black text-xs uppercase text-slate-400 tracking-widest">Maputo</h4>
+                            <button onclick="document.getElementById('team-val-maputo').value='15000'" class="px-2 py-0.5 bg-gray-200 hover:bg-black hover:text-white rounded text-[8px] font-bold transition-all">15K</button>
+                        </div>
                         <div class="grid grid-cols-2 gap-2 mb-2">
-                            <input type="number" id="team-val-maputo" placeholder="Valor" class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="number" id="team-val-maputo" placeholder="15000" class="p-2 border border-gray-200 rounded text-xs">
                             <input type="date" id="team-month-maputo" class="p-2 border border-gray-200 rounded text-xs">
                         </div>
                         <label class="flex items-center gap-2 cursor-pointer">
@@ -234,9 +237,12 @@
                     </div>
                     <!-- Equipe MATOLA -->
                     <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Matola</h4>
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-black text-xs uppercase text-slate-400 tracking-widest">Matola</h4>
+                            <button onclick="document.getElementById('team-val-matola').value='15000'" class="px-2 py-0.5 bg-gray-200 hover:bg-black hover:text-white rounded text-[8px] font-bold transition-all">15K</button>
+                        </div>
                         <div class="grid grid-cols-2 gap-2 mb-2">
-                            <input type="number" id="team-val-matola" placeholder="Valor" class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="number" id="team-val-matola" placeholder="15000" class="p-2 border border-gray-200 rounded text-xs">
                             <input type="date" id="team-month-matola" class="p-2 border border-gray-200 rounded text-xs">
                         </div>
                         <label class="flex items-center gap-2 cursor-pointer">
@@ -244,15 +250,33 @@
                             <span class="text-[10px] font-bold uppercase">Pago</span>
                         </label>
                     </div>
-                    <!-- Equipe TERMOS -->
+                    <!-- Equipe INVESTIGAÇÃO -->
                     <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                        <h4 class="font-black text-xs uppercase mb-3 text-slate-400 tracking-widest">Termos</h4>
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-black text-xs uppercase text-slate-400 tracking-widest">Investigação</h4>
+                            <button onclick="document.getElementById('team-val-investigacao').value='10000'" class="px-2 py-0.5 bg-gray-200 hover:bg-black hover:text-white rounded text-[8px] font-bold transition-all">10K</button>
+                        </div>
                         <div class="grid grid-cols-2 gap-2 mb-2">
-                            <input type="number" id="team-val-termos" placeholder="Valor" class="p-2 border border-gray-200 rounded text-xs">
-                            <input type="date" id="team-month-termos" class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="number" id="team-val-investigacao" placeholder="10000" class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="date" id="team-month-investigacao" class="p-2 border border-gray-200 rounded text-xs">
                         </div>
                         <label class="flex items-center gap-2 cursor-pointer">
-                            <input type="checkbox" id="team-paid-termos" class="w-4 h-4 accent-green-600">
+                            <input type="checkbox" id="team-paid-investigacao" class="w-4 h-4 accent-green-600">
+                            <span class="text-[10px] font-bold uppercase">Pago</span>
+                        </label>
+                    </div>
+                    <!-- Equipe CONSIGNAÇÃO -->
+                    <div class="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="font-black text-xs uppercase text-slate-400 tracking-widest">Consignação</h4>
+                            <button onclick="document.getElementById('team-val-consignacao').value='8000'" class="px-2 py-0.5 bg-gray-200 hover:bg-black hover:text-white rounded text-[8px] font-bold transition-all">8K</button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mb-2">
+                            <input type="number" id="team-val-consignacao" placeholder="8000" class="p-2 border border-gray-200 rounded text-xs">
+                            <input type="date" id="team-month-consignacao" class="p-2 border border-gray-200 rounded text-xs">
+                        </div>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="team-paid-consignacao" class="w-4 h-4 accent-green-600">
                             <span class="text-[10px] font-bold uppercase">Pago</span>
                         </label>
                     </div>

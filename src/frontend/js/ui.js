@@ -721,14 +721,26 @@ export function renderTeamTable(onEditRecord) {
     const groups = state.team.groups;
     const records = state.team.records;
 
+    // Helper para verificar se um registo está totalmente liquidado
+    const isRecordFullyPaid = (r) => {
+        const isInterna = r.interna_paid || parseFloat(r.interna_val) === 0;
+        const isMaputo = r.maputo_paid || parseFloat(r.maputo_val) === 0;
+        const isMatola = r.matola_paid || parseFloat(r.matola_val) === 0;
+        const isInvestigacao = r.investigacao_paid || parseFloat(r.investigacao_val) === 0 || r.investigacao_val === undefined || r.investigacao_val === '';
+        const consignacaoVal = r.consignacao_val !== undefined ? r.consignacao_val : r.termos_val;
+        const consignacaoPaid = r.consignacao_paid !== undefined ? r.consignacao_paid : r.termos_paid;
+        const isConsignacao = consignacaoPaid || parseFloat(consignacaoVal) === 0;
+        return isInterna && isMaputo && isMatola && isInvestigacao && isConsignacao;
+    };
+
     // Calcular estatísticas para o resumo de topo
     const stats = records.reduce((acc, r) => {
         acc.totalRecords++;
-        if (r.interna_paid && r.maputo_paid && r.matola_paid && (parseFloat(r.termos_val) === 0 || r.termos_paid)) acc.completedRecords++;
+        if (isRecordFullyPaid(r)) acc.completedRecords++;
         return acc;
     }, { totalRecords: 0, completedRecords: 0 });
 
-    let globalTotals = { interna: 0, maputo: 0, matola: 0, termos: 0 };
+    let globalTotals = { interna: 0, maputo: 0, matola: 0, investigacao: 0, consignacao: 0 };
 
     // Função para renderizar uma linha de soma (Laranja)
     const renderSumRow = (stats) => {
@@ -739,7 +751,8 @@ export function renderTeamTable(onEditRecord) {
             <td class="py-1 px-2 border border-gray-600 text-center">${stats.interna || 0}</td><td class="border border-gray-600"></td>
             <td class="py-1 px-2 border border-gray-600 text-center">${stats.maputo || 0}</td><td class="border border-gray-600"></td>
             <td class="py-1 px-2 border border-gray-600 text-center">${stats.matola || 0}</td><td class="border border-gray-600"></td>
-            <td class="py-1 px-2 border border-gray-600 text-center">${stats.termos || 0}</td><td class="border border-gray-600"></td>
+            <td class="py-1 px-2 border border-gray-600 text-center">${stats.investigacao || 0}</td><td class="border border-gray-600"></td>
+            <td class="py-1 px-2 border border-gray-600 text-center">${stats.consignacao || 0}</td><td class="border border-gray-600"></td>
         `;
         return tr;
     };
@@ -751,19 +764,17 @@ export function renderTeamTable(onEditRecord) {
         const groupRecords = records.filter(r => r.group_id === group.id);
         
         // Verificar se o lote está completamente pago ou sem contentores
-        const allRecordsPaid = groupRecords.length > 0 && groupRecords.every(r => 
-            r.interna_paid && r.maputo_paid && r.matola_paid && (parseFloat(r.termos_val) === 0 || r.termos_paid)
-        );
+        const allRecordsPaid = groupRecords.length > 0 && groupRecords.every(r => isRecordFullyPaid(r));
 
         if (groupRecords.length === 0 || allRecordsPaid) {
             return; // Ocultar o lote completamente se estiver todo pago ou vazio
         }
 
         visibleGroupsCount++;
-        let groupUnpaid = { interna: 0, maputo: 0, matola: 0, termos: 0 };
+        let groupUnpaid = { interna: 0, maputo: 0, matola: 0, investigacao: 0, consignacao: 0 };
 
         groupRecords.forEach(r => {
-            const isRowPaid = r.interna_paid && r.maputo_paid && r.matola_paid && (parseFloat(r.termos_val) === 0 || r.termos_paid);
+            const isRowPaid = isRecordFullyPaid(r);
             if (isRowPaid) return; // Omitir se concluído
 
             const tr = createTeamRow(r, onEditRecord);
@@ -772,7 +783,10 @@ export function renderTeamTable(onEditRecord) {
             if (!r.interna_paid) groupUnpaid.interna += (parseFloat(r.interna_val) || 0);
             if (!r.maputo_paid) groupUnpaid.maputo += (parseFloat(r.maputo_val) || 0);
             if (!r.matola_paid) groupUnpaid.matola += (parseFloat(r.matola_val) || 0);
-            if (!r.termos_paid) groupUnpaid.termos += (parseFloat(r.termos_val) || 0);
+            if (!r.investigacao_paid) groupUnpaid.investigacao += (parseFloat(r.investigacao_val) || 0);
+            const cVal = parseFloat(r.consignacao_val !== undefined ? r.consignacao_val : r.termos_val) || 0;
+            const cPaid = r.consignacao_paid !== undefined ? r.consignacao_paid : r.termos_paid;
+            if (!cPaid) groupUnpaid.consignacao += cVal;
         });
 
         // Adicionar Linha Laranja (Somatório dos não pagos do grupo)
@@ -781,31 +795,35 @@ export function renderTeamTable(onEditRecord) {
         // Espaçador entre lotes (Cinza Transparente)
         const spacer = document.createElement('tr');
         spacer.className = "h-4 bg-gray-100/50";
-        spacer.innerHTML = '<td colspan="9" class="border border-gray-300"></td>';
+        spacer.innerHTML = '<td colspan="11" class="border border-gray-300"></td>';
         tbody.appendChild(spacer);
 
         globalTotals.interna += groupUnpaid.interna;
         globalTotals.maputo += groupUnpaid.maputo;
         globalTotals.matola += groupUnpaid.matola;
-        globalTotals.termos += groupUnpaid.termos;
+        globalTotals.investigacao += groupUnpaid.investigacao;
+        globalTotals.consignacao += groupUnpaid.consignacao;
     });
 
     // Renderizar sem grupo
     const ungrouped = records.filter(r => !r.group_id);
     if (ungrouped.length > 0) {
         ungrouped.forEach(r => {
-            const isRowPaid = r.interna_paid && r.maputo_paid && r.matola_paid && (parseFloat(r.termos_val) === 0 || r.termos_paid);
+            const isRowPaid = isRecordFullyPaid(r);
             if (isRowPaid) return; // Omitir se concluído
 
             tbody.appendChild(createTeamRow(r, onEditRecord));
             if (!r.interna_paid) globalTotals.interna += (parseFloat(r.interna_val) || 0);
             if (!r.maputo_paid) globalTotals.maputo += (parseFloat(r.maputo_val) || 0);
             if (!r.matola_paid) globalTotals.matola += (parseFloat(r.matola_val) || 0);
-            if (!r.termos_paid) globalTotals.termos += (parseFloat(r.termos_val) || 0);
+            if (!r.investigacao_paid) globalTotals.investigacao += (parseFloat(r.investigacao_val) || 0);
+            const cVal = parseFloat(r.consignacao_val !== undefined ? r.consignacao_val : r.termos_val) || 0;
+            const cPaid = r.consignacao_paid !== undefined ? r.consignacao_paid : r.termos_paid;
+            if (!cPaid) globalTotals.consignacao += cVal;
         });
     }
 
-    const totalPendency = (globalTotals.interna || 0) + (globalTotals.maputo || 0) + (globalTotals.matola || 0) + (globalTotals.termos || 0);
+    const totalPendency = (globalTotals.interna || 0) + (globalTotals.maputo || 0) + (globalTotals.matola || 0) + (globalTotals.investigacao || 0) + (globalTotals.consignacao || 0);
     renderTeamSummary(totalPendency, visibleGroupsCount, stats.totalRecords, stats.completedRecords);
 
     footer.innerHTML = `
@@ -814,10 +832,11 @@ export function renderTeamTable(onEditRecord) {
             <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.interna)}</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.maputo)}</td>
             <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.matola)}</td>
-            <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.termos)}</td>
+            <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.investigacao)}</td>
+            <td class="py-2 px-4 border-2 border-gray-800 text-center" colspan="2">${formatMZN(globalTotals.consignacao)}</td>
         </tr>
         <tr class="bg-orange-500 text-black font-normal uppercase text-sm export-only">
-            <td colspan="7" class="py-2 px-4 text-center border-2 border-gray-800">TOTAL GERAL PENDENTE</td>
+            <td colspan="9" class="py-2 px-4 text-center border-2 border-gray-800">TOTAL GERAL PENDENTE</td>
             <td colspan="2" class="py-2 px-4 text-center border-2 border-gray-800">${formatMZN(totalPendency)}</td>
         </tr>
     `;
@@ -855,7 +874,16 @@ export function renderTeamSummary(total, lotesCount, contentoresCount, concluido
 }
 
 function createTeamRow(r, onEdit) {
-    const isPaid = r.interna_paid && r.maputo_paid && r.matola_paid && (parseFloat(r.termos_val) === 0 || r.termos_paid);
+    const isInterna = r.interna_paid || parseFloat(r.interna_val) === 0;
+    const isMaputo = r.maputo_paid || parseFloat(r.maputo_val) === 0;
+    const isMatola = r.matola_paid || parseFloat(r.matola_val) === 0;
+    const isInvestigacao = r.investigacao_paid || parseFloat(r.investigacao_val) === 0 || r.investigacao_val === undefined || r.investigacao_val === '';
+    const consignacaoVal = r.consignacao_val !== undefined ? r.consignacao_val : r.termos_val;
+    const consignacaoMonth = r.consignacao_month !== undefined ? r.consignacao_month : r.termos_month;
+    const consignacaoPaid = r.consignacao_paid !== undefined ? r.consignacao_paid : r.termos_paid;
+    const isConsignacao = consignacaoPaid || parseFloat(consignacaoVal) === 0;
+
+    const isPaid = isInterna && isMaputo && isMatola && isInvestigacao && isConsignacao;
     const tr = document.createElement('tr');
     tr.className = `cursor-pointer hover:opacity-80 transition-all ${isPaid ? 'bg-green-400' : 'bg-white'}`;
     tr.onclick = () => onEdit(r);
@@ -874,8 +902,11 @@ function createTeamRow(r, onEdit) {
         <td class="py-1 px-2 border border-gray-400 text-xs text-center ${r.matola_paid ? paidClass : ''}">${r.matola_val || ''}</td>
         <td class="py-1 px-2 border border-gray-400 text-[11px] text-center italic ${r.matola_paid ? paidClass : ''}">${formatDateDisplay(r.matola_month) || ''}</td>
         
-        <td class="py-1 px-2 border border-gray-400 text-xs text-center ${(r.termos_paid || parseFloat(r.termos_val) === 0) ? paidClass : ''}">${r.termos_val || '0'}</td>
-        <td class="py-1 px-2 border border-gray-400 text-[11px] text-center italic ${(r.termos_paid || parseFloat(r.termos_val) === 0) ? paidClass : ''}">${formatDateDisplay(r.termos_month) || ''}</td>
+        <td class="py-1 px-2 border border-gray-400 text-xs text-center ${(r.investigacao_paid || parseFloat(r.investigacao_val) === 0) ? paidClass : ''}">${r.investigacao_val || '0'}</td>
+        <td class="py-1 px-2 border border-gray-400 text-[11px] text-center italic ${(r.investigacao_paid || parseFloat(r.investigacao_val) === 0) ? paidClass : ''}">${formatDateDisplay(r.investigacao_month) || ''}</td>
+
+        <td class="py-1 px-2 border border-gray-400 text-xs text-center ${(consignacaoPaid || parseFloat(consignacaoVal) === 0) ? paidClass : ''}">${consignacaoVal || '0'}</td>
+        <td class="py-1 px-2 border border-gray-400 text-[11px] text-center italic ${(consignacaoPaid || parseFloat(consignacaoVal) === 0) ? paidClass : ''}">${formatDateDisplay(consignacaoMonth) || ''}</td>
     `;
     return tr;
 }

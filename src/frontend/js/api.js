@@ -1324,16 +1324,8 @@ export async function fetchFinanceData(forceRefresh = false) {
         if (cRes.ok) {
             const consolidated = await cRes.json();
             if (consolidated && Array.isArray(consolidated.sheets) && consolidated.sheets.length > 0) {
-                const localHidden = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
-                const localGroupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
-
                 state.finance.groups = consolidated.groups || [];
-                state.finance.sheets = consolidated.sheets
-                    .filter(s => !localHidden.includes(s.id))
-                    .map(s => ({
-                        ...s,
-                        groupId: localGroupMapping[s.id] || (s.sheetId && localGroupMapping[s.sheetId]) || s.groupId
-                    }));
+                state.finance.sheets = consolidated.sheets;
                 return { groups: state.finance.groups, sheets: state.finance.sheets };
             }
         }
@@ -1379,12 +1371,8 @@ export async function fetchFinanceData(forceRefresh = false) {
         console.warn("[FINANCE] Falha no fallback confirm_projects:", e);
     }
 
-    const localHidden = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
-    const hiddenProjects = Array.from(new Set([...(serverConfig.hiddenProjects || []), ...localHidden]));
-
-    const localGroupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
-    const groupMapping = { ...(serverConfig.groupMapping || {}), ...localGroupMapping };
-    localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
+    const hiddenProjects = serverConfig.hiddenProjects || [];
+    const groupMapping = serverConfig.groupMapping || {};
 
     const sheets = confirmProjects
         .filter(p => !hiddenProjects.includes(p.id))
@@ -1483,11 +1471,8 @@ export async function updateFinanceGroupOrder(groupId, direction) {
 
 export async function deleteFinanceGroup(groupId) {
     const affected = state.finance.sheets.filter(s => s.groupId === groupId);
-    const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
     
     for (const sheet of affected) {
-        delete groupMapping[sheet.id];
-        if (sheet.sheetId) delete groupMapping[sheet.sheetId];
         sheet.groupId = null;
         try {
             await pb.collection('confirm_projects').update(sheet.id, { group_id: null, groupId: null });
@@ -1500,7 +1485,6 @@ export async function deleteFinanceGroup(groupId) {
             });
         } catch (e) {}
     }
-    localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
 
     state.finance.groups = state.finance.groups.filter(g => g.id !== groupId);
 
@@ -1526,17 +1510,7 @@ export async function saveFinanceSheet(data, id = null) {
     const item = state.finance.sheets.find(s => s.id === id);
     const sheetId = item ? item.sheetId : null;
 
-    const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
     const targetGroupId = data.groupId || null;
-
-    if (!targetGroupId) {
-        delete groupMapping[id];
-        if (sheetId) delete groupMapping[sheetId];
-    } else {
-        groupMapping[id] = targetGroupId;
-        if (sheetId) groupMapping[sheetId] = targetGroupId;
-    }
-    localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
 
     // 1. Sincronizar com o backend do servidor (persistência permanente)
     try {
@@ -1572,21 +1546,12 @@ export async function saveFinanceSheet(data, id = null) {
 export async function saveBulkFinanceSheets(sheetIds, targetGroupId = null) {
     if (!Array.isArray(sheetIds) || sheetIds.length === 0) return [];
     
-    const groupMapping = JSON.parse(localStorage.getItem('finance_project_groups') || '{}');
     const backendMappings = [];
     const updatedItems = [];
 
     for (const id of sheetIds) {
         const item = state.finance.sheets.find(s => s.id === id);
         const sheetId = item ? item.sheetId : null;
-
-        if (!targetGroupId) {
-            delete groupMapping[id];
-            if (sheetId) delete groupMapping[sheetId];
-        } else {
-            groupMapping[id] = targetGroupId;
-            if (sheetId) groupMapping[sheetId] = targetGroupId;
-        }
 
         backendMappings.push({
             projectId: id,
@@ -1609,8 +1574,6 @@ export async function saveBulkFinanceSheets(sheetIds, targetGroupId = null) {
             });
     }
 
-    localStorage.setItem('finance_project_groups', JSON.stringify(groupMapping));
-
     // Sincronizar com o backend em um único request
     try {
         await fetch('/api/finance/group-mapping', {
@@ -1627,10 +1590,19 @@ export async function saveBulkFinanceSheets(sheetIds, targetGroupId = null) {
 
 export async function deleteFinanceSheet(id) {
     const item = state.finance.sheets.find(s => s.id === id);
-    const hiddenProjects = JSON.parse(localStorage.getItem('finance_hidden_projects') || '[]');
+    
+    // Obter lista atual de hidden projects do servidor primeiro
+    let hiddenProjects = [];
+    try {
+        const sRes = await fetch('/api/finance/state');
+        if (sRes.ok) {
+            const serverConfig = await sRes.json();
+            hiddenProjects = serverConfig.hiddenProjects || [];
+        }
+    } catch (e) {}
+
     if (!hiddenProjects.includes(id)) {
         hiddenProjects.push(id);
-        localStorage.setItem('finance_hidden_projects', JSON.stringify(hiddenProjects));
     }
 
     try {
@@ -1639,7 +1611,9 @@ export async function deleteFinanceSheet(id) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ hiddenProjects })
         });
-    } catch (e) {}
+    } catch (e) {
+        console.warn("[FINANCE] Falha ao ocultar folha no backend:", e);
+    }
 
     state.finance.sheets = state.finance.sheets.filter(s => s.id !== id);
     return { success: true, hidden: true };
@@ -1909,11 +1883,25 @@ export async function deleteTeamGroup(id) {
 }
 
 export async function saveTeamRecord(data, editId = null) {
-    const payload = { ...data, user_id: pb.authStore.model.id };
-    if (editId) {
-        return await pb.collection('team_records').update(editId, payload);
-    } else {
-        return await pb.collection('team_records').create(payload);
+    const payload = { ...data, user_id: pb.authStore.model?.id };
+    try {
+        if (editId) {
+            return await pb.collection('team_records').update(editId, payload);
+        } else {
+            return await pb.collection('team_records').create(payload);
+        }
+    } catch (err) {
+        if (err.data?.data) {
+            const invalidFields = Object.keys(err.data.data);
+            const safePayload = { ...payload };
+            invalidFields.forEach(f => delete safePayload[f]);
+            if (editId) {
+                return await pb.collection('team_records').update(editId, safePayload);
+            } else {
+                return await pb.collection('team_records').create(safePayload);
+            }
+        }
+        throw err;
     }
 }
 

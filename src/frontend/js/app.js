@@ -865,27 +865,62 @@ function openTeamRecordModal() {
     document.getElementById('team-val-interna').value = '115000';
     document.getElementById('team-val-maputo').value = '15000';
     document.getElementById('team-val-matola').value = '15000';
-    document.getElementById('team-val-termos').value = '';
+    const valInvestigacaoEl = document.getElementById('team-val-investigacao');
+    if (valInvestigacaoEl) valInvestigacaoEl.value = '10000';
+    const valConsignacaoEl = document.getElementById('team-val-consignacao') || document.getElementById('team-val-termos');
+    if (valConsignacaoEl) valConsignacaoEl.value = '8000';
     
-    ['interna', 'maputo', 'matola', 'termos'].forEach(team => {
-        document.getElementById(`team-month-${team}`).value = '';
-        document.getElementById(`team-paid-${team}`).checked = false;
+    ['interna', 'maputo', 'matola', 'investigacao', 'consignacao'].forEach(team => {
+        const mEl = document.getElementById(`team-month-${team}`) || (team === 'consignacao' ? document.getElementById('team-month-termos') : null);
+        const pEl = document.getElementById(`team-paid-${team}`) || (team === 'consignacao' ? document.getElementById('team-paid-termos') : null);
+        if (mEl) mEl.value = '';
+        if (pEl) pEl.checked = false;
     });
 
-    // Populate Groups
+    // Populate Groups (Apenas lotes abertos / não fechados)
+    populateTeamGroupsSelect();
+}
+
+function populateTeamGroupsSelect(currentGroupId = null) {
     const select = document.getElementById('select-team-group');
+    if (!select) return;
     select.innerHTML = '';
     const defOpt = document.createElement('option');
     defOpt.value = "";
     defOpt.textContent = "Sem Lote / Grupo";
     select.appendChild(defOpt);
 
-    api.state.team.groups.forEach(g => {
-        const opt = document.createElement('option');
-        opt.value = g.id;
-        opt.textContent = g.name;
-        select.appendChild(opt);
+    const groups = api.state.team?.groups || [];
+    const records = api.state.team?.records || [];
+
+    const isRecordFullyPaid = (r) => {
+        const isInterna = r.interna_paid || parseFloat(r.interna_val) === 0;
+        const isMaputo = r.maputo_paid || parseFloat(r.maputo_val) === 0;
+        const isMatola = r.matola_paid || parseFloat(r.matola_val) === 0;
+        const isInvestigacao = r.investigacao_paid || parseFloat(r.investigacao_val) === 0 || r.investigacao_val === undefined || r.investigacao_val === '';
+        const consignacaoVal = r.consignacao_val !== undefined ? r.consignacao_val : r.termos_val;
+        const consignacaoPaid = r.consignacao_paid !== undefined ? r.consignacao_paid : r.termos_paid;
+        const isConsignacao = consignacaoPaid || parseFloat(consignacaoVal) === 0;
+        return isInterna && isMaputo && isMatola && isInvestigacao && isConsignacao;
+    };
+
+    groups.forEach(g => {
+        const groupRecords = records.filter(r => r.group_id === g.id);
+        // Um lote está fechado se tiver contentores e todos estiverem pagos
+        const isClosed = groupRecords.length > 0 && groupRecords.every(r => isRecordFullyPaid(r));
+
+        // Incluir se não estiver fechado, ou se for o grupo que o registo atual já possui
+        if (!isClosed || (currentGroupId && g.id === currentGroupId)) {
+            const opt = document.createElement('option');
+            opt.value = g.id;
+            opt.textContent = g.name + (isClosed ? ' (Fechado)' : '');
+            select.appendChild(opt);
+        }
     });
+
+    if (currentGroupId) {
+        select.value = currentGroupId;
+    }
 }
 
 function editTeamRecord(r) {
@@ -894,12 +929,28 @@ function editTeamRecord(r) {
     document.getElementById('btn-team-record-delete').classList.remove('hidden');
     document.getElementById('team-record-id').value = r.id;
     document.getElementById('input-team-container-id').value = r.container_id_str;
-    document.getElementById('select-team-group').value = r.group_id || '';
+    
+    // Repopular dropdown garantindo que o grupo atual do registo seja incluído
+    populateTeamGroupsSelect(r.group_id || '');
 
-    ['interna', 'maputo', 'matola', 'termos'].forEach(team => {
-        document.getElementById(`team-val-${team}`).value = r[`${team}_val`];
-        document.getElementById(`team-month-${team}`).value = r[`${team}_month`];
-        document.getElementById(`team-paid-${team}`).checked = r[`${team}_paid`];
+    ['interna', 'maputo', 'matola', 'investigacao', 'consignacao'].forEach(team => {
+        let val = r[`${team}_val`];
+        let month = r[`${team}_month`];
+        let paid = r[`${team}_paid`];
+        
+        if (team === 'consignacao') {
+            if (val === undefined && r.termos_val !== undefined) val = r.termos_val;
+            if (month === undefined && r.termos_month !== undefined) month = r.termos_month;
+            if (paid === undefined && r.termos_paid !== undefined) paid = r.termos_paid;
+        }
+
+        const vEl = document.getElementById(`team-val-${team}`) || (team === 'consignacao' ? document.getElementById('team-val-termos') : null);
+        const mEl = document.getElementById(`team-month-${team}`) || (team === 'consignacao' ? document.getElementById('team-month-termos') : null);
+        const pEl = document.getElementById(`team-paid-${team}`) || (team === 'consignacao' ? document.getElementById('team-paid-termos') : null);
+
+        if (vEl) vEl.value = val !== undefined && val !== null ? val : '';
+        if (mEl) mEl.value = month || '';
+        if (pEl) pEl.checked = !!paid;
     });
 }
 
@@ -907,22 +958,45 @@ async function saveTeamRecord() {
     const containerId = document.getElementById('input-team-container-id').value.trim();
     if (!containerId) return ui.toast("ID do contentor é obrigatório.", "error");
 
+    const getVal = (id, fallbackId) => {
+        const el = document.getElementById(id) || (fallbackId ? document.getElementById(fallbackId) : null);
+        return el ? parseFloat(el.value) || 0 : 0;
+    };
+    const getMonth = (id, fallbackId) => {
+        const el = document.getElementById(id) || (fallbackId ? document.getElementById(fallbackId) : null);
+        return el ? el.value : '';
+    };
+    const getPaid = (id, fallbackId) => {
+        const el = document.getElementById(id) || (fallbackId ? document.getElementById(fallbackId) : null);
+        return el ? el.checked : false;
+    };
+
+    const consignacaoVal = getVal('team-val-consignacao', 'team-val-termos');
+    const consignacaoMonth = getMonth('team-month-consignacao', 'team-month-termos');
+    const consignacaoPaid = getPaid('team-paid-consignacao', 'team-paid-termos');
+
     const data = {
         table_id: api.state.team.currentTableId,
         group_id: document.getElementById('select-team-group').value || null,
         container_id_str: containerId,
-        interna_val: parseFloat(document.getElementById('team-val-interna').value) || 0,
-        interna_month: document.getElementById('team-month-interna').value,
-        interna_paid: document.getElementById('team-paid-interna').checked,
-        maputo_val: parseFloat(document.getElementById('team-val-maputo').value) || 0,
-        maputo_month: document.getElementById('team-month-maputo').value,
-        maputo_paid: document.getElementById('team-paid-maputo').checked,
-        matola_val: parseFloat(document.getElementById('team-val-matola').value) || 0,
-        matola_month: document.getElementById('team-month-matola').value,
-        matola_paid: document.getElementById('team-paid-matola').checked,
-        termos_val: parseFloat(document.getElementById('team-val-termos').value) || 0,
-        termos_month: document.getElementById('team-month-termos').value,
-        termos_paid: document.getElementById('team-paid-termos').checked,
+        interna_val: getVal('team-val-interna'),
+        interna_month: getMonth('team-month-interna'),
+        interna_paid: getPaid('team-paid-interna'),
+        maputo_val: getVal('team-val-maputo'),
+        maputo_month: getMonth('team-month-maputo'),
+        maputo_paid: getPaid('team-paid-maputo'),
+        matola_val: getVal('team-val-matola'),
+        matola_month: getMonth('team-month-matola'),
+        matola_paid: getPaid('team-paid-matola'),
+        investigacao_val: getVal('team-val-investigacao'),
+        investigacao_month: getMonth('team-month-investigacao'),
+        investigacao_paid: getPaid('team-paid-investigacao'),
+        consignacao_val: consignacaoVal,
+        consignacao_month: consignacaoMonth,
+        consignacao_paid: consignacaoPaid,
+        termos_val: consignacaoVal,
+        termos_month: consignacaoMonth,
+        termos_paid: consignacaoPaid,
     };
 
     const btn = document.getElementById('btn-team-record-save');
