@@ -12,6 +12,34 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // Limite 50MB
 });
 
+function extractSpreadsheetId(idOrUrl) {
+  if (!idOrUrl) return '';
+  const str = String(idOrUrl).trim();
+  if (str.includes('/d/')) {
+    const match = str.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) return match[1];
+  }
+  return str;
+}
+
+function extractDriveId(idOrUrl) {
+  if (!idOrUrl) return '';
+  const str = String(idOrUrl).trim();
+  if (str.includes('/folders/')) {
+    const match = str.match(/\/folders\/([a-zA-Z0-9-_]+)/);
+    if (match) return match[1];
+  }
+  if (str.includes('id=')) {
+    const match = str.match(/id=([a-zA-Z0-9-_]+)/);
+    if (match) return match[1];
+  }
+  if (str.includes('/d/')) {
+    const match = str.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) return match[1];
+  }
+  return str;
+}
+
 function resolveRedirectUri(req) {
   if (process.env.GOOGLE_REDIRECT_URI) {
     return process.env.GOOGLE_REDIRECT_URI;
@@ -121,7 +149,8 @@ router.get('/auth/callback', async (req, res) => {
 
 // Criar pasta no Drive
 router.post('/drive/create-folder', async (req, res) => {
-  const { name, parentId } = req.body;
+  let { name, parentId } = req.body;
+  parentId = extractDriveId(parentId);
   try {
     if (!name || !parentId) return res.status(400).json({ error: "Nome e ID pai obrigatórios." });
 
@@ -148,7 +177,8 @@ router.post('/drive/create-folder', async (req, res) => {
 
 // Upload ficheiro no Drive
 router.post('/drive/upload', upload.single('file'), async (req, res) => {
-    const parentId = req.body.parentId || req.query.parentId;
+    let parentId = req.body.parentId || req.query.parentId;
+    parentId = extractDriveId(parentId);
     const file = req.file;
     try {
       if (!file || !parentId) return res.status(400).json({ error: "Ficheiro e ID pai obrigatórios." });
@@ -192,7 +222,7 @@ router.post('/drive/upload', upload.single('file'), async (req, res) => {
 
 // Proxy para visualizar ficheiro do Drive
 router.get('/drive/file/:fileId', async (req, res) => {
-  const { fileId } = req.params;
+  const fileId = extractDriveId(req.params.fileId);
   try {
     const auth = await getGoogleAuth();
     const drive = google.drive({ version: 'v3', auth });
@@ -214,7 +244,8 @@ router.get('/drive/file/:fileId', async (req, res) => {
 // Listar pasta do Drive
 router.post('/drive/list', async (req, res) => {
   try {
-    const { folderId, q } = req.body;
+    let { folderId, q } = req.body;
+    folderId = extractDriveId(folderId);
     let query = '';
     if (folderId) {
       query = `'${folderId}' in parents and trashed = false`;
@@ -245,7 +276,7 @@ router.post('/drive/list', async (req, res) => {
 
 // Apagar (Lixeira) ficheiro do Drive
 router.delete('/drive/file/:fileId', async (req, res) => {
-  const { fileId } = req.params;
+  const fileId = extractDriveId(req.params.fileId);
   try {
     const auth = await getGoogleAuth();
     const drive = google.drive({ version: 'v3', auth });
@@ -263,6 +294,8 @@ router.delete('/drive/file/:fileId', async (req, res) => {
 router.post('/sheet/update-notes', async (req, res) => {
   try {
     let { spreadsheetId, sheetName, row, col, note } = req.body;
+    spreadsheetId = extractSpreadsheetId(spreadsheetId);
+    if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
     const auth = await getGoogleAuth();
     const sheets = google.sheets({ version: 'v4', auth });
 
@@ -332,7 +365,8 @@ router.post('/sheet/update-notes', async (req, res) => {
 // Ler Sheets
 router.post('/sheet/read', async (req, res) => {
   try {
-    const { spreadsheetId, range } = req.body;
+    let { spreadsheetId, range } = req.body;
+    spreadsheetId = extractSpreadsheetId(spreadsheetId);
     if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
 
     const auth = await getGoogleAuth();
@@ -425,7 +459,8 @@ router.post('/sheet/read', async (req, res) => {
 
 router.post('/sheet/batch-requests', async (req, res) => {
   try {
-    const { spreadsheetId, requests } = req.body;
+    let { spreadsheetId, requests } = req.body;
+    spreadsheetId = extractSpreadsheetId(spreadsheetId);
     if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
     if (!requests || !Array.isArray(requests)) return res.status(400).json({ error: "Requests array is required" });
 
@@ -447,15 +482,6 @@ router.post('/sheet/batch-requests', async (req, res) => {
     res.status(status).json({ error: error.message });
   }
 });
-
-function extractSpreadsheetId(idOrUrl) {
-  if (!idOrUrl) return '';
-  if (idOrUrl.includes('/d/')) {
-    const match = idOrUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    if (match) return match[1];
-  }
-  return idOrUrl;
-}
 
 // Atualizar Sheets
 router.post('/sheet/update', async (req, res) => {
@@ -510,7 +536,8 @@ router.post('/sheet/batch-update', async (req, res) => {
 // Verificar se a planilha foi atualizada (polling de metadados do Drive)
 router.post('/sheet/check-update', async (req, res) => {
   try {
-    const { spreadsheetId, lastModifiedTime } = req.body;
+    let { spreadsheetId, lastModifiedTime } = req.body;
+    spreadsheetId = extractSpreadsheetId(spreadsheetId);
     if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
 
     const auth = await getGoogleAuth();

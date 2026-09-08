@@ -97,6 +97,64 @@ export function getColLetter(idx) {
 }
 
 /**
+ * Formata um range com nome de aba seguro e aspas simples quando necessário
+ */
+export function formatSheetRange(sheetNameOrPrefix, cellRef) {
+    if (!sheetNameOrPrefix) return cellRef;
+    let sName = sheetNameOrPrefix.endsWith('!') ? sheetNameOrPrefix.slice(0, -1) : sheetNameOrPrefix;
+    sName = sName.replace(/^'+|'+$/g, '').trim();
+    if (!sName) return cellRef;
+    const escapedName = sName.replace(/'/g, "''");
+    return `'${escapedName}'!${cellRef}`;
+}
+window.formatSheetRange = formatSheetRange;
+
+/**
+ * Procura índice de coluna com correspondência exata, por palavra inteira ou substring segura
+ */
+export function findColumnIndex(columns, targets) {
+    if (!columns || !Array.isArray(columns) || !targets) return -1;
+    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+    const getWords = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, " ").trim().split(/\s+/).filter(Boolean);
+
+    const targetList = Array.isArray(targets) ? targets : [targets];
+
+    // 1. Correspondência exata no texto limpo
+    for (const target of targetList) {
+        const ct = cleanString(target);
+        if (!ct) continue;
+        const idx = columns.findIndex(c => cleanString(c) === ct);
+        if (idx !== -1) return idx;
+    }
+
+    // 2. Correspondência por palavra ou frase completa
+    for (const target of targetList) {
+        const tWords = getWords(target);
+        if (tWords.length === 0) continue;
+        const tPhrase = tWords.join(' ');
+        const idx = columns.findIndex(c => {
+            const cWords = getWords(c);
+            const cPhrase = cWords.join(' ');
+            if (cPhrase === tPhrase) return true;
+            if (tWords.length === 1 && cWords.includes(tWords[0])) return true;
+            return false;
+        });
+        if (idx !== -1) return idx;
+    }
+
+    // 3. Substring apenas para termos longos (>= 4 caracteres e não ambíguos)
+    for (const target of targetList) {
+        const ct = cleanString(target);
+        if (!ct || ct.length < 4 || ct === 'DUTY' || ct === 'PAID') continue;
+        const idx = columns.findIndex(c => cleanString(c).includes(ct));
+        if (idx !== -1) return idx;
+    }
+
+    return -1;
+}
+window.findColumnIndex = findColumnIndex;
+
+/**
  * Copia texto para a área de transferência com notificação toast
  */
 window.copyToClipboard = async function(text, successMsg = "Copiado para a área de transferência!") {
@@ -257,6 +315,14 @@ export function showView(viewId) {
         const termActions = document.getElementById('term-table-actions');
         if (termActions) termActions.classList.add('hidden');
         if (viewId === 'view-term-table' && termActions) termActions.classList.remove('hidden');
+
+        if (viewId === 'view-confirm-table') {
+            const filterText = document.getElementById('search-confirm')?.value || '';
+            const statusFilter = document.getElementById('filter-confirm-status')?.value || 'TODOS';
+            if (typeof renderConfirmList === 'function' && state.confirm && state.confirm.data && state.confirm.data.length > 0) {
+                renderConfirmList(state.confirm.data, filterText, statusFilter);
+            }
+        }
     }
 }
 
@@ -1177,26 +1243,13 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         .replace(/[^A-Z0-9]/g, "")
         .trim();
 
-    const findCol = (targets) => {
-        const cleanedTargets = targets.map(cleanString);
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c) === target);
-            if (idx !== -1) return idx;
-        }
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c).includes(target));
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    };
-
-    const idCodeIdx = findCol(['ID CODE', 'CODE ID', 'ID']);
-    const nameIdx = findCol(['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
-    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
-    const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
-    const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
-    const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
-    const notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
+    const idCodeIdx = findColumnIndex(columns, ['ID CODE', 'CODE ID', 'ID']);
+    const nameIdx = findColumnIndex(columns, ['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
+    const statusIdx = findColumnIndex(columns, ['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+    const dutyIdx = findColumnIndex(columns, ['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
+    const dutyPrepaidIdx = findColumnIndex(columns, ['DUTY PREPAID', 'PREPAID']);
+    const balanceIdx = findColumnIndex(columns, ['BALANCE', 'BALANCO', 'SALDO']);
+    const notaDutyIdx = findColumnIndex(columns, ['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
     
     const paidIdx = columns.findIndex((c, i) => {
         const h = cleanString(c);
@@ -1687,21 +1740,8 @@ export async function showConfirmDetail(client, clientIndex) {
         .replace(/[^A-Z0-9]/g, "")
         .trim();
 
-    const findCol = (targets) => {
-        const cleanedTargets = targets.map(cleanString);
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c) === target);
-            if (idx !== -1) return idx;
-        }
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c).includes(target));
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    };
-
     const getRaw = (row, idx) => idx !== -1 && row[idx] !== undefined && row[idx] !== null && row[idx] !== '' ? row[idx] : '—';
-    const phoneIdx = findCol(['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CONTACTO', 'CELULAR', 'PHONE_NUMBER']);
+    const phoneIdx = findColumnIndex(columns, ['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CONTACTO', 'CELULAR', 'PHONE_NUMBER']);
 
     let clientPhone = '—';
     if (client.rows && client.rows.length > 0) {
@@ -1779,21 +1819,21 @@ export async function showConfirmDetail(client, clientIndex) {
         `;
     }
 
-    const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
-    const cbmIdx = findCol(['CBM', 'M3', 'VOLUME', 'VOL']);
-    const unitDutyIdx = findCol(['UNIT CBM DUTY', 'UNIT DUTY', 'CBM DUTY', 'UNIT']);
-    const dutyPrepIdx = findCol(['DUTY PREPAID', 'PREPAID', 'PRE-PAGO']);
-    const amtDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+    const orderNumIdx = findColumnIndex(columns, ['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
+    const cbmIdx = findColumnIndex(columns, ['CBM', 'M3', 'VOLUME', 'VOL']);
+    const unitDutyIdx = findColumnIndex(columns, ['UNIT CBM DUTY', 'UNIT DUTY', 'CBM DUTY', 'UNIT']);
+    const dutyPrepIdx = findColumnIndex(columns, ['DUTY PREPAID', 'PREPAID', 'PRE-PAGO']);
+    const amtDutyIdx = findColumnIndex(columns, ['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
     
     const paidDutyIdx = columns.findIndex((c, i) => {
         const h = cleanString(c);
         return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
     });
     
-    const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
-    const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
-    const statusIdx = findCol(['CONFIRMATION', 'STATUS']);
-    const notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
+    const balanceIdx = findColumnIndex(columns, ['BALANCE', 'SALDO', 'BALANCO']);
+    const bankDutyIdx = findColumnIndex(columns, ['BANK IN DUTY', 'BANK', 'BANCO']);
+    const statusIdx = findColumnIndex(columns, ['CONFIRMATION', 'STATUS']);
+    const notaDutyIdx = findColumnIndex(columns, ['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
 
     // Determinar se o cliente já respondeu à nota de confirmação e mostrar/ocultar o badge no cabeçalho
     const hasResponse = client.rows && client.rows.some(r => {
@@ -1810,13 +1850,13 @@ export async function showConfirmDetail(client, clientIndex) {
     }
     
     // Novas colunas para Armazém e Frete
-    const packagesIdx = findCol(['PACKAGES']);
-    const unitFreightIdx = findCol(['UNIT CBM FREIGHT']);
-    const amtFreightIdx = findCol(['AMOUNT FREIGHT']);
-    const paidFreightIdx = findCol(['PAID FREIGHT']);
-    const balanceFreightIdx = findCol(['BALANCE FREIGHT']);
-    const bankFreightIdx = findCol(['BANK IN FREIGHT']);
-    const notaFreightIdx = findCol(['NOTA FREIGHT']);
+    const packagesIdx = findColumnIndex(columns, ['PACKAGES']);
+    const unitFreightIdx = findColumnIndex(columns, ['UNIT CBM FREIGHT']);
+    const amtFreightIdx = findColumnIndex(columns, ['AMOUNT FREIGHT']);
+    const paidFreightIdx = findColumnIndex(columns, ['PAID FREIGHT']);
+    const balanceFreightIdx = findColumnIndex(columns, ['BALANCE FREIGHT']);
+    const bankFreightIdx = findColumnIndex(columns, ['BANK IN FREIGHT']);
+    const notaFreightIdx = findColumnIndex(columns, ['NOTA FREIGHT']);
     const getNum = (row, idx) => idx !== -1 ? (parseFloat(String(row[idx]).replace(/[^0-9.-]+/g, '')) || 0) : 0;
 
     // Formatação Numérica (pt-BR para 2 casas decimais)
@@ -2322,8 +2362,6 @@ export async function replyToConfirmationNote(note) {
     if (state.confirm.range && state.confirm.range.includes('!')) {
         sheetName = state.confirm.range.split('!')[0];
     }
-    const cleanSheetName = sheetName.replace(/'/g, '');
-    const prefixClean = cleanSheetName ? `${cleanSheetName}!` : '';
 
     const updatedRows = [];
 
@@ -2338,14 +2376,14 @@ export async function replyToConfirmationNote(note) {
         const newNote = existingNote ? `${existingNote} | Resposta: ${cleanReply}` : `Resposta: ${cleanReply}`;
         rowData[notaDutyIdx] = newNote;
         batchUpdates.push({
-            range: `${prefixClean}${getColLetter(notaDutyIdx)}${rowNum}`,
+            range: formatSheetRange(sheetName, `${getColLetter(notaDutyIdx)}${rowNum}`),
             values: [[newNote]]
         });
 
         // 2. CONFIRMATION para "?"
         rowData[statusIdx] = '?';
         batchUpdates.push({
-            range: `${prefixClean}${getColLetter(statusIdx)}${rowNum}`,
+            range: formatSheetRange(sheetName, `${getColLetter(statusIdx)}${rowNum}`),
             values: [['?']]
         });
 
@@ -2370,6 +2408,11 @@ export async function replyToConfirmationNote(note) {
         if (client.statuses) {
             client.statuses = client.statuses.map(() => 'PENDENTE');
         }
+
+        // Emitir atualização em tempo real para sincronização SSE entre clientes
+        updatedRows.forEach(item => {
+            emitConfirmEvent(state.confirm.sheetId, item.rowIndex, 'UPDATE', { rowData: item.rowData });
+        });
 
         toast('Resposta gravada e estado alterado para Pendente!', 'success');
 
@@ -3371,39 +3414,20 @@ export async function saveConfirmOrderEdit(e) {
     // 1. Identificar colunas no GSheet
     const cols = state.confirm.columns || [];
 
-    const cleanString = (str) => String(str || '')
-        .toUpperCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^A-Z0-9]/g, "")
-        .trim();
-
-    const findCol = (targets) => {
-        const cleanedTargets = targets.map(cleanString);
-        for (const target of cleanedTargets) {
-            const idx = cols.findIndex(c => cleanString(c) === target);
-            if (idx !== -1) return idx;
-        }
-        for (const target of cleanedTargets) {
-            const idx = cols.findIndex(c => cleanString(c).includes(target));
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    };
-
-    const cbmIdx = findCol(['CBM', 'M3', 'VOLUME', 'VOL']);
-    const unitDutyIdx = findCol(['UNIT CBM DUTY', 'UNIT DUTY', 'CBM DUTY', 'UNIT']);
-    const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID', 'PRE-PAGO']);
-    const amountDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+    const cbmIdx = findColumnIndex(cols, ['CBM', 'M3', 'VOLUME', 'VOL']);
+    const unitDutyIdx = findColumnIndex(cols, ['UNIT CBM DUTY', 'UNIT DUTY', 'CBM DUTY', 'UNIT']);
+    const dutyPrepaidIdx = findColumnIndex(cols, ['DUTY PREPAID', 'PREPAID', 'PRE-PAGO']);
+    const amountDutyIdx = findColumnIndex(cols, ['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
     
+    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
     const paidIdx = cols.findIndex((c, i) => {
         const h = cleanString(c);
         return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
     });
     
-    const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
-    const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
-    const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+    const balanceIdx = findColumnIndex(cols, ['BALANCE', 'SALDO', 'BALANCO']);
+    const bankDutyIdx = findColumnIndex(cols, ['BANK IN DUTY', 'BANK', 'BANCO']);
+    const statusIdx = findColumnIndex(cols, ['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
 
     // 2. Preparar valores para a linha específica
     const rawRow = (state.confirm?.data && state.confirm.data[o.originalIndex]) || o.originalRow || [];
@@ -3416,8 +3440,6 @@ export async function saveConfirmOrderEdit(e) {
     if (balanceIdx !== -1) rowData[balanceIdx] = balance;
     if (bankDutyIdx !== -1) rowData[bankDutyIdx] = bankDuty;
 
-
-
     try {
         const spreadsheetId = state.confirm.sheetId;
         let sheetName = 'Folha1';
@@ -3425,50 +3447,49 @@ export async function saveConfirmOrderEdit(e) {
             sheetName = state.confirm.range.split('!')[0];
         }
         const rowNum = o.originalIndex + 1;
-        const cleanSheetName = sheetName.replace(/'/g, '');
 
         // Criar lote para atualizar apenas as células modificadas
         const batchUpdates = [];
         if (cbmIdx !== -1) {
             batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(cbmIdx)}${rowNum}`,
+                range: formatSheetRange(sheetName, `${getColLetter(cbmIdx)}${rowNum}`),
                 values: [[cbm]]
             });
         }
         if (unitDutyIdx !== -1) {
             batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(unitDutyIdx)}${rowNum}`,
+                range: formatSheetRange(sheetName, `${getColLetter(unitDutyIdx)}${rowNum}`),
                 values: [[unitDuty]]
             });
         }
         if (dutyPrepaidIdx !== -1) {
             batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(dutyPrepaidIdx)}${rowNum}`,
+                range: formatSheetRange(sheetName, `${getColLetter(dutyPrepaidIdx)}${rowNum}`),
                 values: [[dutyPrepaid]]
             });
         }
         // Coluna protegida (tem fórmula no GSheet):
         // if (amountDutyIdx !== -1) {
         //     batchUpdates.push({
-        //         range: `${cleanSheetName}!${getColLetter(amountDutyIdx)}${rowNum}`,
+        //         range: formatSheetRange(sheetName, `${getColLetter(amountDutyIdx)}${rowNum}`),
         //         values: [[amountDuty]]
         //     });
         // }
         if (paidIdx !== -1) {
             batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
+                range: formatSheetRange(sheetName, `${getColLetter(paidIdx)}${rowNum}`),
                 values: [[paid]]
             });
         }
         // if (balanceIdx !== -1) {
         //     batchUpdates.push({
-        //         range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+        //         range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${rowNum}`),
         //         values: [[balance]]
         //     });
         // }
         if (bankDutyIdx !== -1) {
             batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(bankDutyIdx)}${rowNum}`,
+                range: formatSheetRange(sheetName, `${getColLetter(bankDutyIdx)}${rowNum}`),
                 values: [[bankDuty]]
             });
         }
@@ -3631,43 +3652,24 @@ export async function applyBulkUpdate() {
     setLoader(true, "A atualizar ordens em massa no Google Sheets...");
 
     try {
-        const columns = state.confirm.columns;
+        const columns = state.confirm.columns || [];
         const spreadsheetId = state.confirm.sheetId;
 
         let sheetName = 'Folha1';
         if (state.confirm.range && state.confirm.range.includes('!')) {
             sheetName = state.confirm.range.split('!')[0];
         }
-        const cleanSheetName = sheetName.replace(/'/g, '');
 
-        const cleanString = (str) => String(str || '')
-            .toUpperCase()
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/[^A-Z0-9]/g, "")
-            .trim();
-
-        const findCol = (targets) => {
-            const cleanedTargets = targets.map(cleanString);
-            for (const target of cleanedTargets) {
-                const idx = columns.findIndex(c => cleanString(c) === target);
-                if (idx !== -1) return idx;
-            }
-            for (const target of cleanedTargets) {
-                const idx = columns.findIndex(c => cleanString(c).includes(target));
-                if (idx !== -1) return idx;
-            }
-            return -1;
-        };
-
-        const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK', 'BANCO']);
-        const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+        const bankDutyIdx = findColumnIndex(columns, ['BANK IN DUTY', 'BANK', 'BANCO']);
+        const statusIdx = findColumnIndex(columns, ['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+        
+        const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
         const paidIdx = columns.findIndex((c, i) => {
             const h = cleanString(c);
             return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
         });
-        const amtDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
-        const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+        const amtDutyIdx = findColumnIndex(columns, ['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+        const balanceIdx = findColumnIndex(columns, ['BALANCE', 'SALDO', 'BALANCO']);
 
         let updatedCount = 0;
         let skippedCount = 0;
@@ -3686,7 +3688,7 @@ export async function applyBulkUpdate() {
             }
 
             // Preparar a linha clonada
-            const rawRow = (state.confirm?.data && state.confirm.data[originalIndex]) || rowObj.originalRow || [];
+            const rawRow = (state.confirm?.data && state.confirm.data[originalIndex]) || rowInfo.originalRow || [];
             const rowData = [...rawRow];
             let modified = false;
 
@@ -3735,7 +3737,7 @@ export async function applyBulkUpdate() {
                 const rowNum = originalIndex + 1;
                 if (selectedBank && bankDutyIdx !== -1) {
                     batchUpdates.push({
-                        range: `${cleanSheetName}!${getColLetter(bankDutyIdx)}${rowNum}`,
+                        range: formatSheetRange(sheetName, `${getColLetter(bankDutyIdx)}${rowNum}`),
                         values: [[rowData[bankDutyIdx]]]
                     });
                 }
@@ -3744,13 +3746,13 @@ export async function applyBulkUpdate() {
                 if (applyConfirmAndPay) {
                     if (paidIdx !== -1) {
                         batchUpdates.push({
-                            range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
+                            range: formatSheetRange(sheetName, `${getColLetter(paidIdx)}${rowNum}`),
                             values: [[rowData[paidIdx]]]
                         });
                     }
                     // if (balanceIdx !== -1) {
                     //     batchUpdates.push({
-                    //         range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+                    //         range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${rowNum}`),
                     //         values: [[rowData[balanceIdx]]]
                     //     });
                     // }
@@ -3760,20 +3762,20 @@ export async function applyBulkUpdate() {
                 if (effectiveStatus) {
                     if (statusIdx !== -1) {
                         batchUpdates.push({
-                            range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
+                            range: formatSheetRange(sheetName, `${getColLetter(statusIdx)}${rowNum}`),
                             values: [[rowData[statusIdx]]]
                         });
                     }
                     if (!wrotePaidAndBalance) {
                         if (paidIdx !== -1) {
                             batchUpdates.push({
-                                range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
+                                range: formatSheetRange(sheetName, `${getColLetter(paidIdx)}${rowNum}`),
                                 values: [[rowData[paidIdx]]]
                             });
                         }
                         // if (balanceIdx !== -1) {
                         //     batchUpdates.push({
-                        //         range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+                        //         range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${rowNum}`),
                         //         values: [[rowData[balanceIdx]]]
                         //     });
                         // }
@@ -4925,6 +4927,7 @@ export function checkMiniFilterStatus() {
         }
     }
 }
+window.checkMiniFilterStatus = checkMiniFilterStatus;
 
 export function togglePaymentSelection(id, date, ref, fullAmount, bank = '', accountOwner = '') {
     const idx = selectedPaymentsForLink.findIndex(p => p.id === id);
@@ -5042,52 +5045,38 @@ export async function confirmPaymentSelection() {
 
             const isFreight = window.paymentReconciliationContext === 'FREIGHT';
 
-            const findCol = (targets) => {
-                const cleanedTargets = targets.map(cleanString);
-                for (const target of cleanedTargets) {
-                    const idx = columns.findIndex(c => cleanString(c) === target);
-                    if (idx !== -1) return idx;
-                }
-                for (const target of cleanedTargets) {
-                    const idx = columns.findIndex(c => cleanString(c).includes(target));
-                    if (idx !== -1) return idx;
-                }
-                return -1;
-            };
-
             let statusIdx = -1, pag1Idx = -1, pag2Idx = -1, pag3Idx = -1, obsIdx = -1, paidIdx = -1, balanceIdx = -1, amountIdx = -1;
             let bankFreightIdx = -1, notaFreightIdx = -1, notaDutyIdx = -1;
 
             if (isFreight) {
-                paidIdx = findCol(['PAID FREIGHT']);
-                balanceIdx = findCol(['BALANCE FREIGHT']);
-                amountIdx = findCol(['AMOUNT FREIGHT']);
-                bankFreightIdx = findCol(['BANK IN FREIGHT']);
-                notaFreightIdx = findCol(['NOTA FREIGHT']);
-                pag1Idx = findCol(['PAG FRETE 1']);
-                pag2Idx = findCol(['PAG FRETE 2']);
-                pag3Idx = findCol(['PAG FRETE 3']);
+                paidIdx = findColumnIndex(columns, ['PAID FREIGHT']);
+                balanceIdx = findColumnIndex(columns, ['BALANCE FREIGHT']);
+                amountIdx = findColumnIndex(columns, ['AMOUNT FREIGHT']);
+                bankFreightIdx = findColumnIndex(columns, ['BANK IN FREIGHT']);
+                notaFreightIdx = findColumnIndex(columns, ['NOTA FREIGHT']);
+                pag1Idx = findColumnIndex(columns, ['PAG FRETE 1']);
+                pag2Idx = findColumnIndex(columns, ['PAG FRETE 2']);
+                pag3Idx = findColumnIndex(columns, ['PAG FRETE 3']);
             } else {
-                statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
-                notaDutyIdx = findCol(['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
-                pag1Idx = findCol(['PAG 1', 'PAG1']);
-                pag2Idx = findCol(['PAG 2', 'PAG2']);
-                pag3Idx = findCol(['PAG 3', 'PAG3']);
-                obsIdx = findCol(['OBS', 'COMENTARIO', 'NOTAS', 'OBSERVACAO', 'OBSERVACOES']);
+                statusIdx = findColumnIndex(columns, ['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+                notaDutyIdx = findColumnIndex(columns, ['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
+                pag1Idx = findColumnIndex(columns, ['PAG 1', 'PAG1']);
+                pag2Idx = findColumnIndex(columns, ['PAG 2', 'PAG2']);
+                pag3Idx = findColumnIndex(columns, ['PAG 3', 'PAG3']);
+                obsIdx = findColumnIndex(columns, ['OBS', 'COMENTARIO', 'NOTAS', 'OBSERVACAO', 'OBSERVACOES']);
                 paidIdx = columns.findIndex((c, i) => {
                     const h = cleanString(c);
                     return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
                 });
-                balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
-                amountIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
+                balanceIdx = findColumnIndex(columns, ['BALANCE', 'SALDO', 'BALANCO']);
+                amountIdx = findColumnIndex(columns, ['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
             }
 
             if (state.confirm.sheetId) {
-                let sheetName = '';
+                let sheetName = 'Folha1';
                 if (state.confirm.range && state.confirm.range.includes('!')) {
                     sheetName = state.confirm.range.split('!')[0];
                 }
-                const prefix = sheetName ? `${sheetName}!` : '';
 
                 // Encontrar o originalIndex da primeira linha (ordem) do cliente ativo
                 const sortedClientRows = [...window.currentClientRows].sort((a, b) => a.originalIndex - b.originalIndex);
@@ -5096,11 +5085,11 @@ export async function confirmPaymentSelection() {
                 let allocatedAmountRemaining = allocatedAmount;
                 const filterStatus = document.getElementById('mini-filter-status')?.value || 'CONFIRMADO';
 
-                // Formatar as datas de todos os pagamentos selecionados para vínculo
+                // Formatar as datas de todos os pagamentos selecionados para vínculo usando parseDate
                 const formattedDates = selectedPaymentsForLink.map(p => {
                     if (!p.date) return '';
-                    const d = new Date(p.date);
-                    if (isNaN(d.getTime())) return p.date;
+                    const d = parseDate(p.date);
+                    if (!d || isNaN(d.getTime())) return String(p.date);
                     const dd = String(d.getDate()).padStart(2, '0');
                     const mm = String(d.getMonth() + 1).padStart(2, '0');
                     const yyyy = d.getFullYear();
@@ -5216,27 +5205,24 @@ export async function confirmPaymentSelection() {
                     }
 
                     // Acumular apenas as células modificadas para o Google Sheets
-                    const cleanSheetName = sheetName.replace(/'/g, '');
-                    const prefixClean = cleanSheetName ? `${cleanSheetName}!` : '';
-
                     if (paidIdx !== -1) {
-                        batchUpdates.push({ range: `${prefixClean}${getColLetter(paidIdx)}${sheetRowNumber}`, values: [[rowData[paidIdx]]] });
+                        batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(paidIdx)}${sheetRowNumber}`), values: [[rowData[paidIdx]]] });
                     }
                     // if (balanceIdx !== -1 && !isFreight) {
-                    //     batchUpdates.push({ range: `${prefixClean}${getColLetter(balanceIdx)}${sheetRowNumber}`, values: [[rowData[balanceIdx]]] });
+                    //     batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${sheetRowNumber}`), values: [[rowData[balanceIdx]]] });
                     // }
                     if (statusIdx !== -1 && !isFreight) {
-                        batchUpdates.push({ range: `${prefixClean}${getColLetter(statusIdx)}${sheetRowNumber}`, values: [[rowData[statusIdx]]] });
+                        batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(statusIdx)}${sheetRowNumber}`), values: [[rowData[statusIdx]]] });
                     }
                     if (!isFreight && notaDutyIdx !== -1) {
-                        batchUpdates.push({ range: `${prefixClean}${getColLetter(notaDutyIdx)}${sheetRowNumber}`, values: [['']] });
+                        batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(notaDutyIdx)}${sheetRowNumber}`), values: [['']] });
                     }
                     if (isFreight) {
                         if (bankFreightIdx !== -1) {
-                            batchUpdates.push({ range: `${prefixClean}${getColLetter(bankFreightIdx)}${sheetRowNumber}`, values: [[rowData[bankFreightIdx] || '']] });
+                            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(bankFreightIdx)}${sheetRowNumber}`), values: [[rowData[bankFreightIdx] || '']] });
                         }
                         if (notaFreightIdx !== -1) {
-                            batchUpdates.push({ range: `${prefixClean}${getColLetter(notaFreightIdx)}${sheetRowNumber}`, values: [[rowData[notaFreightIdx] || '']] });
+                            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(notaFreightIdx)}${sheetRowNumber}`), values: [[rowData[notaFreightIdx] || '']] });
                         }
                     }
                     
@@ -5249,12 +5235,12 @@ export async function confirmPaymentSelection() {
                         const dateVal = formattedDates[i];
                         if (newStatus === 'PENDENTE' && !isFreight) {
                             batchUpdates.push({
-                                range: `${prefixClean}${getColLetter(pIdx)}${sheetRowNumber}`,
+                                range: formatSheetRange(sheetName, `${getColLetter(pIdx)}${sheetRowNumber}`),
                                 values: [['']]
                             });
                         } else if (dateVal !== undefined) {
                             batchUpdates.push({
-                                range: `${prefixClean}${getColLetter(pIdx)}${sheetRowNumber}`,
+                                range: formatSheetRange(sheetName, `${getColLetter(pIdx)}${sheetRowNumber}`),
                                 values: [[dateVal]]
                             });
                         }
@@ -7033,27 +7019,18 @@ export async function saveFreightModal() {
 
     try {
         const columns = state.confirm.columns || [];
-        const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
-        const findCol = (targets) => {
-            const cleanedTargets = targets.map(cleanString);
-            for (const target of cleanedTargets) {
-                const idx = columns.findIndex(c => cleanString(c) === target);
-                if (idx !== -1) return idx;
-            }
-            return -1;
-        };
 
-        const bankFreightIdx = findCol(['BANK IN FREIGHT']);
-        const notaFreightIdx = findCol(['NOTA FREIGHT']);
-        const paidFreightIdx = findCol(['PAID FREIGHT']);
-        const amountFreightIdx = findCol(['AMOUNT FREIGHT']);
-        const balanceFreightIdx = findCol(['BALANCE FREIGHT']);
+        const bankFreightIdx = findColumnIndex(columns, ['BANK IN FREIGHT']);
+        const notaFreightIdx = findColumnIndex(columns, ['NOTA FREIGHT']);
+        const paidFreightIdx = findColumnIndex(columns, ['PAID FREIGHT']);
+        const amountFreightIdx = findColumnIndex(columns, ['AMOUNT FREIGHT']);
+        const balanceFreightIdx = findColumnIndex(columns, ['BALANCE FREIGHT']);
 
         const currentProjectSheetId = state.confirm.sheetId;
         
-        let cleanSheetName = '';
+        let sheetName = 'Folha1';
         if (state.confirm.range && state.confirm.range.includes('!')) {
-            cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
+            sheetName = state.confirm.range.split('!')[0];
         }
 
         const updates = [];
@@ -7069,9 +7046,8 @@ export async function saveFreightModal() {
                     if (state.confirm?.data && state.confirm.data[originalIndex]) {
                         state.confirm.data[originalIndex][bankFreightIdx] = bankVal === '?' ? '' : bankVal;
                     }
-                    const prefixClean = cleanSheetName ? `'${cleanSheetName}'!` : '';
                     updates.push({
-                        range: `${prefixClean}${getColLetter(bankFreightIdx)}${rowIndex}`,
+                        range: formatSheetRange(sheetName, `${getColLetter(bankFreightIdx)}${rowIndex}`),
                         values: [[bankVal === '?' ? '' : bankVal]]
                     });
                 }
@@ -7081,9 +7057,8 @@ export async function saveFreightModal() {
                     if (state.confirm?.data && state.confirm.data[originalIndex]) {
                         state.confirm.data[originalIndex][notaFreightIdx] = finalNote;
                     }
-                    const prefixClean = cleanSheetName ? `'${cleanSheetName}'!` : '';
                     updates.push({
-                        range: `${prefixClean}${getColLetter(notaFreightIdx)}${rowIndex}`,
+                        range: formatSheetRange(sheetName, `${getColLetter(notaFreightIdx)}${rowIndex}`),
                         values: [[finalNote]]
                     });
                 }
@@ -7096,9 +7071,8 @@ export async function saveFreightModal() {
                 if (state.confirm?.data && state.confirm.data[originalIndex]) {
                     state.confirm.data[originalIndex][paidFreightIdx] = amt;
                 }
-                const prefixClean = cleanSheetName ? `'${cleanSheetName}'!` : '';
                 updates.push({
-                    range: `${prefixClean}${getColLetter(paidFreightIdx)}${rowIndex}`,
+                    range: formatSheetRange(sheetName, `${getColLetter(paidFreightIdx)}${rowIndex}`),
                     values: [[amt]]
                 });
             }
@@ -7867,8 +7841,6 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     if (state.confirm.range && state.confirm.range.includes('!')) {
         sheetName = state.confirm.range.split('!')[0];
     }
-    const cleanSheetName = sheetName.replace(/'/g, '');
-    const prefixClean = cleanSheetName ? `${cleanSheetName}!` : '';
 
     const updatedClientRows = [];
 
@@ -7892,7 +7864,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
                 }
             }
             rowData[dischargeIdx] = allocatedDischarge;
-            batchUpdates.push({ range: `${prefixClean}${getColLetter(dischargeIdx)}${rowNum}`, values: [[allocatedDischarge]] });
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(dischargeIdx)}${rowNum}`), values: [[allocatedDischarge]] });
         }
 
         // Distribuição de Entregue pelas ordens
@@ -7908,33 +7880,33 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
                 }
             }
             rowData[deliverIdx] = allocatedDeliver;
-            batchUpdates.push({ range: `${prefixClean}${getColLetter(deliverIdx)}${rowNum}`, values: [[allocatedDeliver]] });
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(deliverIdx)}${rowNum}`), values: [[allocatedDeliver]] });
         }
 
         // Metadados replicados para todas as ordens
         if (deliverDateIdx !== -1) {
             rowData[deliverDateIdx] = deliverDateVal;
-            batchUpdates.push({ range: `${prefixClean}${getColLetter(deliverDateIdx)}${rowNum}`, values: [[deliverDateVal]] });
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(deliverDateIdx)}${rowNum}`), values: [[deliverDateVal]] });
         }
         if (deliverToIdx !== -1) {
             rowData[deliverToIdx] = deliverToVal;
-            batchUpdates.push({ range: `${prefixClean}${getColLetter(deliverToIdx)}${rowNum}`, values: [[deliverToVal]] });
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(deliverToIdx)}${rowNum}`), values: [[deliverToVal]] });
         }
         if (contactoIdx !== -1) {
             rowData[contactoIdx] = contactoVal;
-            batchUpdates.push({ range: `${prefixClean}${getColLetter(contactoIdx)}${rowNum}`, values: [[contactoVal]] });
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(contactoIdx)}${rowNum}`), values: [[contactoVal]] });
         }
         if (motivoIsencaoIdx !== -1) {
             rowData[motivoIsencaoIdx] = motivoIsencaoVal;
-            batchUpdates.push({ range: `${prefixClean}${getColLetter(motivoIsencaoIdx)}${rowNum}`, values: [[motivoIsencaoVal]] });
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(motivoIsencaoIdx)}${rowNum}`), values: [[motivoIsencaoVal]] });
         }
         if (storagePaidIdx !== -1) {
             rowData[storagePaidIdx] = storagePaidVal;
-            batchUpdates.push({ range: `${prefixClean}${getColLetter(storagePaidIdx)}${rowNum}`, values: [[storagePaidVal]] });
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(storagePaidIdx)}${rowNum}`), values: [[storagePaidVal]] });
         }
         if (deliveredIdx !== -1) {
             rowData[deliveredIdx] = deliveredVal;
-            batchUpdates.push({ range: `${prefixClean}${getColLetter(deliveredIdx)}${rowNum}`, values: [[deliveredVal]] });
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(deliveredIdx)}${rowNum}`), values: [[deliveredVal]] });
         }
 
         updatedClientRows.push({ rowIndex, rowData });

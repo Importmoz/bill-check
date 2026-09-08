@@ -1306,13 +1306,14 @@ async function saveConfirmProject() {
     };
 
     const dischargeDate = document.getElementById('input-project-discharge-date').value;
+    const projId = document.getElementById('input-project-id').value;
     const data = {
-        id: document.getElementById('input-project-id').value,
         name: document.getElementById('input-project-name').value.trim(),
         sheetId: extractId(document.getElementById('input-project-sheet-id').value),
         folderId: extractId(document.getElementById('input-project-drive-id').value),
         dischargeDate: dischargeDate || '' // Gravar no PocketBase
     };
+    if (projId) data.id = projId;
 
     if (!data.name || !data.sheetId) return ui.toast("Nome e ID da Folha são obrigatórios.", "error");
 
@@ -1888,7 +1889,8 @@ async function saveConfirmToSheet() {
         if (api.state.confirm.range && api.state.confirm.range.includes('!')) {
             rawSheetName = api.state.confirm.range.split('!')[0];
         }
-        const cleanSheetName = rawSheetName.replace(/'/g, '');
+        const cleanSheetName = rawSheetName.replace(/^'+|'+$/g, '').trim();
+        const prefixClean = cleanSheetName ? `'${cleanSheetName.replace(/'/g, "''")}'!` : '';
         const targetRowIndex = currentConfirmRow.index;
         const rowNum = targetRowIndex + 1;
 
@@ -1905,19 +1907,19 @@ async function saveConfirmToSheet() {
         const batchUpdates = [];
         if (paidIdx !== -1) {
             batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(paidIdx)}${rowNum}`,
+                range: `${prefixClean}${getColLetter(paidIdx)}${rowNum}`,
                 values: [[updatedRow[paidIdx]]]
             });
         }
         // if (balanceIdx !== -1) {
         //     batchUpdates.push({
-        //         range: `${cleanSheetName}!${getColLetter(balanceIdx)}${rowNum}`,
+        //         range: `${prefixClean}${getColLetter(balanceIdx)}${rowNum}`,
         //         values: [[updatedRow[balanceIdx]]]
         //     });
         // }
         if (statusIdx !== -1) {
             batchUpdates.push({
-                range: `${cleanSheetName}!${getColLetter(statusIdx)}${rowNum}`,
+                range: `${prefixClean}${getColLetter(statusIdx)}${rowNum}`,
                 values: [[updatedRow[statusIdx]]]
             });
         }
@@ -1927,7 +1929,7 @@ async function saveConfirmToSheet() {
             const idx = findCol([label]);
             if (idx !== -1) {
                 batchUpdates.push({
-                    range: `${cleanSheetName}!${getColLetter(idx)}${rowNum}`,
+                    range: `${prefixClean}${getColLetter(idx)}${rowNum}`,
                     values: [[updatedRow[idx]]]
                 });
             }

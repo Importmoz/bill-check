@@ -148,6 +148,7 @@ export const state = {
         sheetId: localStorage.getItem('confirm_sheet_id') || '',
         data: [],
         columns: [],
+        notes: [],
         driveFiles: [],
         isOfflineMode: false,
         hasPendingSync: false
@@ -674,8 +675,9 @@ function protectGSheetUpdates(updates, isSingleUpdate = false) {
 
     for (const item of items) {
         if (!item || !item.range) continue;
-        const rangeStr = item.range.includes('!') ? item.range.split('!')[1] : item.range;
-        const sheetPrefix = item.range.includes('!') ? item.range.split('!')[0] + '!' : '';
+        const lastExclIdx = item.range.lastIndexOf('!');
+        const sheetPrefix = lastExclIdx !== -1 ? item.range.substring(0, lastExclIdx + 1) : '';
+        const rangeStr = lastExclIdx !== -1 ? item.range.substring(lastExclIdx + 1) : item.range;
         
         const match = rangeStr.match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/i);
         if (!match) {
@@ -794,6 +796,7 @@ export async function updateGSheetBatch(spreadsheetId, dataUpdate) {
 }
 
 export async function updateGSheetNote(spreadsheetId, sheetName, row, col, note, color = null) {
+    if (!state.confirm.notes) state.confirm.notes = [];
     if (!state.confirm.notes[row]) state.confirm.notes[row] = [];
     state.confirm.notes[row][col] = note;
     debouncedSyncToPocketBase(false);
@@ -1095,10 +1098,14 @@ export async function getConfirmProjects() {
 }
 
 export async function saveConfirmProject(data) {
-    if (data.id) {
-        return await pb.collection('confirm_projects').update(data.id, data);
+    const payload = { ...data };
+    if (payload.id) {
+        const id = payload.id;
+        delete payload.id;
+        return await pb.collection('confirm_projects').update(id, payload);
     } else {
-        return await pb.collection('confirm_projects').create(data);
+        delete payload.id;
+        return await pb.collection('confirm_projects').create(payload);
     }
 }
 
