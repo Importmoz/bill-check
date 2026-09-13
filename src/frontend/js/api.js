@@ -236,12 +236,13 @@ export async function saveBankIncome(data) {
         
         if (existing && existing.length > 0) {
             console.warn('[BANK] Duplicado detetado (pesquisa prévia ignorando):', data.description);
-            return existing[0];
+            return { ...existing[0], _isDuplicate: true };
         }
 
         // 2. Tentar inserir
         const payload = { ...data, signature };
-        return await pb.collection('bank_incomes').create(payload);
+        const created = await pb.collection('bank_incomes').create(payload);
+        return { ...created, _isNew: true };
     } catch (e) {
         // Fallback: PocketBase returns 422 for unique index violations
         if (e.status === 422 && e?.data?.signature?.code === 'unique') {
@@ -251,7 +252,7 @@ export async function saveBankIncome(data) {
                 filter: `signature = "${sig}"`,
                 requestKey: null
             });
-            return existing[0];
+            return { ...(existing[0] || {}), _isDuplicate: true };
         }
         console.error('[BANK] Unexpected error while saving:', e);
         throw e;
@@ -1155,13 +1156,21 @@ export async function fetchDashboardData() {
             totalLiability += (duty - freight);
         });
         
-        let totalPaid = 0;
+        let netPayments = 0;
         tableBalances.forEach(b => {
-            const amount = parseFloat(b.amount) || 0;
-            totalPaid += Math.abs(amount);
+            const rawAmount = parseFloat(b.amount) || 0;
+            // Se tiver o campo type explícito ou valor negativo
+            if (b.type === 'SAIDA' || b.type === 'REFUND') {
+                netPayments -= Math.abs(rawAmount);
+            } else if (b.type === 'ENTRADA' || b.type === 'PAYMENT') {
+                netPayments += Math.abs(rawAmount);
+            } else {
+                // Retrocompatibilidade: respeitar sinal do amount
+                netPayments += rawAmount;
+            }
         });
         
-        table.balance = totalLiability - totalPaid;
+        table.balance = totalLiability - netPayments;
     });
 
     state.tables = tables;
@@ -1220,13 +1229,22 @@ export async function deleteContainerData(id) {
     return await pb.collection('containers').delete(id);
 }
 
-export async function registerPayment(tableId, amount, date) {
-    return await pb.collection('balance').create({ 
+export async function registerPayment(tableId, amount, date, type = 'ENTRADA', note = '') {
+    const isSaida = type === 'SAIDA' || type === 'REFUND';
+    const numAmount = Math.abs(parseFloat(amount) || 0);
+    const finalAmount = isSaida ? -numAmount : numAmount;
+
+    const payload = { 
         table_id: tableId, 
-        amount: Math.abs(amount), 
+        amount: finalAmount, 
         payment_date: date,
-        user_id: pb.authStore.model.id 
-    });
+        user_id: pb.authStore.model?.id || ''
+    };
+
+    if (type) payload.type = type;
+    if (note) payload.note = note;
+
+    return await pb.collection('balance').create(payload);
 }
 
 // --- MÓDULO FINANCE (CONSOLIDATOR VIA CONFIRM PROJECTS) ---

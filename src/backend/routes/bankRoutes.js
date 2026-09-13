@@ -52,24 +52,56 @@ router.post('/upload', upload.single('file'), (req, res) => {
     const logEntry = `${new Date().toISOString()} - INFO: Arquivo extraído ${file.filename}\nSTDOUT: ${stdout.substring(0, 500)}...\nSTDERR: ${stderr}\n`;
     fs.appendFileSync(path.join(logsDir, 'bank_parser.log'), logEntry);
 
+    // Tentar extrair JSON de stdout (mesmo se o processo terminou com erro ou se bibliotecas emitiram warnings)
+    let parsedData = null;
+    if (stdout && stdout.trim()) {
+      try {
+        const trimmed = stdout.trim();
+        const firstArr = trimmed.indexOf('[');
+        const firstObj = trimmed.indexOf('{');
+        let startIdx = -1;
+        if (firstArr !== -1 && firstObj !== -1) {
+          startIdx = Math.min(firstArr, firstObj);
+        } else {
+          startIdx = firstArr !== -1 ? firstArr : firstObj;
+        }
+
+        if (startIdx !== -1) {
+          const lastArr = trimmed.lastIndexOf(']');
+          const lastObj = trimmed.lastIndexOf('}');
+          const endIdx = Math.max(lastArr, lastObj);
+          if (endIdx > startIdx) {
+            const rawJson = trimmed.substring(startIdx, endIdx + 1);
+            parsedData = JSON.parse(rawJson);
+          }
+        }
+      } catch (pe) {
+        console.warn('[BANK-PARSER] Falha ao extrair JSON de stdout:', pe.message);
+      }
+    }
+
     if (error) {
       console.error('[BANK-PARSER] ERRO:', error.message);
+      if (parsedData && parsedData.error) {
+        return res.status(400).json({ error: parsedData.error });
+      }
       return res.status(500).json({
         error: "Erro ao processar o extrato bancário.",
         details: stderr || error.message
       });
     }
 
-    try {
-      // Remover logs de debug impressos pelo print em Python que não estejam em JSON
-      const jsonStr = stdout.trim();
-      // O script original no erro poderia fazer print de fallback JSON, tentamos parse.
-      const data = JSON.parse(jsonStr);
-      res.json(data);
-    } catch (parseError) {
-      console.error('[BANK-PARSER] Erro de Parse do output:', stdout);
-      res.status(500).json({ error: "Erro na interpretação dos dados processados (O script Python não retornou JSON válido)." });
+    if (parsedData !== null) {
+      if (parsedData && parsedData.error) {
+        return res.status(400).json({ error: parsedData.error });
+      }
+      return res.json(parsedData);
     }
+
+    console.error('[BANK-PARSER] Erro de Parse do output:', stdout);
+    return res.status(500).json({ 
+      error: "Erro na interpretação dos dados processados (O script Python não retornou dados legíveis)." 
+    });
   });
 });
 

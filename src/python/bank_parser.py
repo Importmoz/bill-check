@@ -6,6 +6,14 @@ import re
 import unicodedata
 import datetime
 import hashlib
+import io
+
+# Forçar output UTF-8 para evitar problemas de encoding no Windows/Linux
+try:
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
+except Exception:
+    pass
 
 def normalize_str(s):
     if not s: return ""
@@ -206,15 +214,13 @@ def parse_mt940(filepath):
         print(json.dumps({"error": "Nenhum movimento de crédito encontrado no MT940 ou o formato não foi reconhecido."}))
         sys.exit(1)
         
-    print(json.dumps(results, indent=2))
-    sys.exit(0)
+    return results
 
 def process_file(filepath):
     filename = os.path.basename(filepath)
     
     if filename.lower().endswith(('.txt', '.sta', '.mt940')):
-        parse_mt940(filepath)
-        return
+        return parse_mt940(filepath)
 
     results = []
     bank, owner, acc_num = "UNKNOWN", "UNKNOWN", ""
@@ -392,13 +398,6 @@ def process_file(filepath):
     
     # Ensure balance column is defined before diagnostics
     balance_col = next((c for c in cols if 'SALDO' in c or 'BALANCE' in c), None)
-
-    # Forçar output UTF-8 para evitar problemas de encoding no servidor
-    try:
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-    except Exception:
-        pass
 
     # Log de diagnóstico das colunas
     print(f"DEBUG: Banco Detetado: {bank}", file=sys.stderr)

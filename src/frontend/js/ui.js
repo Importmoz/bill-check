@@ -472,21 +472,38 @@ export function renderTableDetails(onEditContainer) {
         </tr>
     `;
 
-    // Linhas de Pagamento
-    let totalPaid = 0;
+    // Linhas de Pagamento e Saídas
+    let netPayments = 0;
     state.balanceRecords.forEach((p, idx) => {
-        const absAmount = Math.abs(parseFloat(p.amount) || 0);
-        totalPaid += absAmount;
+        const rawAmount = parseFloat(p.amount) || 0;
+        const isSaida = p.type === 'SAIDA' || p.type === 'REFUND' || rawAmount < 0;
+        const absAmount = Math.abs(rawAmount);
+
+        if (isSaida) {
+            netPayments -= absAmount;
+        } else {
+            netPayments += absAmount;
+        }
+
+        const dateFormatted = p.payment_date ? new Date(p.payment_date).toLocaleDateString('pt-PT') : '—';
+        const label = isSaida ? `Saída / Devolução ${idx + 1}` : `Paid ${idx + 1}`;
+        const rowClass = isSaida ? 'refund-row-style' : 'paid-row-style';
+        const textClass = isSaida ? 'text-amber-800' : 'text-green-800';
+        const noteText = p.note ? ` • ${p.note}` : '';
+        const descText = isSaida 
+            ? `Saída de Caixa (Devolução/Credor) em ${dateFormatted}${noteText}` 
+            : `Liquidação via Caixa em ${dateFormatted}${noteText}`;
+
         footer.innerHTML += `
-            <tr class="paid-row-style">
-                <td class="text-center uppercase font-normal py-3 border-r-0">Paid ${idx + 1}</td>
-                <td colspan="2" class="text-right italic pr-4 text-[9px] border-l-0">Liquidação via Caixa em ${new Date(p.payment_date).toLocaleDateString('pt-PT')}</td>
-                <td class="text-center font-normal text-green-800">(${formatMZN(absAmount)})</td>
+            <tr class="${rowClass}">
+                <td class="text-center uppercase font-normal py-3 border-r-0">${label}</td>
+                <td colspan="2" class="text-right italic pr-4 text-[9px] border-l-0">${descText}</td>
+                <td class="text-center font-normal ${textClass}">${isSaida ? `+${formatMZN(absAmount)}` : `(${formatMZN(absAmount)})`}</td>
             </tr>
         `;
     });
 
-    const currentBalance = totalLiability - totalPaid;
+    const currentBalance = totalLiability - netPayments;
     state.activeBalance = currentBalance; // Atualiza o estado global para uso no modal de pagamento
 
     // Linha de Balanço Final
@@ -495,7 +512,7 @@ export function renderTableDetails(onEditContainer) {
         <tr class="balance-row ${isCredit ? 'balance-credit' : ''}">
             <td class="uppercase py-4">Balance</td>
             <td colspan="2" class="text-right text-[9px] pr-4 italic font-normal text-slate-700">
-                ${isCredit ? 'Crédito Disponível' : 'Saldo Pendente (A Liquidar)'}
+                ${isCredit ? 'Crédito Disponível (Excedente)' : 'Saldo Pendente (A Liquidar)'}
             </td>
             <td class="text-center font-normal">${formatMZN(currentBalance)}</td>
         </tr>
@@ -4518,22 +4535,35 @@ export async function handleBankUpload(input) {
         const data = await uploadBankStatement(file);
 
         if (data && data.length > 0) {
-            setLoader(true, `A gravar ${data.length} movimentos...`);
             let countNew = 0;
             let countDup = 0;
-            for (const item of data) {
+            for (let i = 0; i < data.length; i++) {
+                const item = data[i];
+                if ((i + 1) % 5 === 0 || i === data.length - 1) {
+                    setLoader(true, `A gravar movimento ${i + 1} de ${data.length}...`);
+                }
                 try {
-                                        const result = await saveBankIncome(item);
-                    // PocketBase returns `created` and `updated` timestamps.
-                    // New record: timestamps are almost equal (<1s). Existing record: `created` is older.
-                    const isNew = result && result.created && result.updated && (new Date(result.updated) - new Date(result.created) < 2000);
-                    if (isNew) countNew++; else countDup++;
+                    const result = await saveBankIncome(item);
+                    if (result && result._isNew) {
+                        countNew++;
+                    } else if (result && result._isDuplicate) {
+                        countDup++;
+                    } else {
+                        const isNew = result && result.created && result.updated && (new Date(result.updated) - new Date(result.created) < 2000);
+                        if (isNew) countNew++; else countDup++;
+                    }
                 } catch (e) {
                     console.warn('[BANK] Erro ao gravar item:', e.message);
                 }
             }
             toast(`Importação concluída! Novos: ${countNew}, Duplicados: ${countDup}`, countNew > 0 ? 'success' : 'warning');
-            await showBankDashboard();
+            
+            // Recarregar os movimentos no ecrã para que o utilizador veja imediatamente os dados importados
+            await listBankIncomes('', 50);
+            const wrapper = document.getElementById('bank-incomes-wrapper');
+            if (wrapper) wrapper.classList.remove('hidden');
+            renderBankIncomes();
+            renderBankOwnerSummary();
         } else {
             toast("Nenhuma entrada de crédito encontrada no ficheiro.", "warning");
         }

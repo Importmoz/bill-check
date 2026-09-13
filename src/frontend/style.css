@@ -7,6 +7,7 @@ body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e29
 .row-container { font-weight: 700; text-align: center; font-size: 11px; }
 .cell-data { font-size: 11px; text-align: center; }
 .paid-row-style { background-color: #d9ead3; font-style: italic; font-size: 11px; }
+.refund-row-style { background-color: #fce5cd; font-style: italic; font-size: 11px; }
 .balance-row { background-color: #f4cccc; font-weight: 700; font-size: 11px; }
 .balance-credit { background-color: #d9ead3; }
 .fab { box-shadow: 0 4px 14px 0 rgba(0,0,0,0.3); transition: all 0.2s ease; }

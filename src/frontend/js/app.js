@@ -574,8 +574,12 @@ async function saveContainer() {
     try {
         await api.saveContainerData({ table_id: state.currentTableId, container_id_str: id_str, duty, freight }, editId);
         ui.closeModal('modal-container');
+        ui.toast(editId ? "Registo atualizado com sucesso!" : "Contentor registado com sucesso!", "success");
         await openTable(state.currentTableId);
-    } catch (err) { alert(err.message); }
+    } catch (err) { 
+        console.error("Erro ao guardar contentor:", err);
+        ui.toast(err.message || "Erro ao guardar contentor.", "error"); 
+    }
     finally { ui.setBtnLoading(btn, false); }
 }
 
@@ -587,8 +591,12 @@ async function deleteContainer() {
         try {
             await api.deleteContainerData(editId);
             ui.closeModal('modal-container');
+            ui.toast("Registo eliminado com sucesso.", "success");
             await openTable(state.currentTableId);
-        } catch (err) { alert(err.message); }
+        } catch (err) { 
+            console.error("Erro ao eliminar contentor:", err);
+            ui.toast(err.message || "Erro ao eliminar contentor.", "error"); 
+        }
         finally { ui.setBtnLoading(btn, false); }
     }
 }
@@ -596,17 +604,35 @@ async function deleteContainer() {
 async function confirmPayment() {
     const date = document.getElementById('input-pay-date').value;
     const amount = parseFloat(document.getElementById('input-pay-amount').value) || 0;
+    const type = document.getElementById('select-pay-type')?.value || 'ENTRADA';
+    const note = document.getElementById('input-pay-note')?.value?.trim() || '';
     
     if (!date || amount < 0.01) return ui.toast("Verifique a data e o valor.", "error");
-    if (amount > Math.abs(state.activeBalance)) return ui.toast("Valor superior ao saldo disponível.", "error");
+
+    const isSaida = type === 'SAIDA' || type === 'REFUND';
+    const activeBalance = state.activeBalance || 0;
+
+    // Se for ENTRADA (amortização de dívida) e o saldo for devedor (positivo), não deve exceder com margem de 0.01
+    if (!isSaida && activeBalance > 0 && amount > (activeBalance + 0.01)) {
+        return ui.toast("O valor de entrada excede o saldo devedor disponível.", "warning");
+    }
+
+    // Se for SAÍDA (reembolso de crédito excedente ao cliente) e o saldo for credor (negativo)
+    if (isSaida && activeBalance < 0 && amount > (Math.abs(activeBalance) + 0.01)) {
+        return ui.toast("O valor de saída excede o crédito disponível.", "warning");
+    }
 
     const btn = document.getElementById('btn-payment-confirm');
     ui.setBtnLoading(btn, true);
     try {
-        await api.registerPayment(state.currentTableId, amount, date);
+        await api.registerPayment(state.currentTableId, amount, date, type, note);
         ui.closeModal('modal-payment');
+        ui.toast(isSaida ? "Saída / Devolução registada com sucesso!" : "Pagamento registado com sucesso!", "success");
         await openTable(state.currentTableId);
-    } catch (err) { alert(err.message); }
+    } catch (err) { 
+        console.error("Erro ao registrar pagamento:", err);
+        ui.toast("Erro ao registrar movimento: " + err.message, "error"); 
+    }
     finally { ui.setBtnLoading(btn, false); }
 }
 
@@ -635,12 +661,23 @@ function openTableActions(table, button) {
     const deleteOption = document.createElement('button');
     deleteOption.className = 'w-full text-left px-4 py-2 text-xs hover:bg-gray-100 text-red-600';
     deleteOption.textContent = 'Eliminar';
-    deleteOption.onclick = (e) => {
+    deleteOption.onclick = async (e) => {
         e.stopPropagation();
+        if (menu.parentElement) document.body.removeChild(menu);
+        document.removeEventListener('click', closeMenu);
         if (confirm(`Eliminar tabela "${table.name}" e todos os dados associados?`)) {
-            api.deleteTable(table.id).then(() => showDashboard());
+            ui.setLoader(true);
+            try {
+                await api.deleteTable(table.id);
+                ui.toast(`Tabela "${table.name}" eliminada com sucesso.`, "success");
+                await showDashboard();
+            } catch (err) {
+                console.error("Erro ao eliminar tabela:", err);
+                ui.toast("Erro ao eliminar tabela: " + err.message, "error");
+            } finally {
+                ui.setLoader(false);
+            }
         }
-        document.body.removeChild(menu);
     };
     
     menu.append(editOption, deleteOption);
@@ -648,7 +685,7 @@ function openTableActions(table, button) {
     
     const closeMenu = (e) => {
         if (!menu.contains(e.target) && e.target !== button) {
-            document.body.removeChild(menu);
+            if (menu.parentElement) document.body.removeChild(menu);
             document.removeEventListener('click', closeMenu);
         }
     };
@@ -666,13 +703,17 @@ function openEditTableModal(table) {
     
     createBtn.onclick = async () => {
         const newName = document.getElementById('input-table-name').value.trim();
-        if (!newName) return;
+        if (!newName) return ui.toast("Nome da tabela não pode estar vazio.", "warning");
         ui.setLoader(true);
         try {
             await api.updateTable(table.id, newName);
             ui.closeModal('modal-new-table');
+            ui.toast("Tabela renomeada com sucesso!", "success");
             await showDashboard();
-        } catch (err) { alert(err.message); }
+        } catch (err) { 
+            console.error("Erro ao atualizar tabela:", err);
+            ui.toast("Erro ao atualizar tabela: " + err.message, "error"); 
+        }
         finally { ui.setLoader(false); resetTableModal(); }
     };
 }
@@ -712,6 +753,29 @@ function editContainer(c) {
     document.getElementById('input-freight').value = c.freight;
 }
 
+function handlePaymentTypeChange() {
+    const typeSelect = document.getElementById('select-pay-type');
+    const type = typeSelect ? typeSelect.value : 'ENTRADA';
+    const isSaida = type === 'SAIDA' || type === 'REFUND';
+    const headerEl = document.getElementById('modal-payment-header');
+    const titleEl = document.getElementById('modal-payment-title');
+    const confirmBtn = document.getElementById('btn-payment-confirm');
+    const amountLabel = document.getElementById('payment-amount-label');
+
+    if (isSaida) {
+        if (headerEl) { headerEl.classList.remove('bg-green-50'); headerEl.classList.add('bg-amber-50'); }
+        if (titleEl) { titleEl.innerText = 'Saída / Devolução a Credor'; titleEl.className = 'font-bold uppercase text-xs text-amber-800'; }
+        if (confirmBtn) { confirmBtn.className = 'flex-1 bg-amber-600 text-white py-3.5 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95'; confirmBtn.innerText = 'Registrar Saída'; }
+        if (amountLabel) amountLabel.innerText = 'Valor a Devolver / Pagar ao Credor';
+    } else {
+        if (headerEl) { headerEl.classList.remove('bg-amber-50'); headerEl.classList.add('bg-green-50'); }
+        if (titleEl) { titleEl.innerText = 'Registo de Pagamento (Entrada)'; titleEl.className = 'font-bold uppercase text-xs text-green-800'; }
+        if (confirmBtn) { confirmBtn.className = 'flex-1 bg-green-700 text-white py-3.5 rounded-lg font-bold uppercase text-xs shadow-lg active:scale-95'; confirmBtn.innerText = 'Registrar Pagamento'; }
+        if (amountLabel) amountLabel.innerText = 'Valor a Receber (Amortização)';
+    }
+}
+window.handlePaymentTypeChange = handlePaymentTypeChange;
+
 function openPaymentModal() {
     if (Math.abs(state.activeBalance) < 0.01) return ui.toast("O balanço já está liquidado.", "info");
     document.getElementById('modal-payment').classList.remove('hidden');
@@ -719,11 +783,22 @@ function openPaymentModal() {
     const balance = state.activeBalance;
     const isCredit = balance < 0;
     
-    document.getElementById('balance-label').textContent = isCredit ? 'CRÉDITO DISPONÍVEL' : 'SALDO A PAGAR';
+    // Auto-selecionar o tipo sugerido: se há crédito (negativo), sugerir SAÍDA; se dívida (positivo), sugerir ENTRADA
+    const typeSelect = document.getElementById('select-pay-type');
+    if (typeSelect) {
+        typeSelect.value = isCredit ? 'SAIDA' : 'ENTRADA';
+    }
+
+    const noteInput = document.getElementById('input-pay-note');
+    if (noteInput) noteInput.value = '';
+
+    document.getElementById('balance-label').textContent = isCredit ? 'CRÉDITO DISPONÍVEL (EXCEDENTE)' : 'SALDO A PAGAR (DEVEDOR)';
     document.getElementById('current-balance-display').innerText = utils.formatMZN(balance);
-    document.getElementById('current-balance-display').className = `text-xl font-bold ${isCredit ? 'text-blue-700' : 'text-green-700'}`;
+    document.getElementById('current-balance-display').className = `text-xl font-bold ${isCredit ? 'text-blue-700' : 'text-red-700'}`;
     document.getElementById('input-pay-amount').value = Math.abs(balance).toFixed(2);
     document.getElementById('input-pay-date').value = new Date().toISOString().split('T')[0];
+
+    handlePaymentTypeChange();
 }
 
 function downloadTableAsImage() {
