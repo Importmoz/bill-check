@@ -11,15 +11,37 @@
                 <span class="text-gray-300">|</span>
                 <span id="current-table-title" class="font-bold text-gray-800 uppercase text-xs tracking-widest"></span>
             </div>
-            <button onclick="downloadTableAsImage()" class="bg-white border-2 border-gray-600 text-black px-4 py-2 rounded-lg font-bold text-[10px] uppercase flex items-center gap-2 hover:bg-gray-50 transition-all active:scale-95">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="7 10 12 15 17 10"></polyline>
-                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                </svg>
-                Baixar PNG
-            </button>
+            <div class="flex items-center gap-3">
+                <!-- Seletor Switch OLD | NEW -->
+                <div class="flex items-center gap-2">
+                    <div class="inline-flex items-center bg-gray-100 p-1 rounded-xl border border-gray-300 shadow-inner">
+                        <button id="btn-bill-mode-old" onclick="window.setBillTableMode('OLD')" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-white text-black shadow-sm">
+                            OLD
+                        </button>
+                        <button id="btn-bill-mode-new" onclick="window.setBillTableMode('NEW')" class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 text-gray-500 hover:text-black">
+                            NEW
+                        </button>
+                    </div>
+                    <!-- Spinner / Animação de Load ao lado do Botão Switch -->
+                    <div id="bill-sync-loader" class="hidden flex items-center justify-center text-emerald-600" title="A carregar dados do Google Sheets...">
+                        <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                    </div>
+                </div>
+
+                <button onclick="downloadTableAsImage()" class="bg-white border-2 border-gray-600 text-black px-4 py-2 rounded-lg font-bold text-[10px] uppercase flex items-center gap-2 hover:bg-gray-50 transition-all active:scale-95">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Baixar PNG
+                </button>
+            </div>
         </div>
+
         <div id="capture-area" class="p-2 bg-white rounded-lg border border-gray-200">
             <table class="excel-table shadow-sm">
                 <thead>

@@ -519,6 +519,146 @@ export function renderTableDetails(onEditContainer) {
     `;
 }
 
+/**
+ * Renderiza os dados em tempo real vindos do Google Sheets (Modo NEW)
+ */
+export function renderRealtimeBillDetails(realtimeData, onEditContainer = null) {
+    const tbody = document.getElementById('table-body');
+    const footer = document.getElementById('footer-logic');
+    if (!tbody || !footer) return;
+
+    tbody.innerHTML = '';
+    footer.innerHTML = '';
+
+    const items = realtimeData?.items || [];
+    const totals = realtimeData?.totals || { duty: 0, freight: 0, diff: 0 };
+
+    if (items.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center py-10 text-gray-400 font-bold uppercase text-xs">
+                    Nenhum registo encontrado.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    let totalDuty = 0, totalFreight = 0, totalLiability = 0;
+
+    items.forEach((c) => {
+        const duty = parseFloat(c.duty) || 0;
+        const freight = parseFloat(c.freight) || 0;
+        const diff = duty - freight;
+
+        totalDuty += duty;
+        totalFreight += freight;
+        totalLiability += diff;
+
+        const tr = document.createElement('tr');
+        tr.className = (onEditContainer ? "cursor-pointer " : "") + "hover:bg-yellow-50 transition-colors";
+        if (onEditContainer) {
+            tr.onclick = () => onEditContainer(c);
+        }
+        tr.innerHTML = `
+            <td class="row-container">${c.container_id_str}</td>
+            <td class="cell-data">${formatMZN(duty)}</td>
+            <td class="cell-data">${formatMZN(freight)}</td>
+            <td class="cell-data font-normal">${formatMZN(diff)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // Subtotal
+    footer.innerHTML += `
+        <tr class="h-8"><td></td><td></td><td></td><td></td></tr>
+        <tr class="font-normal bg-slate-50 text-[0.75rem]">
+            <td class="text-center uppercase py-4">Total Bruto</td>
+            <td class="text-center">${formatMZN(totalDuty)}</td>
+            <td class="text-center">${formatMZN(totalFreight)}</td>
+            <td class="text-center">${formatMZN(totalLiability)}</td>
+        </tr>
+    `;
+
+    // Linhas de Pagamento e Saídas (as mesmas do sistema, para ter paridade total)
+    let netPayments = 0;
+    if (state.balanceRecords && state.balanceRecords.length > 0) {
+        state.balanceRecords.forEach((p, idx) => {
+            const rawAmount = parseFloat(p.amount) || 0;
+            const isSaida = p.type === 'SAIDA' || p.type === 'REFUND' || rawAmount < 0;
+            const absAmount = Math.abs(rawAmount);
+
+            if (isSaida) {
+                netPayments -= absAmount;
+            } else {
+                netPayments += absAmount;
+            }
+
+            const dateFormatted = p.payment_date ? new Date(p.payment_date).toLocaleDateString('pt-PT') : '—';
+            const label = isSaida ? `Saída / Devolução ${idx + 1}` : `Paid ${idx + 1}`;
+            const rowClass = isSaida ? 'refund-row-style' : 'paid-row-style';
+            const textClass = isSaida ? 'text-amber-800' : 'text-green-800';
+            const noteText = p.note ? ` • ${p.note}` : '';
+            const descText = isSaida 
+                ? `Saída de Caixa (Devolução/Credor) em ${dateFormatted}${noteText}` 
+                : `Liquidação via Caixa em ${dateFormatted}${noteText}`;
+
+            footer.innerHTML += `
+                <tr class="${rowClass}">
+                    <td class="text-center uppercase font-normal py-3 border-r-0">${label}</td>
+                    <td colspan="2" class="text-right italic pr-4 text-[9px] border-l-0">${descText}</td>
+                    <td class="text-center font-normal ${textClass}">${isSaida ? `+${formatMZN(absAmount)}` : `(${formatMZN(absAmount)})`}</td>
+                </tr>
+            `;
+        });
+    }
+
+    const currentBalance = totalLiability - netPayments;
+    state.activeBalance = currentBalance;
+
+    // Linha de Balanço Final
+    const isCredit = currentBalance < 0;
+    footer.innerHTML += `
+        <tr class="balance-row ${isCredit ? 'balance-credit' : ''}">
+            <td class="uppercase py-4">Balance</td>
+            <td colspan="2" class="text-right text-[9px] pr-4 italic font-normal text-slate-700">
+                ${isCredit ? 'Crédito Disponível (Excedente)' : 'Saldo Pendente (A Liquidar)'}
+            </td>
+            <td class="text-center font-normal">${formatMZN(currentBalance)}</td>
+        </tr>
+    `;
+}
+
+/**
+ * Atualiza os botões e barras da UI conforme o modo OLD ou NEW
+ */
+export function updateBillModeUI(mode) {
+    const btnOld = document.getElementById('btn-bill-mode-old');
+    const btnNew = document.getElementById('btn-bill-mode-new');
+    const tableActions = document.getElementById('table-actions');
+    const syncLoader = document.getElementById('bill-sync-loader');
+
+    if (mode === 'NEW') {
+        if (btnNew) {
+            btnNew.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-emerald-600 text-white shadow-sm";
+        }
+        if (btnOld) {
+            btnOld.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 text-gray-500 hover:text-black";
+        }
+    } else {
+        if (btnOld) {
+            btnOld.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-white text-black shadow-sm";
+        }
+        if (btnNew) {
+            btnNew.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 text-gray-500 hover:text-black";
+        }
+        if (syncLoader) syncLoader.classList.add('hidden');
+    }
+
+    // Botões de ação (+ Contentor e Quitar Balanço) disponíveis em ambos os modos
+    if (tableActions) tableActions.classList.remove('hidden');
+}
+
 // --- MÓDULO FINANCE (UI) ---
 
 /**

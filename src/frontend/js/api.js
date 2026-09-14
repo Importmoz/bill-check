@@ -126,6 +126,10 @@ export const state = {
     containers: [],
     balanceRecords: [],
     activeBalance: 0,
+    billMode: 'OLD',
+    billConfig: null,
+    billRealtimeData: null,
+    billSources: null,
     finance: {
         groups: [],
         sheets: [],
@@ -1195,10 +1199,80 @@ export async function fetchTableData(tableId) {
     return { containers, balance };
 }
 
+export async function fetchBillTableConfig(tableId) {
+    try {
+        const res = await fetch(`/api/bill/config/${tableId}`);
+        if (res.ok) {
+            const config = await res.json();
+            state.billConfig = config;
+            state.billMode = config.mode || 'OLD';
+            return config;
+        }
+    } catch (e) {
+        console.warn("[BILL] Falha ao ler config da API:", e);
+    }
+    const local = localStorage.getItem('bill_cfg_' + tableId);
+    const config = local ? JSON.parse(local) : { mode: 'OLD', source: null };
+    state.billConfig = config;
+    state.billMode = config.mode || 'OLD';
+    return config;
+}
+
+export async function saveBillTableConfig(tableId, config) {
+    try {
+        localStorage.setItem('bill_cfg_' + tableId, JSON.stringify(config));
+        state.billConfig = config;
+        if (config.mode) state.billMode = config.mode;
+        await fetch(`/api/bill/config/${tableId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+        });
+    } catch (e) {
+        console.warn("[BILL] Falha ao salvar config na API:", e);
+    }
+}
+
+export async function fetchBillSources() {
+    try {
+        const res = await fetch('/api/bill/sources');
+        if (res.ok) {
+            const data = await res.json();
+            state.billSources = data;
+            return data;
+        }
+    } catch (e) {
+        console.warn("[BILL] Falha ao obter fontes:", e);
+    }
+    return { projects: [], groups: [] };
+}
+
+export async function fetchBillRealtimeData(tableId, sourceType = null, sourceId = null) {
+    let url = `/api/bill/realtime/${tableId}`;
+    const params = new URLSearchParams();
+    if (sourceType) params.append('sourceType', sourceType);
+    if (sourceId) params.append('sourceId', sourceId);
+    const qs = params.toString();
+    if (qs) url += `?${qs}`;
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Erro ao carregar dados em tempo real da folha Google');
+    const data = await res.json();
+    state.billRealtimeData = data;
+    return data;
+}
+
 // Operações de Mutação
 
-export async function createTable(name) {
-    return await pb.collection('tables').create({ name, user_id: pb.authStore.model.id });
+export async function createTable(name, options = null) {
+    const record = await pb.collection('tables').create({ name, user_id: pb.authStore.model.id });
+    if (options && (options.mode || options.source)) {
+        await saveBillTableConfig(record.id, {
+            mode: options.mode || 'OLD',
+            source: options.source || null
+        });
+    }
+    return record;
 }
 
 export async function updateTable(id, name) {

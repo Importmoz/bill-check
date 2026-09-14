@@ -52,7 +52,29 @@
                 <h3 class="font-bold uppercase text-xs" id="modal-table-title">Nova Tabela de Registo</h3>
                 <button onclick="closeModal('modal-new-table')" class="font-bold p-1">✕</button>
             </div>
-            <div class="p-6 space-y-4">
+            <div class="p-5 space-y-4">
+                <!-- Seletor de Tipo de Tabela: Manual (OLD) vs Google Sheet (NEW) -->
+                <div>
+                    <label class="block text-[10px] font-bold uppercase mb-1.5 text-gray-500">Modo de Criação</label>
+                    <div class="grid grid-cols-2 gap-1.5 bg-gray-100 p-1 rounded-xl border border-gray-200">
+                        <button type="button" id="btn-modal-type-manual" onclick="window.setNewTableModalType('OLD')" class="py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-white text-black shadow-sm">
+                            Manual (OLD)
+                        </button>
+                        <button type="button" id="btn-modal-type-sheet" onclick="window.setNewTableModalType('NEW')" class="py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black">
+                            Google Sheets (NEW)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Campo de Seleção de Fonte (Visível no modo NEW) -->
+                <div id="group-new-table-sheet" class="hidden">
+                    <label class="block text-[10px] font-bold uppercase mb-1 text-emerald-800">Folha Confirm / Lote Finance</label>
+                    <select id="input-table-source-select" onchange="window.onNewTableSourceSelected(this.value)" class="w-full p-2.5 bg-emerald-50/50 border-2 border-emerald-200 focus:border-emerald-600 outline-none rounded-lg text-xs font-semibold text-emerald-950">
+                        <option value="">A carregar folhas disponíveis...</option>
+                    </select>
+                    <p class="text-[9px] text-emerald-600 mt-1">Os contentores e valores serão lidos em tempo real da folha Google.</p>
+                </div>
+
                 <div>
                     <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome da Referência</label>
                     <input type="text" id="input-table-name" placeholder="Ex: Carga Abril 2024" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
@@ -75,9 +97,10 @@
                 <input type="hidden" id="edit-id">
                 <div>
                     <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">ID / Número</label>
-                    <input type="text" id="input-id" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg text-center text-lg uppercase">
+                    <input type="text" id="input-id" list="list-available-containers" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none font-bold rounded-lg text-center text-lg uppercase" autocomplete="off" placeholder="Ex: 523, 613...">
+                    <datalist id="list-available-containers"></datalist>
                 </div>
-                <div class="grid grid-cols-2 gap-2">
+                <div id="container-modal-values-grid" class="grid grid-cols-2 gap-2">
                     <div>
                         <label class="block text-[9px] font-bold uppercase mb-1 text-gray-400">Duty China</label>
                         <input type="number" id="input-duty" class="w-full p-2 border-2 border-gray-100 focus:border-black outline-none rounded-lg text-center">
@@ -86,6 +109,9 @@
                         <label class="block text-[9px] font-bold uppercase mb-1 text-gray-400">Freight MOZ</label>
                         <input type="number" id="input-freight" class="w-full p-2 border-2 border-gray-100 focus:border-black outline-none rounded-lg text-center">
                     </div>
+                </div>
+                <div id="container-modal-auto-badge" class="hidden p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-[11px] text-center font-medium leading-relaxed">
+                    ✨ Os valores de <strong>Duty</strong> e <strong>Freight</strong> são obtidos automaticamente da folha Google Sheets.
                 </div>
             </div>
             <div class="p-4 bg-gray-100 border-t border-gray-400 flex gap-2 rounded-b-xl">

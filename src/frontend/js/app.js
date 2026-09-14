@@ -60,6 +60,11 @@ window.toggleSelectAllFinanceGroup = toggleSelectAllFinanceGroup;
 window.applyBulkFinanceGroupMove = applyBulkFinanceGroupMove;
 window.clearFinanceSelection = clearFinanceSelection;
 window.openTable = openTable;
+window.setBillTableMode = setBillTableMode;
+window.onBillSourceChanged = onBillSourceChanged;
+window.refreshBillRealtimeData = refreshBillRealtimeData;
+window.setNewTableModalType = setNewTableModalType;
+window.onNewTableSourceSelected = onNewTableSourceSelected;
 window.createNewTable = createNewTable;
 window.saveContainer = saveContainer;
 window.deleteContainer = deleteContainer;
@@ -527,6 +532,85 @@ async function showDashboard() {
     }
 }
 
+let currentNewTableModalMode = 'OLD';
+
+async function populateBillSourcesDropdowns(selectedSource = null) {
+    let sources = state.billSources;
+    if (!sources) {
+        sources = await api.fetchBillSources();
+    }
+    const projects = sources.projects || [];
+    const groups = sources.groups || [];
+
+    // Preencher select da barra de controle em tempo real (#bill-select-source)
+    const selectBar = document.getElementById('bill-select-source');
+    if (selectBar) {
+        let html = `<option value="auto">Detecção Automática (Por Contentores/Nome)</option>`;
+        if (groups.length > 0) {
+            html += `<optgroup label="Lotes / Grupos Finance">`;
+            groups.forEach(g => {
+                html += `<option value="group:${g.id}">Lote: ${g.name}</option>`;
+            });
+            html += `</optgroup>`;
+        }
+        if (projects.length > 0) {
+            html += `<optgroup label="Folhas Google Sheets (Confirm)">`;
+            projects.forEach(p => {
+                html += `<option value="sheet:${p.id}">Folha: ${p.name}</option>`;
+            });
+            html += `</optgroup>`;
+        }
+        selectBar.innerHTML = html;
+
+        if (selectedSource && selectedSource.type && selectedSource.id) {
+            selectBar.value = `${selectedSource.type}:${selectedSource.id}`;
+        } else {
+            selectBar.value = "auto";
+        }
+    }
+
+    // Preencher select do modal de criação de nova tabela (#input-table-source-select)
+    const selectModal = document.getElementById('input-table-source-select');
+    if (selectModal) {
+        let mHtml = `<option value="">-- Selecione uma folha ou lote --</option>`;
+        if (groups.length > 0) {
+            mHtml += `<optgroup label="Lotes / Grupos Finance">`;
+            groups.forEach(g => {
+                mHtml += `<option value="group:${g.id}">Lote: ${g.name}</option>`;
+            });
+            mHtml += `</optgroup>`;
+        }
+        if (projects.length > 0) {
+            mHtml += `<optgroup label="Folhas Confirm">`;
+            projects.forEach(p => {
+                mHtml += `<option value="sheet:${p.id}">Folha: ${p.name}</option>`;
+            });
+            mHtml += `</optgroup>`;
+        }
+        selectModal.innerHTML = mHtml;
+    }
+
+    // Preencher datalist de contentores/folhas disponíveis para o modal de adicionar contentor
+    const datalist = document.getElementById('list-available-containers');
+    if (datalist && projects.length > 0) {
+        datalist.innerHTML = projects.map(p => `<option value="${p.name}">Folha Confirm: ${p.name}</option>`).join('');
+    }
+}
+
+async function loadAndRenderBillRealtime(tableId, sourceType = null, sourceId = null) {
+    const loaderEl = document.getElementById('bill-sync-loader');
+    if (loaderEl) loaderEl.classList.remove('hidden');
+    try {
+        const data = await api.fetchBillRealtimeData(tableId, sourceType, sourceId);
+        ui.renderRealtimeBillDetails(data); // Sem permitir edição direta da tabela pois os dados vêm do Sheets
+    } catch (err) {
+        console.error("[BILL-REALTIME] Erro ao carregar dados:", err);
+        ui.toast("Não foi possível sincronizar com o Google Sheets.", "error");
+    } finally {
+        if (loaderEl) loaderEl.classList.add('hidden');
+    }
+}
+
 async function openTable(id) {
     ui.setLoader(true);
     try {
@@ -534,11 +618,25 @@ async function openTable(id) {
         document.getElementById('current-table-title').innerText = table.name;
         document.getElementById('table-display-name').innerText = table.name;
 
+        // 1. Carrega dados legados (PocketBase containers e balance)
         await api.fetchTableData(id);
 
+        // 2. Carrega configurações do modo (OLD vs NEW)
+        const config = await api.fetchBillTableConfig(id);
+        const mode = config.mode || 'OLD';
+        state.billMode = mode;
+
         ui.showView('view-table');
-        document.getElementById('table-actions').classList.remove('hidden');
-        ui.renderTableDetails(editContainer);
+
+        // 3. Atualizar botões e fontes
+        await populateBillSourcesDropdowns(config.source);
+        ui.updateBillModeUI(mode);
+
+        if (mode === 'NEW') {
+            await loadAndRenderBillRealtime(id, config.source?.type, config.source?.id);
+        } else {
+            ui.renderTableDetails(editContainer);
+        }
     } catch (err) {
         console.error(err);
         ui.toast("Erro ao carregar tabela.", "error");
@@ -547,17 +645,113 @@ async function openTable(id) {
     }
 }
 
+async function setBillTableMode(mode) {
+    if (!state.currentTableId) return;
+    state.billMode = mode;
+    ui.updateBillModeUI(mode);
+
+    // Salvar configuração da tabela
+    const source = state.billConfig?.source || null;
+    await api.saveBillTableConfig(state.currentTableId, { mode, source });
+
+    if (mode === 'NEW') {
+        ui.toast("Modo NEW ativado: valores da folha Google em tempo real.", "info");
+        await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id);
+    } else {
+        ui.toast("Modo OLD ativado: visualização manual do sistema.", "info");
+        ui.renderTableDetails(editContainer);
+    }
+}
+
+async function onBillSourceChanged(val) {
+    if (!state.currentTableId) return;
+    let source = null;
+    if (val && val !== 'auto') {
+        const [type, id] = val.split(':');
+        source = { type, id };
+    }
+    await api.saveBillTableConfig(state.currentTableId, { mode: 'NEW', source });
+    await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id);
+    ui.toast("Fonte da folha atualizada!", "success");
+}
+
+async function refreshBillRealtimeData() {
+    if (!state.currentTableId) return;
+    const icon = document.getElementById('bill-realtime-refresh-icon');
+    if (icon) icon.classList.add('animate-spin');
+    try {
+        const source = state.billConfig?.source || null;
+        await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id);
+        ui.toast("Dados atualizados da folha Google Sheets!", "success");
+    } finally {
+        if (icon) icon.classList.remove('animate-spin');
+    }
+}
+
+function setNewTableModalType(mode) {
+    currentNewTableModalMode = mode;
+    const btnManual = document.getElementById('btn-modal-type-manual');
+    const btnSheet = document.getElementById('btn-modal-type-sheet');
+    const groupSheet = document.getElementById('group-new-table-sheet');
+
+    if (mode === 'NEW') {
+        if (btnSheet) btnSheet.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-emerald-600 text-white shadow-sm";
+        if (btnManual) btnManual.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black";
+        if (groupSheet) groupSheet.classList.remove('hidden');
+        populateBillSourcesDropdowns();
+    } else {
+        if (btnManual) btnManual.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-white text-black shadow-sm";
+        if (btnSheet) btnSheet.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black";
+        if (groupSheet) groupSheet.classList.add('hidden');
+    }
+}
+
+function onNewTableSourceSelected(val) {
+    if (!val) return;
+    const [type, id] = val.split(':');
+    const sources = state.billSources;
+    if (!sources) return;
+
+    const inputName = document.getElementById('input-table-name');
+    if (!inputName) return;
+
+    if (type === 'sheet') {
+        const p = sources.projects.find(x => x.id === id);
+        if (p) inputName.value = p.name;
+    } else if (type === 'group') {
+        const g = sources.groups.find(x => x.id === id);
+        if (g) inputName.value = g.name;
+    }
+}
+
 async function createNewTable() {
     const name = document.getElementById('input-table-name').value.trim();
-    if (!name) return;
+    if (!name) return ui.toast("Nome da referência é obrigatório.", "error");
+
     const btn = document.getElementById('modal-table-submit');
     ui.setBtnLoading(btn, true);
+
     try {
-        await api.createTable(name);
+        let options = { mode: currentNewTableModalMode };
+        if (currentNewTableModalMode === 'NEW') {
+            const selectVal = document.getElementById('input-table-source-select').value;
+            if (selectVal && selectVal !== 'auto') {
+                const [type, id] = selectVal.split(':');
+                options.source = { type, id };
+            }
+        }
+
+        const table = await api.createTable(name, options);
         ui.closeModal('modal-new-table');
         await showDashboard();
-    } catch (err) { ui.toast(err.message, "error"); }
-    finally { ui.setBtnLoading(btn, false); }
+        if (table && table.id) {
+            await openTable(table.id);
+        }
+    } catch (err) {
+        ui.toast(err.message, "error");
+    } finally {
+        ui.setBtnLoading(btn, false);
+    }
 }
 
 async function saveContainer() {
@@ -725,6 +919,7 @@ function resetTableModal() {
     createBtn.onclick = createNewTable;
     createBtn.className = 'w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-xs hover:bg-gray-800 transition-all';
     document.getElementById('input-table-name').value = '';
+    setNewTableModalType('OLD');
 }
 
 function openNewTableModal() {
@@ -735,15 +930,30 @@ function openNewTableModal() {
 
 function openContainerModal() {
     document.getElementById('modal-container').classList.remove('hidden');
-    document.getElementById('modal-container-title').innerText = "Registo de Contentor";
+    const isNewMode = state.billMode === 'NEW';
+    document.getElementById('modal-container-title').innerText = isNewMode ? "Adicionar Folha / Contentor" : "Registo de Contentor";
     document.getElementById('btn-delete').classList.add('hidden');
     document.getElementById('edit-id').value = '';
     document.getElementById('input-id').value = '';
     document.getElementById('input-duty').value = '';
     document.getElementById('input-freight').value = '';
+
+    const grid = document.getElementById('container-modal-values-grid');
+    const badge = document.getElementById('container-modal-auto-badge');
+    if (isNewMode) {
+        if (grid) grid.classList.add('hidden');
+        if (badge) badge.classList.remove('hidden');
+    } else {
+        if (grid) grid.classList.remove('hidden');
+        if (badge) badge.classList.add('hidden');
+    }
 }
 
 function editContainer(c) {
+    if (state.billMode === 'NEW') {
+        ui.toast("No modo NEW os dados são obtidos diretamente do Google Sheets e não podem ser editados.", "info");
+        return;
+    }
     document.getElementById('modal-container').classList.remove('hidden');
     document.getElementById('modal-container-title').innerText = "Editar Registo";
     document.getElementById('btn-delete').classList.remove('hidden');
@@ -751,6 +961,10 @@ function editContainer(c) {
     document.getElementById('input-id').value = c.container_id_str;
     document.getElementById('input-duty').value = c.duty;
     document.getElementById('input-freight').value = c.freight;
+    const grid = document.getElementById('container-modal-values-grid');
+    const badge = document.getElementById('container-modal-auto-badge');
+    if (grid) grid.classList.remove('hidden');
+    if (badge) badge.classList.add('hidden');
 }
 
 function handlePaymentTypeChange() {
