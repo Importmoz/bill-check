@@ -1532,38 +1532,57 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
     if (!state.confirm) state.confirm = {};
     state.confirm.groupedClients = groups;
 
-    // Helper de status
+    // Helper de status canónico e classes
+    const getCanonicalStatus = (str) => {
+        const u = String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        if (!u) return '';
+        if (u.includes('ERRADO')) return 'COMPROVATIVO ERRADO';
+        if (u.includes('SEM COMP')) return 'SEM COMPROVATIVO';
+        if (u.includes('RE-VERIF') || u.includes('VERIFIC')) return 'RE-VERIFICANDO';
+        if (u.includes('PARCIAL')) return 'PARCIAL';
+        if (u.includes('CONFIRM')) return 'CONFIRMADO';
+        if (u.includes('AGUARDA')) return 'AGUARDA PAGAMENTO';
+        if (u.includes('PENDENTE')) return 'PENDENTE';
+        return u;
+    };
+
     const getClientStatusAndClass = (client) => {
+        const cleanStatuses = (client.statuses || []).map(getCanonicalStatus);
+
         let clientStatus = 'PENDENTE';
-        let statusClass = "bg-gray-100 text-gray-400";
+        let displayStatus = 'PENDENTE';
+        let statusClass = "bg-yellow-400 text-black font-black";
 
-        const cleanStatuses = (client.statuses || []).map(s => 
-            String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim()
-        );
-
-        if (cleanStatuses.some(s => s.includes('COMPROVATIVO ERRADO') || s.includes('ERRADO'))) {
-            clientStatus = 'ERRADO';
+        if (cleanStatuses.some(s => s === 'COMPROVATIVO ERRADO')) {
+            clientStatus = 'COMPROVATIVO ERRADO';
+            displayStatus = 'ERRADO';
             statusClass = "bg-red-600 text-white";
-        } else if (cleanStatuses.some(s => s.includes('SEM COMPROVATIVO') || s.includes('SEM COMP'))) {
-            clientStatus = 'SEM COMP.';
+        } else if (cleanStatuses.some(s => s === 'SEM COMPROVATIVO')) {
+            clientStatus = 'SEM COMPROVATIVO';
+            displayStatus = 'SEM COMP.';
             statusClass = "bg-orange-500 text-white";
-        } else if (cleanStatuses.some(s => s.includes('RE-VERIFICANDO') || s.includes('RE-VERIF'))) {
-            clientStatus = 'RE-VERIF.';
+        } else if (cleanStatuses.some(s => s === 'RE-VERIFICANDO')) {
+            clientStatus = 'RE-VERIFICANDO';
+            displayStatus = 'RE-VERIF.';
             statusClass = "bg-blue-600 text-white";
-        } else if (cleanStatuses.length > 0 && cleanStatuses.every(s => s.includes('CONFIRMADO'))) {
+        } else if (cleanStatuses.length > 0 && cleanStatuses.every(s => s === 'CONFIRMADO')) {
             clientStatus = 'CONFIRMADO';
+            displayStatus = 'CONFIRMADO';
             statusClass = "bg-green-600 text-white";
-        } else if (cleanStatuses.some(s => s.includes('PARCIAL')) || (cleanStatuses.some(s => s.includes('CONFIRMADO')) && cleanStatuses.some(s => s.includes('PENDENTE') || s.includes('AGUARDA')))) {
+        } else if (cleanStatuses.some(s => s === 'PARCIAL') || (cleanStatuses.some(s => s === 'CONFIRMADO') && cleanStatuses.some(s => s === 'PENDENTE' || s === 'AGUARDA PAGAMENTO'))) {
             clientStatus = 'PARCIAL';
+            displayStatus = 'PARCIAL';
             statusClass = "bg-yellow-500 text-white font-black";
-        } else if (cleanStatuses.some(s => s.includes('PENDENTE'))) {
+        } else if (cleanStatuses.some(s => s === 'PENDENTE')) {
             clientStatus = 'PENDENTE';
+            displayStatus = 'PENDENTE';
             statusClass = "bg-yellow-400 text-black font-black";
         } else {
-            clientStatus = 'AGUARDA PAG.';
+            clientStatus = 'AGUARDA PAGAMENTO';
+            displayStatus = 'AGUARDA PAG.';
             statusClass = "bg-gray-100 text-gray-400";
         }
-        return { clientStatus, statusClass };
+        return { clientStatus, displayStatus, statusClass };
     };
 
     // Aplicar Filtro de Busca de Texto para renderização visual
@@ -1588,55 +1607,49 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
 
     let totalDuty = 0;
 
-    // Aplicar Filtro de Status (Robusto: ignora emojis, mas preserva hífens)
-    if (statusFilter && statusFilter !== 'TODOS') {
-        const target = statusFilter.toUpperCase().trim();
-        const targetClean = target.replace(/[^A-Z0-9\s-]/g, '').trim();
-
+    // Aplicar Filtro de Status Canónico
+    const targetCanonical = getCanonicalStatus(statusFilter);
+    if (targetCanonical && targetCanonical !== 'TODOS') {
         groups = groups.filter(client => {
             const { clientStatus } = getClientStatusAndClass(client);
-            const clientStatusClean = String(clientStatus || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
 
-            // 1. Status global do cliente corresponde ao alvo
-            if (clientStatusClean === targetClean || clientStatusClean.includes(targetClean) || targetClean.includes(clientStatusClean)) {
-                return true;
+            if (targetCanonical === 'CONFIRMADO') {
+                return clientStatus === 'CONFIRMADO';
             }
-
-            // 2. Se o filtro for PENDENTE, inclui clientes com PARCIAL ou que tenham alguma ordem PENDENTE
-            if (targetClean === 'PENDENTE') {
-                if (clientStatusClean === 'PARCIAL' || clientStatusClean.includes('PENDENTE')) {
+            if (targetCanonical === 'PARCIAL') {
+                return clientStatus === 'PARCIAL';
+            }
+            if (targetCanonical === 'PENDENTE' || targetCanonical === 'AGUARDA PAGAMENTO') {
+                if (clientStatus === 'PENDENTE' || clientStatus === 'PARCIAL' || clientStatus === 'AGUARDA PAGAMENTO') {
                     return true;
                 }
-                const hasPendingOrder = client.statuses.some(s => {
-                    const cleanS = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-                    return cleanS === 'PENDENTE' || cleanS.includes('PENDENTE') || cleanS === 'PARCIAL';
+                return client.statuses.some(s => {
+                    const cs = getCanonicalStatus(s);
+                    return cs === 'PENDENTE' || cs === 'PARCIAL' || cs === 'AGUARDA PAGAMENTO';
                 });
-                if (hasPendingOrder) return true;
             }
 
-            // 3. Verifica se alguma das ordens do cliente corresponde ao status filtrado
-            const matchesAnyOrder = client.statuses.some(s => {
-                const current = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-                return current === targetClean || current.includes(targetClean) || targetClean.includes(current);
-            });
-
-            return matchesAnyOrder;
+            // Para status específicos (RE-VERIFICANDO, SEM COMPROVATIVO, COMPROVATIVO ERRADO)
+            if (clientStatus === targetCanonical) return true;
+            return client.statuses.some(s => getCanonicalStatus(s) === targetCanonical);
         });
     }
 
     // Calcular Total Duty baseado nos grupos e status filtrados
     groups.forEach(client => {
-        const target = (statusFilter || 'PENDENTE').toUpperCase().trim();
-        const targetClean = target.replace(/[^A-Z0-9\s-]/g, '').trim();
-
         client.rows.forEach(r => {
-            const current = String(r.status || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-            const isMatch = statusFilter === 'TODOS' || 
-                            current === targetClean || 
-                            current.includes(targetClean) || 
-                            targetClean.includes(current) || 
-                            (targetClean === 'PENDENTE' && (current.includes('PARCIAL') || current.includes('PENDENTE')));
-            
+            const rowCanonical = getCanonicalStatus(r.status);
+            let isMatch = false;
+            if (targetCanonical === 'TODOS' || targetCanonical === 'PARCIAL') {
+                isMatch = true;
+            } else if (targetCanonical === 'CONFIRMADO') {
+                isMatch = (rowCanonical === 'CONFIRMADO');
+            } else if (targetCanonical === 'PENDENTE' || targetCanonical === 'AGUARDA PAGAMENTO') {
+                isMatch = (rowCanonical === 'PENDENTE' || rowCanonical === 'AGUARDA PAGAMENTO' || rowCanonical === 'PARCIAL');
+            } else {
+                isMatch = (rowCanonical === targetCanonical);
+            }
+
             if (isMatch) {
                 const rawVal = r.originalRow[dutyIdx];
                 const duty = parseFloat(String(rawVal || '0').replace(/[^0-9.-]+/g, '')) || 0;
@@ -1644,6 +1657,16 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             }
         });
     });
+
+    if (totalDuty === 0 && groups.length > 0) {
+        groups.forEach(client => {
+            client.rows.forEach(r => {
+                const rawVal = r.originalRow[dutyIdx];
+                const duty = parseFloat(String(rawVal || '0').replace(/[^0-9.-]+/g, '')) || 0;
+                totalDuty += duty;
+            });
+        });
+    }
 
     // Atualizar Barra de Totais
     const totalsBar = document.getElementById('confirm-totals-bar');
@@ -1654,6 +1677,19 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
     }
 
     container.innerHTML = '';
+
+    // Se nenhum cliente corresponder ao filtro, exibir mensagem amigável
+    if (groups.length === 0) {
+        container.className = "col-span-full py-16 text-center w-full";
+        container.innerHTML = `
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-gray-100 text-gray-400 mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </div>
+            <p class="text-xs font-bold text-gray-500 uppercase tracking-wider">Nenhum cliente com status "${statusFilter}"</p>
+            <p class="text-[10px] text-gray-400 mt-1">Selecione outro status ou "TODOS OS STATUS" para visualizar os clientes.</p>
+        `;
+        return groups;
+    }
 
     // Sincronizar classes de botões ativos no topo
     const viewMode = state.confirm.viewMode || localStorage.getItem('confirm_view_mode') || 'grid';
@@ -1672,7 +1708,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             const card = document.createElement('div');
             card.className = "bg-white border border-gray-200 p-3 pt-8 pb-1.5 rounded-xl shadow-sm hover:shadow-md hover:border-gray-300 transition-all cursor-pointer group relative overflow-hidden";
 
-            const { clientStatus, statusClass } = getClientStatusAndClass(client);
+            const { clientStatus, displayStatus, statusClass } = getClientStatusAndClass(client);
             const rowCount = client.rows.length;
 
             const hasActiveLock = client.rows.some(r => {
@@ -1713,7 +1749,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
                         </div>
                     ` : ''}
                     <div class="px-3 flex items-center justify-center h-full rounded-none ${statusClass}">
-                        <span class="text-[8px] font-black uppercase tracking-wider">${clientStatus}</span>
+                        <span class="text-[8px] font-black uppercase tracking-wider">${displayStatus || clientStatus}</span>
                     </div>
                 </div>
 
@@ -1739,7 +1775,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             const card = document.createElement('div');
             card.className = "bg-white border border-gray-200 hover:border-gray-300 p-3 rounded-xl shadow-sm hover:shadow transition-all cursor-pointer flex items-center justify-between group";
 
-            const { clientStatus, statusClass } = getClientStatusAndClass(client);
+            const { clientStatus, displayStatus, statusClass } = getClientStatusAndClass(client);
             const rowCount = client.rows.length;
 
             const hasActiveLock = client.rows.some(r => {
@@ -1776,7 +1812,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
                     ${client.hasResponse ? `
                         <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded bg-indigo-100 text-indigo-700 border border-indigo-200 animate-pulse flex items-center gap-1" title="Cliente já respondeu à nota de confirmação">💬 RESPONDIDO</span>
                     ` : ''}
-                    <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
+                    <span class="text-[8px] font-black uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${displayStatus || clientStatus}</span>
                     <div class="text-gray-300 group-hover:text-yellow-600 transition-all shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                     </div>
@@ -1795,7 +1831,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
         
         let tableRowsHtml = '';
         groups.forEach((client) => {
-            const { clientStatus, statusClass } = getClientStatusAndClass(client);
+            const { clientStatus, displayStatus, statusClass } = getClientStatusAndClass(client);
             const rowCount = client.rows.length;
 
             const hasActiveLock = client.rows.some(r => {
@@ -1837,7 +1873,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
                             ${client.hasResponse ? `
                                 <span class="text-[8px] font-normal uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 border border-indigo-200 animate-pulse flex items-center gap-1" title="Cliente já respondeu à nota de confirmação">💬 RESPONDIDO</span>
                             ` : ''}
-                            <span class="text-[8px] font-normal uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${clientStatus}</span>
+                            <span class="text-[8px] font-normal uppercase tracking-wider px-2 py-1 rounded inline-block ${statusClass}">${displayStatus || clientStatus}</span>
                         </div>
                     </td>
                     <td class="p-3 text-center">

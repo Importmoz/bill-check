@@ -1685,8 +1685,9 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
             }
         }
         
-        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
-        ui.renderConfirmList(data, "", statusFilter);
+        const filterEl = document.getElementById('confirm-status-filter');
+        if (filterEl) filterEl.value = 'PENDENTE';
+        ui.renderConfirmList(data, "", 'PENDENTE');
         
         // Reconstruir locks ativos a partir dos eventos recentes (últimos 5 minutos)
         try {

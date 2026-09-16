@@ -1218,8 +1218,9 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
             }
         }
         
-        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
-        ui.renderConfirmList(data, "", statusFilter);
+        const filterEl = document.getElementById('confirm-status-filter');
+        if (filterEl) filterEl.value = 'PENDENTE';
+        ui.renderConfirmList(data, "", 'PENDENTE');
         
         // Reconstruir locks ativos a partir dos eventos recentes (últimos 5 minutos)
         try {
@@ -1297,7 +1298,7 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
 
 function handleConfirmSearch() {
     const filterText = document.getElementById('input-confirm-search').value;
-    const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+    const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
     ui.renderConfirmList(api.state.confirm.data, filterText, statusFilter);
 }
 
