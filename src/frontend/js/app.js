@@ -1763,8 +1763,8 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
 }
 
 function handleConfirmSearch() {
-    const filterText = document.getElementById('input-confirm-search').value;
-    const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+    const filterText = document.getElementById('input-confirm-search')?.value || '';
+    const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
     ui.renderConfirmList(api.state.confirm.data, filterText, statusFilter);
 }
 

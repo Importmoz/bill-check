@@ -317,8 +317,8 @@ export function showView(viewId) {
         if (viewId === 'view-term-table' && termActions) termActions.classList.remove('hidden');
 
         if (viewId === 'view-confirm-table') {
-            const filterText = document.getElementById('search-confirm')?.value || '';
-            const statusFilter = document.getElementById('filter-confirm-status')?.value || 'TODOS';
+            const filterText = document.getElementById('input-confirm-search')?.value || '';
+            const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
             if (typeof renderConfirmList === 'function' && state.confirm && state.confirm.data && state.confirm.data.length > 0) {
                 renderConfirmList(state.confirm.data, filterText, statusFilter);
             }
@@ -1361,9 +1361,18 @@ export function setConfirmProjectViewMode(mode) {
 }
 window.setConfirmProjectViewMode = setConfirmProjectViewMode;
 
-export function renderConfirmList(data, filterText = "", statusFilter = "TODOS") {
+export function renderConfirmList(data, filterText = "", statusFilter = null) {
     const container = document.getElementById('confirm-list-container');
     if (!container) return;
+
+    if (!statusFilter) {
+        statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
+    }
+
+    const statusSelect = document.getElementById('confirm-status-filter');
+    if (statusSelect && statusSelect.value !== statusFilter) {
+        statusSelect.value = statusFilter;
+    }
 
     container.innerHTML = '';
     const columns = data[0];
@@ -1487,21 +1496,14 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
         const rawBalance = balanceIdx !== -1 ? row[balanceIdx] : 0;
         const balanceVal = parseFloat(String(rawBalance || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
-        // Regras de negócio quando o status está vazio ou como Pendente padrão
-        if (rowStatus === '' || rowStatus.toUpperCase() === 'PENDENTE') {
-            if (balanceVal === 0) {
-                // Se o saldo for zero, está pago. Verificar método:
-                if (prepaidVal > 0) {
-                    rowStatus = 'CONFIRMADO'; // Prepaid não precisa de verificação
-                } else if (paidVal > 0) {
-                    rowStatus = 'PENDENTE'; // Paid precisa de confirmação bancária
-                } else {
-                    rowStatus = 'PENDENTE'; // Fallback
-                }
-            } else {
-                // Se ainda tem saldo a pagar
-                rowStatus = 'AGUARDA PAGAMENTO';
-            }
+        // Padrão é PENDENTE se estiver vazio ou com interrogação
+        if (rowStatus === '' || rowStatus === '?') {
+            rowStatus = 'PENDENTE';
+        }
+
+        // Se estiver como PENDENTE mas já tiver prepaid total e saldo zero, marca confirmado
+        if (rowStatus.toUpperCase() === 'PENDENTE' && balanceVal === 0 && prepaidVal > 0) {
+            rowStatus = 'CONFIRMADO';
         }
 
         if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
@@ -1530,6 +1532,40 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     if (!state.confirm) state.confirm = {};
     state.confirm.groupedClients = groups;
 
+    // Helper de status
+    const getClientStatusAndClass = (client) => {
+        let clientStatus = 'PENDENTE';
+        let statusClass = "bg-gray-100 text-gray-400";
+
+        const cleanStatuses = (client.statuses || []).map(s => 
+            String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim()
+        );
+
+        if (cleanStatuses.some(s => s.includes('COMPROVATIVO ERRADO') || s.includes('ERRADO'))) {
+            clientStatus = 'ERRADO';
+            statusClass = "bg-red-600 text-white";
+        } else if (cleanStatuses.some(s => s.includes('SEM COMPROVATIVO') || s.includes('SEM COMP'))) {
+            clientStatus = 'SEM COMP.';
+            statusClass = "bg-orange-500 text-white";
+        } else if (cleanStatuses.some(s => s.includes('RE-VERIFICANDO') || s.includes('RE-VERIF'))) {
+            clientStatus = 'RE-VERIF.';
+            statusClass = "bg-blue-600 text-white";
+        } else if (cleanStatuses.length > 0 && cleanStatuses.every(s => s.includes('CONFIRMADO'))) {
+            clientStatus = 'CONFIRMADO';
+            statusClass = "bg-green-600 text-white";
+        } else if (cleanStatuses.some(s => s.includes('PARCIAL')) || (cleanStatuses.some(s => s.includes('CONFIRMADO')) && cleanStatuses.some(s => s.includes('PENDENTE') || s.includes('AGUARDA')))) {
+            clientStatus = 'PARCIAL';
+            statusClass = "bg-yellow-500 text-white font-black";
+        } else if (cleanStatuses.some(s => s.includes('PENDENTE'))) {
+            clientStatus = 'PENDENTE';
+            statusClass = "bg-yellow-400 text-black font-black";
+        } else {
+            clientStatus = 'AGUARDA PAG.';
+            statusClass = "bg-gray-100 text-gray-400";
+        }
+        return { clientStatus, statusClass };
+    };
+
     // Aplicar Filtro de Busca de Texto para renderização visual
     if (filterText) {
         const term = filterText.toLowerCase();
@@ -1553,31 +1589,53 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     let totalDuty = 0;
 
     // Aplicar Filtro de Status (Robusto: ignora emojis, mas preserva hífens)
-    if (statusFilter !== 'TODOS') {
+    if (statusFilter && statusFilter !== 'TODOS') {
         const target = statusFilter.toUpperCase().trim();
         const targetClean = target.replace(/[^A-Z0-9\s-]/g, '').trim();
+
         groups = groups.filter(client => {
-            const matches = client.statuses.some(s => {
-                const current = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-                // Exibir PARCIAL junto com PENDENTE
-                if (targetClean === 'PENDENTE' && current.includes('PARCIAL')) {
+            const { clientStatus } = getClientStatusAndClass(client);
+            const clientStatusClean = String(clientStatus || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
+
+            // 1. Status global do cliente corresponde ao alvo
+            if (clientStatusClean === targetClean || clientStatusClean.includes(targetClean) || targetClean.includes(clientStatusClean)) {
+                return true;
+            }
+
+            // 2. Se o filtro for PENDENTE, inclui clientes com PARCIAL ou que tenham alguma ordem PENDENTE
+            if (targetClean === 'PENDENTE') {
+                if (clientStatusClean === 'PARCIAL' || clientStatusClean.includes('PENDENTE')) {
                     return true;
                 }
-                
-                return current.includes(targetClean) || targetClean.includes(current);
+                const hasPendingOrder = client.statuses.some(s => {
+                    const cleanS = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
+                    return cleanS === 'PENDENTE' || cleanS.includes('PENDENTE') || cleanS === 'PARCIAL';
+                });
+                if (hasPendingOrder) return true;
+            }
+
+            // 3. Verifica se alguma das ordens do cliente corresponde ao status filtrado
+            const matchesAnyOrder = client.statuses.some(s => {
+                const current = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
+                return current === targetClean || current.includes(targetClean) || targetClean.includes(current);
             });
-            return matches;
+
+            return matchesAnyOrder;
         });
     }
 
     // Calcular Total Duty baseado nos grupos e status filtrados
     groups.forEach(client => {
-        const target = statusFilter.toUpperCase().trim();
+        const target = (statusFilter || 'PENDENTE').toUpperCase().trim();
         const targetClean = target.replace(/[^A-Z0-9\s-]/g, '').trim();
 
         client.rows.forEach(r => {
             const current = String(r.status || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-            const isMatch = statusFilter === 'TODOS' || current.includes(targetClean) || targetClean.includes(current) || (targetClean === 'PENDENTE' && current.includes('PARCIAL'));
+            const isMatch = statusFilter === 'TODOS' || 
+                            current === targetClean || 
+                            current.includes(targetClean) || 
+                            targetClean.includes(current) || 
+                            (targetClean === 'PENDENTE' && (current.includes('PARCIAL') || current.includes('PENDENTE')));
             
             if (isMatch) {
                 const rawVal = r.originalRow[dutyIdx];
@@ -1606,40 +1664,6 @@ export function renderConfirmList(data, filterText = "", statusFilter = "TODOS")
     if (btnGrid) btnGrid.className = `p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
     if (btnList) btnList.className = `p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
     if (btnTable) btnTable.className = `p-2 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
-
-    // Helper de status
-    const getClientStatusAndClass = (client) => {
-        let clientStatus = 'PENDENTE';
-        let statusClass = "bg-gray-100 text-gray-400";
-
-        const cleanStatuses = client.statuses.map(s => 
-            String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim()
-        );
-
-        if (cleanStatuses.some(s => s.includes('COMPROVATIVO ERRADO') || s.includes('ERRADO'))) {
-            clientStatus = 'ERRADO';
-            statusClass = "bg-red-600 text-white";
-        } else if (cleanStatuses.some(s => s.includes('SEM COMPROVATIVO') || s.includes('SEM COMP'))) {
-            clientStatus = 'SEM COMP.';
-            statusClass = "bg-orange-500 text-white";
-        } else if (cleanStatuses.some(s => s.includes('RE-VERIFICANDO') || s.includes('RE-VERIF'))) {
-            clientStatus = 'RE-VERIF.';
-            statusClass = "bg-blue-600 text-white";
-        } else if (cleanStatuses.every(s => s.includes('CONFIRMADO'))) {
-            clientStatus = 'CONFIRMADO';
-            statusClass = "bg-green-600 text-white";
-        } else if (cleanStatuses.some(s => s.includes('PARCIAL')) || (cleanStatuses.some(s => s.includes('CONFIRMADO')) && cleanStatuses.some(s => s.includes('PENDENTE') || s.includes('AGUARDA')))) {
-            clientStatus = 'PARCIAL';
-            statusClass = "bg-yellow-500 text-white font-black";
-        } else if (cleanStatuses.some(s => s.includes('PENDENTE'))) {
-            clientStatus = 'PENDENTE';
-            statusClass = "bg-yellow-400 text-black font-black";
-        } else {
-            clientStatus = 'AGUARDA PAG.';
-            statusClass = "bg-gray-100 text-gray-400";
-        }
-        return { clientStatus, statusClass };
-    };
 
     // === 1 - MODOS DE EXIBIÇÃO ===
     if (viewMode === 'grid') {
@@ -7258,7 +7282,7 @@ export async function saveFreightModal() {
         closeFreightModal();
 
         // Recarregar os dados para refletir na UI imediatamente
-        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
         renderConfirmList(state.confirm.data, "", statusFilter);
         if (window.currentActiveClient) {
             const freshClient = state.confirm.groupedClients?.find(c => c.displayName === window.currentActiveClient.displayName) || window.currentActiveClient;
@@ -7334,7 +7358,7 @@ export async function checkAndCreateWarehouseColumns() {
         
         toast('Colunas de Armazém criadas com sucesso!', 'success');
         
-        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
         renderConfirmList(state.confirm.data, "", statusFilter);
         if (window.currentActiveClient) {
             await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
@@ -7342,7 +7366,7 @@ export async function checkAndCreateWarehouseColumns() {
     } catch (err) {
         console.warn('[WAREHOUSE] Colunas salvas localmente:', err.message);
         toast('Colunas de Armazém criadas com sucesso (PocketBase)!', 'success');
-        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
         renderConfirmList(state.confirm.data, "", statusFilter);
         if (window.currentActiveClient) {
             await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
