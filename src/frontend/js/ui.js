@@ -1496,13 +1496,19 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
         const rawBalance = balanceIdx !== -1 ? row[balanceIdx] : 0;
         const balanceVal = parseFloat(String(rawBalance || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
-        // Padrão é PENDENTE se estiver vazio ou com interrogação
+        // Padrão: verificar se tem pré-pago, pagamento ou se aguarda pagamento
         if (rowStatus === '' || rowStatus === '?') {
-            rowStatus = 'PENDENTE';
+            if (balanceVal === 0 && prepaidVal > 0) {
+                rowStatus = 'CONFIRMADO';
+            } else if (paidVal > 0) {
+                rowStatus = 'PENDENTE';
+            } else {
+                rowStatus = 'AGUARDA PAGAMENTO';
+            }
         }
 
-        // Se estiver como PENDENTE mas já tiver prepaid total e saldo zero, marca confirmado
-        if (rowStatus.toUpperCase() === 'PENDENTE' && balanceVal === 0 && prepaidVal > 0) {
+        // Se estiver como PENDENTE ou AGUARDA PAGAMENTO mas já tiver prepaid total e saldo zero, marca confirmado
+        if ((rowStatus.toUpperCase() === 'PENDENTE' || rowStatus.toUpperCase() === 'AGUARDA PAGAMENTO') && balanceVal === 0 && prepaidVal > 0) {
             rowStatus = 'CONFIRMADO';
         }
 
@@ -1619,14 +1625,11 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             if (targetCanonical === 'PARCIAL') {
                 return clientStatus === 'PARCIAL';
             }
-            if (targetCanonical === 'PENDENTE' || targetCanonical === 'AGUARDA PAGAMENTO') {
-                if (clientStatus === 'PENDENTE' || clientStatus === 'PARCIAL' || clientStatus === 'AGUARDA PAGAMENTO') {
-                    return true;
-                }
-                return client.statuses.some(s => {
-                    const cs = getCanonicalStatus(s);
-                    return cs === 'PENDENTE' || cs === 'PARCIAL' || cs === 'AGUARDA PAGAMENTO';
-                });
+            if (targetCanonical === 'PENDENTE') {
+                return clientStatus === 'PENDENTE' || clientStatus === 'PARCIAL';
+            }
+            if (targetCanonical === 'AGUARDA PAGAMENTO') {
+                return clientStatus === 'AGUARDA PAGAMENTO';
             }
 
             // Para status específicos (RE-VERIFICANDO, SEM COMPROVATIVO, COMPROVATIVO ERRADO)
@@ -1644,8 +1647,10 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
                 isMatch = true;
             } else if (targetCanonical === 'CONFIRMADO') {
                 isMatch = (rowCanonical === 'CONFIRMADO');
-            } else if (targetCanonical === 'PENDENTE' || targetCanonical === 'AGUARDA PAGAMENTO') {
-                isMatch = (rowCanonical === 'PENDENTE' || rowCanonical === 'AGUARDA PAGAMENTO' || rowCanonical === 'PARCIAL');
+            } else if (targetCanonical === 'PENDENTE') {
+                isMatch = (rowCanonical === 'PENDENTE' || rowCanonical === 'PARCIAL');
+            } else if (targetCanonical === 'AGUARDA PAGAMENTO') {
+                isMatch = (rowCanonical === 'AGUARDA PAGAMENTO');
             } else {
                 isMatch = (rowCanonical === targetCanonical);
             }
