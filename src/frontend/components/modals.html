@@ -803,3 +803,156 @@
         </div>
     </div>
 </div>
+
+<!-- Modal: Adicionar Artigo ao Cliente Ativo -->
+<div id="modal-confirm-add-article" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 text-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <div>
+                <h3 class="font-black uppercase text-xs text-slate-800 tracking-wider">Adicionar Artigo / Ordem</h3>
+                <p id="modal-add-art-client-info" class="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Cliente: ---</p>
+            </div>
+            <button onclick="ui.closeModal('modal-confirm-add-article')" class="font-bold text-slate-400 hover:text-black p-1">✕</button>
+        </div>
+        <form id="form-confirm-add-article" onsubmit="window.submitAddConfirmArticle(event)" class="p-5 space-y-4 overflow-y-auto">
+            <div>
+                <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Número da Ordem (HF...)</label>
+                <input type="text" id="input-add-art-order" required placeholder="Ex: HF260508170033" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs uppercase focus:border-blue-500 outline-none">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Volume (CBM)</label>
+                    <input type="number" step="0.001" id="input-add-art-cbm" required placeholder="0.10" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Descrição</label>
+                    <input type="text" id="input-add-art-desc" placeholder="Ex: 1CLOTHING BAG" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs uppercase focus:border-blue-500 outline-none">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Valor Pago (Paid MZN)</label>
+                    <input type="number" step="any" id="input-add-art-paid" placeholder="0.00" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs focus:border-blue-500 outline-none text-green-700">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Duty Prepaid (MZN)</label>
+                    <input type="number" step="any" id="input-add-art-duty-prepaid" value="0" placeholder="0.00" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs focus:border-blue-500 outline-none">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Banco (Bank in Duty)</label>
+                    <select id="select-add-art-bank" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs bg-white focus:border-blue-500 outline-none">
+                        <option value="BIM JUPITER">BIM JUPITER</option>
+                        <option value="BCI JUPITER">BCI JUPITER</option>
+                        <option value="BIM BOSS">BIM BOSS</option>
+                        <option value="BCI BOSS">BCI BOSS</option>
+                        <option value="STB JUPITER">STB JUPITER</option>
+                        <option value="NED JUPITER">NED JUPITER</option>
+                        <option value="PAID IN CHINA">PAID IN CHINA</option>
+                        <option value="EMOLA BOSS">EMOLA BOSS</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Confirmação</label>
+                    <select id="select-add-art-status" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs bg-white focus:border-blue-500 outline-none">
+                        <option value="PENDENTE">PENDENTE</option>
+                        <option value="CONFIRMADO">CONFIRMADO</option>
+                    </select>
+                </div>
+            </div>
+            <div class="border-t border-slate-100 pt-3">
+                <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Anexar Ficheiros de Suporte (Opcional)</label>
+                <input type="file" id="input-add-art-files" multiple class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                <p class="text-[9px] text-slate-400 mt-1">Os ficheiros serão enviados diretamente para a pasta do cliente no Google Drive (SUPORTES).</p>
+            </div>
+            <div class="pt-2 flex gap-2">
+                <button type="button" onclick="ui.closeModal('modal-confirm-add-article')" class="flex-1 py-3 border border-slate-200 rounded-xl font-black uppercase text-xs text-slate-600 hover:bg-slate-50">Cancelar</button>
+                <button type="submit" id="btn-save-confirm-add-art" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase text-xs shadow-md">Gravar Artigo</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Adicionar Novo Cliente na Folha -->
+<div id="modal-confirm-add-client" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 text-slate-800 overflow-hidden flex flex-col max-h-[90vh]">
+        <div class="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+            <div>
+                <h3 class="font-black uppercase text-xs text-slate-800 tracking-wider">Novo Registo de Cliente e Carga</h3>
+                <p id="modal-add-client-project-info" class="text-[10px] font-bold text-slate-500 uppercase mt-0.5">Contentor: ---</p>
+            </div>
+            <button onclick="ui.closeModal('modal-confirm-add-client')" class="font-bold text-slate-400 hover:text-black p-1">✕</button>
+        </div>
+        <form id="form-confirm-add-client" onsubmit="window.submitAddConfirmClient(event)" class="p-5 space-y-4 overflow-y-auto">
+            <div class="grid grid-cols-3 gap-3">
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Nº Sequência (NO)</label>
+                    <input type="text" id="input-new-client-no" placeholder="Auto" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs focus:border-blue-500 outline-none text-center">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Nome do Cliente *</label>
+                    <input type="text" id="input-new-client-name" required placeholder="Ex: ILDO ALEXANDRE" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs uppercase focus:border-blue-500 outline-none">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Telefone / Contacto</label>
+                    <input type="text" id="input-new-client-phone" placeholder="Ex: 865493730" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">ID Code (Opcional)</label>
+                    <input type="text" id="input-new-client-idcode" placeholder="Ex: MZ242677" class="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-xs uppercase focus:border-blue-500 outline-none">
+                </div>
+            </div>
+
+            <div class="border-t border-slate-200 pt-3">
+                <h4 class="font-black uppercase text-[11px] text-slate-700 tracking-wider mb-2">Primeiro Artigo / Ordem</h4>
+                <div class="space-y-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[9px] font-black uppercase text-slate-500 mb-1">Ordem (HF...)</label>
+                            <input type="text" id="input-new-client-order" required placeholder="Ex: HF260508170033" class="w-full p-2 border border-slate-200 rounded-lg font-bold text-xs uppercase bg-white focus:border-blue-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black uppercase text-slate-500 mb-1">Volume (CBM)</label>
+                            <input type="number" step="0.001" id="input-new-client-cbm" required placeholder="0.10" class="w-full p-2 border border-slate-200 rounded-lg font-bold text-xs bg-white focus:border-blue-500 outline-none">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-black uppercase text-slate-500 mb-1">Descrição da Carga</label>
+                        <input type="text" id="input-new-client-desc" placeholder="Ex: 1CLOTHING BAG" class="w-full p-2 border border-slate-200 rounded-lg font-bold text-xs uppercase bg-white focus:border-blue-500 outline-none">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[9px] font-black uppercase text-slate-500 mb-1">Valor Pago (Paid)</label>
+                            <input type="number" step="any" id="input-new-client-paid" placeholder="0.00" class="w-full p-2 border border-slate-200 rounded-lg font-bold text-xs bg-white focus:border-blue-500 outline-none text-green-700">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-black uppercase text-slate-500 mb-1">Banco</label>
+                            <select id="select-new-client-bank" class="w-full p-2 border border-slate-200 rounded-lg font-bold text-xs bg-white focus:border-blue-500 outline-none">
+                                <option value="BIM JUPITER">BIM JUPITER</option>
+                                <option value="BCI JUPITER">BCI JUPITER</option>
+                                <option value="BIM BOSS">BIM BOSS</option>
+                                <option value="BCI BOSS">BCI BOSS</option>
+                                <option value="PAID IN CHINA">PAID IN CHINA</option>
+                                <option value="EMOLA BOSS">EMOLA BOSS</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border-t border-slate-100 pt-2">
+                <label class="block text-[10px] font-black uppercase text-slate-500 mb-1">Anexar Ficheiros de Suporte (Drive)</label>
+                <input type="file" id="input-new-client-files" multiple class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-black file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+            </div>
+
+            <div class="pt-2 flex gap-2">
+                <button type="button" onclick="ui.closeModal('modal-confirm-add-client')" class="flex-1 py-3 border border-slate-200 rounded-xl font-black uppercase text-xs text-slate-600 hover:bg-slate-50">Cancelar</button>
+                <button type="submit" id="btn-save-confirm-add-client" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase text-xs shadow-md">Cadastrar Cliente</button>
+            </div>
+        </form>
+    </div>
+</div>
+

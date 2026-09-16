@@ -2427,3 +2427,15 @@ export async function searchPauta(query, limit = 50) {
         return results.slice(0, limit);
     }
 }
+
+export async function fillConfirmClient(formData) {
+    const res = await fetch('/api/confirm/fill-client', {
+        method: 'POST',
+        body: formData
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.error || 'Erro ao preencher dados do cliente e artigos.');
+    }
+    return data;
+}

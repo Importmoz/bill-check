@@ -119,6 +119,10 @@ window.autoOpenClientFolder = autoOpenClientFolder;
 window.handleCreateFolder = handleCreateFolder;
 window.handleFileUpload = handleFileUpload;
 window.triggerFileUpload = triggerFileUpload;
+window.openAddConfirmArticleModal = openAddConfirmArticleModal;
+window.submitAddConfirmArticle = submitAddConfirmArticle;
+window.openAddConfirmClientModal = openAddConfirmClientModal;
+window.submitAddConfirmClient = submitAddConfirmClient;
 window.showBank = showBank;
 
 // --- LÓGICA DE APLICAÇÃO ---
@@ -1769,6 +1773,222 @@ function handleConfirmProjectSearch() {
     const projects = api.state.confirm?.projects || [];
     const filtered = projects.filter(p => p.name.toLowerCase().includes(filterText));
     ui.renderConfirmProjects(filtered, true); 
+}
+
+function openAddConfirmArticleModal() {
+    const client = window.currentActiveClient;
+    const clientIndex = window.currentActiveClientIndex;
+    if (!client) {
+        ui.toast("Selecione um cliente primeiro.", "warning");
+        return;
+    }
+
+    const infoEl = document.getElementById('modal-add-art-client-info');
+    if (infoEl) {
+        infoEl.innerText = `Cliente: ${client.displayName || 'SEM NOME'} (${clientIndex || '---'})`;
+    }
+
+    // Limpar campos
+    document.getElementById('input-add-art-order').value = '';
+    document.getElementById('input-add-art-cbm').value = '';
+    document.getElementById('input-add-art-desc').value = '';
+    document.getElementById('input-add-art-paid').value = '';
+    document.getElementById('input-add-art-duty-prepaid').value = '0';
+    document.getElementById('select-add-art-bank').value = 'BIM JUPITER';
+    document.getElementById('select-add-art-status').value = 'PENDENTE';
+    const fileInput = document.getElementById('input-add-art-files');
+    if (fileInput) fileInput.value = '';
+
+    ui.openModal('modal-confirm-add-article');
+    const orderInput = document.getElementById('input-add-art-order');
+    if (orderInput) orderInput.focus();
+}
+
+async function submitAddConfirmArticle(e) {
+    e.preventDefault();
+    const client = window.currentActiveClient;
+    const clientIndex = window.currentActiveClientIndex;
+    if (!client) return;
+
+    const orderNumber = document.getElementById('input-add-art-order').value.trim();
+    const cbm = parseFloat(document.getElementById('input-add-art-cbm').value) || 0;
+    const desc = document.getElementById('input-add-art-desc').value.trim();
+    const paid = parseFloat(document.getElementById('input-add-art-paid').value) || 0;
+    const dutyPrepaid = parseFloat(document.getElementById('input-add-art-duty-prepaid').value) || 0;
+    const bank = document.getElementById('select-add-art-bank').value;
+    const status = document.getElementById('select-add-art-status').value;
+    const fileInput = document.getElementById('input-add-art-files');
+    const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
+
+    if (!orderNumber) {
+        ui.toast("Número da ordem é obrigatório.", "error");
+        return;
+    }
+
+    const btn = document.getElementById('btn-save-confirm-add-art');
+    ui.setBtnLoading(btn, true, "A gravar...");
+    ui.setLoader(true, "A gravar artigo e a carregar suportes...");
+
+    try {
+        const projectName = document.getElementById('confirm-project-active-name')?.textContent?.trim() || '';
+        const formData = new FormData();
+
+        let clientPhone = client.phone || '';
+        if (!clientPhone && client.rows && client.rows.length > 0) {
+            const cols = api.state.confirm?.columns || [];
+            const pIdx = cols.findIndex(c => {
+                const clean = String(c || '').toUpperCase();
+                return clean.includes('PHONE') || clean.includes('TELEFONE') || clean.includes('CONTACTO');
+            });
+            if (pIdx !== -1) {
+                clientPhone = client.rows[0]?.originalRow?.[pIdx] || '';
+            }
+        }
+
+        const payload = {
+            container: projectName,
+            projectId: api.state.confirm?.projectId,
+            client: {
+                no: clientIndex,
+                name: client.displayName,
+                phone: clientPhone,
+                idCode: client.displayIdCode || ''
+            },
+            articles: [
+                {
+                    orderNumber,
+                    cbm,
+                    description: desc,
+                    dutyPrepaid,
+                    paid,
+                    bank,
+                    status
+                }
+            ]
+        };
+
+        formData.append('data', JSON.stringify(payload));
+        files.forEach(f => formData.append('files', f));
+
+        const result = await api.fillConfirmClient(formData);
+        ui.closeModal('modal-confirm-add-article');
+        ui.toast(result.message || "Artigo adicionado com sucesso!", "success");
+
+        // Recarregar dados do projeto
+        if (api.state.confirm?.sheetId) {
+            await selectConfirmProject(api.state.confirm.sheetId, api.state.confirm.folderId, projectName);
+            // Reabrir o mesmo cliente
+            if (clientIndex) {
+                setTimeout(async () => {
+                    const freshClient = api.state.confirm?.groupedClients?.find(c => String(c.no) === String(clientIndex) || c.displayName === client.displayName);
+                    if (freshClient) {
+                        await ui.showConfirmDetail(freshClient, clientIndex);
+                    }
+                    if (result.clientFolderId) {
+                        openDriveExplorer(result.clientFolderId);
+                    }
+                }, 600);
+            }
+        }
+    } catch (err) {
+        console.error("Erro ao adicionar artigo:", err);
+        ui.toast("Erro ao adicionar artigo: " + err.message, "error");
+    } finally {
+        ui.setBtnLoading(btn, false);
+        ui.setLoader(false);
+    }
+}
+
+function openAddConfirmClientModal() {
+    const projectName = document.getElementById('confirm-project-active-name')?.textContent?.trim() || '';
+    const infoEl = document.getElementById('modal-add-client-project-info');
+    if (infoEl) {
+        infoEl.innerText = `Contentor: ${projectName || 'CONFIRM'}`;
+    }
+
+    document.getElementById('input-new-client-no').value = '';
+    document.getElementById('input-new-client-name').value = '';
+    document.getElementById('input-new-client-phone').value = '';
+    document.getElementById('input-new-client-idcode').value = '';
+    document.getElementById('input-new-client-order').value = '';
+    document.getElementById('input-new-client-desc').value = '';
+    document.getElementById('input-new-client-cbm').value = '';
+    document.getElementById('input-new-client-paid').value = '';
+    document.getElementById('select-new-client-bank').value = 'BIM JUPITER';
+    const fileInput = document.getElementById('input-new-client-files');
+    if (fileInput) fileInput.value = '';
+
+    ui.openModal('modal-confirm-add-client');
+    const nameInput = document.getElementById('input-new-client-name');
+    if (nameInput) nameInput.focus();
+}
+
+async function submitAddConfirmClient(e) {
+    e.preventDefault();
+    const projectName = document.getElementById('confirm-project-active-name')?.textContent?.trim() || '';
+    const name = document.getElementById('input-new-client-name').value.trim();
+    const phone = document.getElementById('input-new-client-phone').value.trim();
+    const idCode = document.getElementById('input-new-client-idcode').value.trim();
+    const no = document.getElementById('input-new-client-no').value.trim();
+
+    const orderNumber = document.getElementById('input-new-client-order').value.trim();
+    const cbm = parseFloat(document.getElementById('input-new-client-cbm').value) || 0;
+    const desc = document.getElementById('input-new-client-desc').value.trim();
+    const paid = parseFloat(document.getElementById('input-new-client-paid').value) || 0;
+    const bank = document.getElementById('select-new-client-bank').value;
+    const fileInput = document.getElementById('input-new-client-files');
+    const files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
+
+    if (!name || !orderNumber) {
+        ui.toast("Nome do cliente e número da ordem são obrigatórios.", "error");
+        return;
+    }
+
+    const btn = document.getElementById('btn-save-confirm-add-client');
+    ui.setBtnLoading(btn, true, "A cadastrar...");
+    ui.setLoader(true, "A registar cliente e a carregar suportes...");
+
+    try {
+        const formData = new FormData();
+        const payload = {
+            container: projectName,
+            projectId: api.state.confirm?.projectId,
+            client: {
+                no: no || undefined,
+                name,
+                phone,
+                idCode
+            },
+            articles: [
+                {
+                    orderNumber,
+                    cbm,
+                    description: desc,
+                    paid,
+                    bank,
+                    status: 'PENDENTE'
+                }
+            ]
+        };
+
+        formData.append('data', JSON.stringify(payload));
+        files.forEach(f => formData.append('files', f));
+
+        const result = await api.fillConfirmClient(formData);
+        ui.closeModal('modal-confirm-add-client');
+        ui.toast(result.message || "Cliente cadastrado com sucesso!", "success");
+
+        // Recarregar dados do projeto
+        if (api.state.confirm?.sheetId) {
+            await selectConfirmProject(api.state.confirm.sheetId, api.state.confirm.folderId, projectName);
+        }
+    } catch (err) {
+        console.error("Erro ao cadastrar cliente:", err);
+        ui.toast("Erro ao cadastrar cliente: " + err.message, "error");
+    } finally {
+        ui.setBtnLoading(btn, false);
+        ui.setLoader(false);
+    }
 }
 
 
