@@ -2125,7 +2125,12 @@ export async function showConfirmDetail(client, clientIndex) {
             const packages = getNum(rowData, packagesIdx);
             const amtFreight = getNum(rowData, amtFreightIdx);
             const pdFreight = getNum(rowData, paidFreightIdx);
-            const balFreight = getNum(rowData, balanceFreightIdx);
+            let balFreight = balanceFreightIdx !== -1 && rowData[balanceFreightIdx] !== '' && rowData[balanceFreightIdx] !== undefined 
+                ? getNum(rowData, balanceFreightIdx) 
+                : Math.max(0, amtFreight - pdFreight);
+            if (amtFreight > 0 && pdFreight >= amtFreight) {
+                balFreight = 0;
+            }
             const noteFreight = getRaw(rowData, notaFreightIdx);
 
             totalPaid += paid;
@@ -2502,7 +2507,7 @@ export async function showConfirmDetail(client, clientIndex) {
         if (totalAmountFreight > 0 || totalPaidFreight > 0 || totalBalanceFreight > 0) {
             miniFreightBtn.dataset.hasFreight = 'true';
             miniFreightBtn.classList.remove('hidden');
-            if (totalBalanceFreight <= 0 && totalAmountFreight > 0) {
+            if (totalAmountFreight > 0 && (totalBalanceFreight <= 0 || totalPaidFreight >= totalAmountFreight)) {
                 miniFreightStatus.innerText = 'PAGO';
                 miniFreightStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-green-100 text-green-700';
             } else if (totalPaidFreight > 0 && totalBalanceFreight > 0) {
@@ -5369,6 +5374,26 @@ export async function confirmPaymentSelection() {
                         if (paidIdx !== -1) rowData[paidIdx] = newPaid;
                         if (balanceIdx !== -1) rowData[balanceIdx] = newBalance;
 
+                        if (isFreight) {
+                            rowObj.pdFreight = newPaid;
+                            rowObj.balFreight = newBalance;
+                            if (rowObj.originalRow) {
+                                if (paidIdx !== -1) rowObj.originalRow[paidIdx] = newPaid;
+                                if (balanceIdx !== -1) rowObj.originalRow[balanceIdx] = newBalance;
+                            }
+                            if (window.currentActiveClient && window.currentActiveClient.rows) {
+                                const activeClientRow = window.currentActiveClient.rows.find(r => r.originalIndex === originalIndex);
+                                if (activeClientRow) {
+                                    activeClientRow.pdFreight = newPaid;
+                                    activeClientRow.balFreight = newBalance;
+                                    if (activeClientRow.originalRow) {
+                                        if (paidIdx !== -1) activeClientRow.originalRow[paidIdx] = newPaid;
+                                        if (balanceIdx !== -1) activeClientRow.originalRow[balanceIdx] = newBalance;
+                                    }
+                                }
+                            }
+                        }
+
                         if (newStatus === 'CONFIRMADO' && !isFreight) {
                             if (newBalance > 1.0) newStatus = 'PARCIAL';
                         }
@@ -5413,8 +5438,8 @@ export async function confirmPaymentSelection() {
                         // Banco Inteligente: garantir variações BOSS e JUPITER apenas para BCI e BIM
                         if (bankVal && bankVal !== '—') {
                             if ((bankVal === 'BCI' || bankVal === 'BIM') && !bankVal.includes('BOSS') && !bankVal.includes('JUPITER')) {
-                                const owner = firstPayment ? String(firstPayment.accountOwner || '').toUpperCase() : '';
-                                const ref = firstPayment ? String(firstPayment.ref || '').toUpperCase() : '';
+                                const owner = firstPayment ? String(firstPayment.account_owner || firstPayment.accountOwner || '').toUpperCase() : '';
+                                const ref = firstPayment ? String(firstPayment.reference || firstPayment.ref || '').toUpperCase() : '';
                                 
                                 // 1. Usar a variação do menu suspenso se o banco raiz corresponder
                                 if (selectBankVal.startsWith(bankVal) && (selectBankVal.includes('BOSS') || selectBankVal.includes('JUPITER'))) {
@@ -5435,17 +5460,31 @@ export async function confirmPaymentSelection() {
 
                         let finalNote = 'PAID TO JUPITER';
                         
-                        if (bankFreightIdx !== -1 && bankVal && bankVal !== '—') rowData[bankFreightIdx] = bankVal;
-                        if (notaFreightIdx !== -1 && finalNote) rowData[notaFreightIdx] = finalNote;
+                        if (bankFreightIdx !== -1 && bankVal && bankVal !== '—') {
+                            rowData[bankFreightIdx] = bankVal;
+                            if (rowObj.originalRow) rowObj.originalRow[bankFreightIdx] = bankVal;
+                            if (window.currentActiveClient && window.currentActiveClient.rows) {
+                                const acr = window.currentActiveClient.rows.find(r => r.originalIndex === originalIndex);
+                                if (acr && acr.originalRow) acr.originalRow[bankFreightIdx] = bankVal;
+                            }
+                        }
+                        if (notaFreightIdx !== -1 && finalNote) {
+                            rowData[notaFreightIdx] = finalNote;
+                            if (rowObj.originalRow) rowObj.originalRow[notaFreightIdx] = finalNote;
+                            if (window.currentActiveClient && window.currentActiveClient.rows) {
+                                const acr = window.currentActiveClient.rows.find(r => r.originalIndex === originalIndex);
+                                if (acr && acr.originalRow) acr.originalRow[notaFreightIdx] = finalNote;
+                            }
+                        }
                     }
 
                     // Acumular apenas as células modificadas para o Google Sheets
                     if (paidIdx !== -1) {
                         batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(paidIdx)}${sheetRowNumber}`), values: [[rowData[paidIdx]]] });
                     }
-                    // if (balanceIdx !== -1 && !isFreight) {
-                    //     batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${sheetRowNumber}`), values: [[rowData[balanceIdx]]] });
-                    // }
+                    if (isFreight && balanceIdx !== -1) {
+                        batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${sheetRowNumber}`), values: [[rowData[balanceIdx]]] });
+                    }
                     if (statusIdx !== -1 && !isFreight) {
                         batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(statusIdx)}${sheetRowNumber}`), values: [[rowData[statusIdx]]] });
                     }
@@ -5592,6 +5631,7 @@ export async function confirmPaymentSelection() {
         }
         alert('Erro ao vincular pagamento: ' + e.message + detail);
     } finally {
+        window.paymentReconciliationContext = null;
         setLoader(false);
         setBtnLoading(btn, false);
     }
@@ -7148,17 +7188,15 @@ export function openFreightModal() {
     const totalBal = (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || 0), 0);
     const totalFrt = (window.currentClientRows || []).reduce((acc, r) => acc + (r.amtFreight || 0), 0);
 
-    // Se não há frete a pagar ou já está todo pago, não abre o popup
-    if (totalBal <= 0 && totalFrt > 0) {
-        toast("Este frete já se encontra pago e saldado.", "success");
-        return;
-    }
-
     const modal = document.getElementById('modal-freight-update');
     if (modal) {
         document.getElementById('select-freight-bank').value = '';
         
-        document.getElementById('modal-freight-total-value').innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(totalFrt);
+        const displayVal = totalBal > 0 ? totalBal : totalFrt;
+        const valEl = document.getElementById('modal-freight-total-value');
+        if (valEl) {
+            valEl.innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(displayVal);
+        }
 
         setFreightOrigin('local');
         
@@ -7239,7 +7277,10 @@ export async function saveFreightModal() {
     let bankVal = '';
     const isChina = window.currentFreightOrigin === 'china';
 
-    if (!isChina) {
+    if (isChina) {
+        bankVal = 'PAID IN CHINA';
+        finalNote = 'PAID IN CHINA';
+    } else {
         bankVal = document.getElementById('select-freight-bank').value;
         finalNote = 'PAID TO JUPITER';
 
@@ -7275,41 +7316,82 @@ export async function saveFreightModal() {
             const originalIndex = rowObj.originalIndex;
             const rowIndex = originalIndex + 1; // +1 porque google sheets é 1-indexed
 
-            if (!isChina) {
-                // Update Bank in Freight
-                if (bankVal !== '' && bankFreightIdx !== -1) {
-                    if (state.confirm?.data && state.confirm.data[originalIndex]) {
-                        state.confirm.data[originalIndex][bankFreightIdx] = bankVal === '?' ? '' : bankVal;
-                    }
-                    updates.push({
-                        range: formatSheetRange(sheetName, `${getColLetter(bankFreightIdx)}${rowIndex}`),
-                        values: [[bankVal === '?' ? '' : bankVal]]
-                    });
+            // Update Bank in Freight
+            if (bankFreightIdx !== -1 && bankVal !== '') {
+                const bVal = bankVal === '?' ? '' : bankVal;
+                if (state.confirm?.data && state.confirm.data[originalIndex]) {
+                    state.confirm.data[originalIndex][bankFreightIdx] = bVal;
                 }
-                
-                // Update Nota Freight
-                if (finalNote !== '' && notaFreightIdx !== -1) {
-                    if (state.confirm?.data && state.confirm.data[originalIndex]) {
-                        state.confirm.data[originalIndex][notaFreightIdx] = finalNote;
-                    }
-                    updates.push({
-                        range: formatSheetRange(sheetName, `${getColLetter(notaFreightIdx)}${rowIndex}`),
-                        values: [[finalNote]]
-                    });
+                if (rowObj.originalRow) {
+                    rowObj.originalRow[bankFreightIdx] = bVal;
                 }
+                updates.push({
+                    range: formatSheetRange(sheetName, `${getColLetter(bankFreightIdx)}${rowIndex}`),
+                    values: [[bVal]]
+                });
+            }
+            
+            // Update Nota Freight
+            if (notaFreightIdx !== -1 && finalNote !== '') {
+                if (state.confirm?.data && state.confirm.data[originalIndex]) {
+                    state.confirm.data[originalIndex][notaFreightIdx] = finalNote;
+                }
+                if (rowObj.originalRow) {
+                    rowObj.originalRow[notaFreightIdx] = finalNote;
+                }
+                updates.push({
+                    range: formatSheetRange(sheetName, `${getColLetter(notaFreightIdx)}${rowIndex}`),
+                    values: [[finalNote]]
+                });
             }
 
-            // Update PAID FREIGHT (o BALANCE FREIGHT será calculado por fórmula para ambas as origens)
-            if (paidFreightIdx !== -1 && amountFreightIdx !== -1) {
-                const amountVal = state.confirm?.data?.[originalIndex]?.[amountFreightIdx] || rowObj.originalRow?.[amountFreightIdx];
-                const amt = parseFloat(String(amountVal).replace(/[^0-9.-]+/g, "")) || 0;
+            // Update PAID FREIGHT e BALANCE FREIGHT
+            const amountVal = state.confirm?.data?.[originalIndex]?.[amountFreightIdx] ?? rowObj.originalRow?.[amountFreightIdx] ?? rowObj.amtFreight ?? 0;
+            const amt = parseFloat(String(amountVal).replace(/[^0-9.-]+/g, "")) || 0;
+
+            if (paidFreightIdx !== -1) {
                 if (state.confirm?.data && state.confirm.data[originalIndex]) {
                     state.confirm.data[originalIndex][paidFreightIdx] = amt;
                 }
+                if (rowObj.originalRow) {
+                    rowObj.originalRow[paidFreightIdx] = amt;
+                }
+                rowObj.pdFreight = amt;
                 updates.push({
                     range: formatSheetRange(sheetName, `${getColLetter(paidFreightIdx)}${rowIndex}`),
                     values: [[amt]]
                 });
+            }
+
+            if (balanceFreightIdx !== -1) {
+                if (state.confirm?.data && state.confirm.data[originalIndex]) {
+                    state.confirm.data[originalIndex][balanceFreightIdx] = 0;
+                }
+                if (rowObj.originalRow) {
+                    rowObj.originalRow[balanceFreightIdx] = 0;
+                }
+                rowObj.balFreight = 0;
+                updates.push({
+                    range: formatSheetRange(sheetName, `${getColLetter(balanceFreightIdx)}${rowIndex}`),
+                    values: [[0]]
+                });
+            } else {
+                rowObj.balFreight = 0;
+            }
+
+            // Também atualizar no window.currentClientRows se existir
+            if (Array.isArray(window.currentClientRows)) {
+                const cRow = window.currentClientRows.find(cr => cr.originalIndex === originalIndex);
+                if (cRow) {
+                    cRow.pdFreight = amt;
+                    cRow.balFreight = 0;
+                    if (cRow.originalRow) {
+                        if (paidFreightIdx !== -1) cRow.originalRow[paidFreightIdx] = amt;
+                        if (balanceFreightIdx !== -1) cRow.originalRow[balanceFreightIdx] = 0;
+                        if (bankFreightIdx !== -1) cRow.originalRow[bankFreightIdx] = bankVal === '?' ? '' : bankVal;
+                        if (notaFreightIdx !== -1) cRow.originalRow[notaFreightIdx] = finalNote;
+                    }
+                }
             }
         }
 
@@ -7322,13 +7404,14 @@ export async function saveFreightModal() {
 
         closeFreightModal();
 
-        // Recarregar os dados para refletir na UI imediatamente
+        // Recarregar os detalhes do cliente ativo imediatamente para refletir na UI sem stale data
+        if (window.currentActiveClient) {
+            await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+        }
+
+        // Atualizar lista em segundo plano mantendo a consistência
         const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
         renderConfirmList(state.confirm.data, "", statusFilter);
-        if (window.currentActiveClient) {
-            const freshClient = state.confirm.groupedClients?.find(c => c.displayName === window.currentActiveClient.displayName) || window.currentActiveClient;
-            await showConfirmDetail(freshClient, window.currentActiveClientIndex);
-        }
 
     } catch (err) {
         console.error(err);
@@ -7534,7 +7617,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
 
         // Regras de negócio para autorização de entrega:
         const isDutyConfirmed = allConfirmed;
-        const isFreightPaid = totalBalanceFreight <= 0;
+        const totalPaidFrt = (window.currentClientRows || []).reduce((acc, r) => acc + (r.pdFreight || 0), 0);
+        const isFreightPaid = totalBalanceFreight <= 0 || (totalAmountFreight > 0 && totalPaidFrt >= totalAmountFreight);
 
         // Calcular agregados
         let totalOriginal = 0;
