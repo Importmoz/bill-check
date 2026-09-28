@@ -601,11 +601,11 @@ async function populateBillSourcesDropdowns(selectedSource = null) {
     }
 }
 
-async function loadAndRenderBillRealtime(tableId, sourceType = null, sourceId = null) {
+async function loadAndRenderBillRealtime(tableId, sourceType = null, sourceId = null, refresh = false) {
     const loaderEl = document.getElementById('bill-sync-loader');
     if (loaderEl) loaderEl.classList.remove('hidden');
     try {
-        const data = await api.fetchBillRealtimeData(tableId, sourceType, sourceId);
+        const data = await api.fetchBillRealtimeData(tableId, sourceType, sourceId, refresh);
         ui.renderRealtimeBillDetails(data); // Sem permitir edição direta da tabela pois os dados vêm do Sheets
     } catch (err) {
         console.error("[BILL-REALTIME] Erro ao carregar dados:", err);
@@ -637,7 +637,7 @@ async function openTable(id) {
         ui.updateBillModeUI(mode);
 
         if (mode === 'NEW') {
-            await loadAndRenderBillRealtime(id, config.source?.type, config.source?.id);
+            await loadAndRenderBillRealtime(id, config.source?.type, config.source?.id, true);
         } else {
             ui.renderTableDetails(editContainer);
         }
@@ -660,7 +660,7 @@ async function setBillTableMode(mode) {
 
     if (mode === 'NEW') {
         ui.toast("Modo NEW ativado: valores da folha Google em tempo real.", "info");
-        await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id);
+        await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id, true);
     } else {
         ui.toast("Modo OLD ativado: visualização manual do sistema.", "info");
         ui.renderTableDetails(editContainer);
@@ -675,7 +675,7 @@ async function onBillSourceChanged(val) {
         source = { type, id };
     }
     await api.saveBillTableConfig(state.currentTableId, { mode: 'NEW', source });
-    await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id);
+    await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id, true);
     ui.toast("Fonte da folha atualizada!", "success");
 }
 
@@ -685,7 +685,7 @@ async function refreshBillRealtimeData() {
     if (icon) icon.classList.add('animate-spin');
     try {
         const source = state.billConfig?.source || null;
-        await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id);
+        await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id, true);
         ui.toast("Dados atualizados da folha Google Sheets!", "success");
     } finally {
         if (icon) icon.classList.remove('animate-spin');

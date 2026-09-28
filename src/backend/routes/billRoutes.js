@@ -3,6 +3,24 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const PocketBase = require('pocketbase/cjs');
+const { google } = require('googleapis');
+const { getGoogleAuth } = require('../utils/googleAuth');
+
+async function fetchLiveSheetRows(spreadsheetId) {
+  if (!spreadsheetId) return null;
+  try {
+    const auth = await getGoogleAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'A1:AZ1000'
+    });
+    return res.data.values || null;
+  } catch (err) {
+    console.warn(`[BILL-BACKEND] Erro ao obter dados em tempo real do GSheet ${spreadsheetId}:`, err.message);
+    return null;
+  }
+}
 
 const dataDir = path.join(__dirname, '..', '..', '..', 'data');
 if (!fs.existsSync(dataDir)) {
@@ -285,7 +303,8 @@ router.get('/sources', async (req, res) => {
 // Obtém dados consolidados em tempo real a partir do Google Sheets / Confirm
 router.get('/realtime/:tableId', async (req, res) => {
   const { tableId } = req.params;
-  const { sourceType, sourceId } = req.query;
+  const { sourceType, sourceId, refresh } = req.query;
+  const isRefresh = refresh === '1' || refresh === 'true';
 
   const pbUrl = process.env.POCKETBASE_URL || 'https://pocketbase.mycloudspaces.com';
   const pb = new PocketBase(pbUrl);
@@ -310,6 +329,17 @@ router.get('/realtime/:tableId', async (req, res) => {
         return res.status(404).json({ error: 'Projeto Confirm não encontrado' });
       }
 
+      if (isRefresh && project.sheetId) {
+        const liveRows = await fetchLiveSheetRows(project.sheetId);
+        if (liveRows && liveRows.length > 0) {
+          project.sheet_data = { values: liveRows };
+          pb.collection('confirm_projects').update(project.id, {
+            sheet_data: { values: liveRows },
+            last_sync: new Date().toISOString()
+          }).catch(() => {});
+        }
+      }
+
       const rows = project.sheet_data?.values || project.sheet_data || [];
       const items = parseSheetIndividualItems(rows);
       const totals = calculateSheetBillTotals(rows);
@@ -329,6 +359,20 @@ router.get('/realtime/:tableId', async (req, res) => {
     if (effectiveType === 'group' && effectiveId) {
       const allProjects = await pb.collection('confirm_projects').getFullList({ sort: '-created' });
       const groupProjects = allProjects.filter(p => (p.groupId === effectiveId || p.group_id === effectiveId));
+
+      if (isRefresh) {
+        await Promise.allSettled(groupProjects.map(async (p) => {
+          if (!p.sheetId) return;
+          const liveRows = await fetchLiveSheetRows(p.sheetId);
+          if (liveRows && liveRows.length > 0) {
+            p.sheet_data = { values: liveRows };
+            pb.collection('confirm_projects').update(p.id, {
+              sheet_data: { values: liveRows },
+              last_sync: new Date().toISOString()
+            }).catch(() => {});
+          }
+        }));
+      }
 
       const items = groupProjects.map(p => {
         const totals = calculateSheetBillTotals(p.sheet_data);
@@ -391,6 +435,30 @@ router.get('/realtime/:tableId', async (req, res) => {
     // Se a tabela tem contentores (ex: 523 a 540, ou 603 a 613, etc.)
     // Assegura paridade de 100% com a lista de contentores da tabela OLD
     if (containers.length > 0) {
+      if (isRefresh) {
+        const matchedProjects = [];
+        containers.forEach(c => {
+          const key = String(c.container_id_str || '').trim().toUpperCase();
+          const cleanKey = cleanString(c.container_id_str);
+          const strippedKey = cleanKey.replace(/^LISTA/, '');
+          const match = projectMap.get(key) || projectMap.get(cleanKey) || projectMap.get(strippedKey);
+          if (match && match.sheetId && !matchedProjects.some(mp => mp.id === match.id)) {
+            matchedProjects.push(match);
+          }
+        });
+
+        await Promise.allSettled(matchedProjects.map(async (p) => {
+          const liveRows = await fetchLiveSheetRows(p.sheetId);
+          if (liveRows && liveRows.length > 0) {
+            p.sheet_data = { values: liveRows };
+            pb.collection('confirm_projects').update(p.id, {
+              sheet_data: { values: liveRows },
+              last_sync: new Date().toISOString()
+            }).catch(() => {});
+          }
+        }));
+      }
+
       let matchedAny = false;
       const items = containers.map(c => {
         const key = String(c.container_id_str || '').trim().toUpperCase();

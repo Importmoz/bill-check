@@ -1247,11 +1247,12 @@ export async function fetchBillSources() {
     return { projects: [], groups: [] };
 }
 
-export async function fetchBillRealtimeData(tableId, sourceType = null, sourceId = null) {
+export async function fetchBillRealtimeData(tableId, sourceType = null, sourceId = null, refresh = false) {
     let url = `/api/bill/realtime/${tableId}`;
     const params = new URLSearchParams();
     if (sourceType) params.append('sourceType', sourceType);
     if (sourceId) params.append('sourceId', sourceId);
+    if (refresh) params.append('refresh', '1');
     const qs = params.toString();
     if (qs) url += `?${qs}`;
 
