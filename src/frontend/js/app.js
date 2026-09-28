@@ -2613,6 +2613,9 @@ function startGSheetPolling(spreadsheetId) {
                 }
             } else {
                 console.warn(`[POLLING] Falha na resposta da API check-update. Status: ${res.status}`);
+                if (res.status === 401) {
+                    window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
+                }
             }
         } catch (pollErr) {
             console.warn("[POLLING] Erro ao verificar atualizações do GSheet:", pollErr);
