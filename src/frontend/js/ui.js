@@ -633,6 +633,7 @@ export function renderRealtimeBillDetails(realtimeData, onEditContainer = null) 
  * Atualiza os botões e barras da UI conforme o modo OLD ou NEW e a política da tabela
  */
 export function updateBillModeUI(mode, policy = null) {
+    const switchWrapper = document.getElementById('bill-mode-switch-wrapper');
     const btnOld = document.getElementById('btn-bill-mode-old');
     const btnNew = document.getElementById('btn-bill-mode-new');
     const btnRefresh = document.getElementById('btn-bill-refresh');
@@ -642,24 +643,24 @@ export function updateBillModeUI(mode, policy = null) {
     const effectivePolicy = policy || mode;
 
     if (effectivePolicy === 'NEW') {
-        // Tabela de Actualização Automática (BILL >= 68 ou Nacala >= 2): Ocultar OLD completamente
+        // Tabela de Actualização Automática (BILL >= 68 ou Nacala >= 2):
+        // Remove botão de Actualização Automática e Modo Manual, mantendo unicamente o botão Actualizar
+        if (switchWrapper) switchWrapper.classList.add('hidden');
         if (btnOld) btnOld.classList.add('hidden');
-        if (btnNew) {
-            btnNew.classList.remove('hidden');
-            btnNew.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-emerald-600 text-white shadow-sm flex items-center gap-1.5";
-            btnNew.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-300 animate-pulse"></span> Actualização Automática`;
-        }
+        if (btnNew) btnNew.classList.add('hidden');
         if (btnRefresh) btnRefresh.classList.remove('hidden');
     } else {
-        // Tabela Antiga / Manual (BILL < 68 ou Nacala < 2): Ocultar Actualização Automática
+        // Tabela Antiga / Manual (BILL < 68 ou Nacala < 2):
+        // Oculta botão Actualizar e botão Actualização Automática, exibe Modo Manual
+        if (btnRefresh) btnRefresh.classList.add('hidden');
         if (btnNew) btnNew.classList.add('hidden');
+        if (syncLoader) syncLoader.classList.add('hidden');
+        if (switchWrapper) switchWrapper.classList.remove('hidden');
         if (btnOld) {
             btnOld.classList.remove('hidden');
             btnOld.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-gray-800 text-white shadow-sm";
             btnOld.innerText = "Modo Manual";
         }
-        if (btnRefresh) btnRefresh.classList.add('hidden');
-        if (syncLoader) syncLoader.classList.add('hidden');
     }
 
     // Botões de ação (+ Contentor e Quitar Balanço) disponíveis em ambos os modos

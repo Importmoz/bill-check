@@ -745,14 +745,21 @@ async function onBillSourceChanged(val) {
 
 async function refreshBillRealtimeData() {
     if (!state.currentTableId) return;
+    const btnRefresh = document.getElementById('btn-bill-refresh');
     const icon = document.getElementById('bill-realtime-refresh-icon');
+
+    // Ao clicar, o botão fica oculto durante a actualização
+    if (btnRefresh) btnRefresh.classList.add('hidden');
     if (icon) icon.classList.add('animate-spin');
+
     try {
         const source = state.billConfig?.source || null;
         await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id, true);
         ui.toast("Dados atualizados da folha Google Sheets!", "success");
     } finally {
         if (icon) icon.classList.remove('animate-spin');
+        // E volta a aparecer depois de actualizado
+        if (btnRefresh) btnRefresh.classList.remove('hidden');
     }
 }
 
