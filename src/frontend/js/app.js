@@ -63,6 +63,9 @@ window.openTable = openTable;
 window.setBillTableMode = setBillTableMode;
 window.onBillSourceChanged = onBillSourceChanged;
 window.refreshBillRealtimeData = refreshBillRealtimeData;
+window.setNewTableVariation = setNewTableVariation;
+window.getBillTableModePolicy = getBillTableModePolicy;
+window.getNextBillTableName = getNextBillTableName;
 window.setNewTableModalType = setNewTableModalType;
 window.onNewTableSourceSelected = onNewTableSourceSelected;
 window.createNewTable = createNewTable;
@@ -615,26 +618,79 @@ async function loadAndRenderBillRealtime(tableId, sourceType = null, sourceId = 
     }
 }
 
+export function getBillTableModePolicy(tableName) {
+    const name = String(tableName || '').trim();
+    const isNacala = /nacala/i.test(name);
+    const numMatch = name.match(/(\d+)/);
+    const num = numMatch ? parseInt(numMatch[1], 10) : 0;
+
+    if (isNacala) {
+        // A partir do Bill - 2 Nacala: só actualização automática
+        return num >= 2 ? 'NEW' : 'OLD';
+    } else {
+        // A partir do Bill - 68: só actualização automática
+        return num >= 68 ? 'NEW' : 'OLD';
+    }
+}
+
+export function getNextBillTableName(type = 'STANDARD', tables = (state.tables || [])) {
+    if (type === 'NACALA') {
+        let maxNum = 0;
+        tables.forEach(t => {
+            const name = String(t.name || '').trim();
+            if (/nacala/i.test(name)) {
+                const m = name.match(/(\d+)/);
+                if (m) {
+                    const n = parseInt(m[1], 10);
+                    if (n > maxNum) maxNum = n;
+                }
+            }
+        });
+        const nextNum = maxNum > 0 ? maxNum + 1 : 1;
+        return `BILL - ${nextNum} Nacala`;
+    } else {
+        let maxNum = 0;
+        tables.forEach(t => {
+            const name = String(t.name || '').trim();
+            if (!/nacala/i.test(name)) {
+                const m = name.match(/(\d+)/);
+                if (m) {
+                    const n = parseInt(m[1], 10);
+                    if (n > maxNum) maxNum = n;
+                }
+            }
+        });
+        const nextNum = maxNum > 0 ? maxNum + 1 : 1;
+        return `BILL - ${nextNum}`;
+    }
+}
+
 async function openTable(id) {
     ui.setLoader(true);
     try {
         const table = state.tables.find(t => t.id === id);
+        if (!table) throw new Error("Tabela não encontrada.");
+        
         document.getElementById('current-table-title').innerText = table.name;
         document.getElementById('table-display-name').innerText = table.name;
 
         // 1. Carrega dados legados (PocketBase containers e balance)
         await api.fetchTableData(id);
 
-        // 2. Carrega configurações do modo (OLD vs NEW)
+        // 2. Determina a política estrita da tabela:
+        // - BILL >= 68 ou Nacala >= 2: estritamente Actualização Automática (NEW), OLD oculto
+        // - BILL < 68 ou Nacala < 2: estritamente Modo Manual (OLD), NEW oculto
+        const policy = getBillTableModePolicy(table.name);
         const config = await api.fetchBillTableConfig(id);
-        const mode = config.mode || 'OLD';
+        
+        const mode = policy; // Força a política correta
         state.billMode = mode;
 
         ui.showView('view-table');
 
         // 3. Atualizar botões e fontes
         await populateBillSourcesDropdowns(config.source);
-        ui.updateBillModeUI(mode);
+        ui.updateBillModeUI(mode, policy);
 
         if (mode === 'NEW') {
             await loadAndRenderBillRealtime(id, config.source?.type, config.source?.id, true);
@@ -651,18 +707,26 @@ async function openTable(id) {
 
 async function setBillTableMode(mode) {
     if (!state.currentTableId) return;
+    const table = state.tables.find(t => t.id === state.currentTableId);
+    const policy = table ? getBillTableModePolicy(table.name) : null;
+    if (policy && policy !== mode) {
+        ui.toast(policy === 'NEW' 
+            ? "A partir desta tabela a visualização é exclusivamente em Actualização Automática." 
+            : "Esta tabela antiga utiliza exclusivamente o Modo Manual.", "info");
+        return;
+    }
     state.billMode = mode;
-    ui.updateBillModeUI(mode);
+    ui.updateBillModeUI(mode, policy);
 
     // Salvar configuração da tabela
     const source = state.billConfig?.source || null;
     await api.saveBillTableConfig(state.currentTableId, { mode, source });
 
     if (mode === 'NEW') {
-        ui.toast("Modo NEW ativado: valores da folha Google em tempo real.", "info");
+        ui.toast("Modo de actualização automática ativado.", "info");
         await loadAndRenderBillRealtime(state.currentTableId, source?.type, source?.id, true);
     } else {
-        ui.toast("Modo OLD ativado: visualização manual do sistema.", "info");
+        ui.toast("Modo manual ativado.", "info");
         ui.renderTableDetails(editContainer);
     }
 }
@@ -692,26 +756,31 @@ async function refreshBillRealtimeData() {
     }
 }
 
-function setNewTableModalType(mode) {
-    currentNewTableModalMode = mode;
-    const btnManual = document.getElementById('btn-modal-type-manual');
-    const btnSheet = document.getElementById('btn-modal-type-sheet');
-    const groupSheet = document.getElementById('group-new-table-sheet');
+let currentNewTableVariation = 'STANDARD';
 
-    if (mode === 'NEW') {
-        if (btnSheet) btnSheet.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-emerald-600 text-white shadow-sm";
-        if (btnManual) btnManual.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black";
-        if (groupSheet) groupSheet.classList.remove('hidden');
-        populateBillSourcesDropdowns();
+function setNewTableVariation(variation) {
+    currentNewTableVariation = variation;
+    const btnStandard = document.getElementById('btn-modal-var-standard');
+    const btnNacala = document.getElementById('btn-modal-var-nacala');
+    const inputName = document.getElementById('input-table-name');
+
+    if (variation === 'NACALA') {
+        if (btnNacala) btnNacala.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-black text-white shadow-sm";
+        if (btnStandard) btnStandard.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black";
+        if (inputName) inputName.value = getNextBillTableName('NACALA');
     } else {
-        if (btnManual) btnManual.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-white text-black shadow-sm";
-        if (btnSheet) btnSheet.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black";
-        if (groupSheet) groupSheet.classList.add('hidden');
+        if (btnStandard) btnStandard.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-black text-white shadow-sm";
+        if (btnNacala) btnNacala.className = "py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black";
+        if (inputName) inputName.value = getNextBillTableName('STANDARD');
     }
 }
 
+function setNewTableModalType(mode) {
+    currentNewTableModalMode = 'NEW';
+}
+
 function onNewTableSourceSelected(val) {
-    if (!val) return;
+    if (!val || val === 'auto') return;
     const [type, id] = val.split(':');
     const sources = state.billSources;
     if (!sources) return;
@@ -736,13 +805,11 @@ async function createNewTable() {
     ui.setBtnLoading(btn, true);
 
     try {
-        let options = { mode: currentNewTableModalMode };
-        if (currentNewTableModalMode === 'NEW') {
-            const selectVal = document.getElementById('input-table-source-select').value;
-            if (selectVal && selectVal !== 'auto') {
-                const [type, id] = selectVal.split(':');
-                options.source = { type, id };
-            }
+        let options = { mode: 'NEW' };
+        const selectVal = document.getElementById('input-table-source-select')?.value;
+        if (selectVal && selectVal !== 'auto') {
+            const [type, id] = selectVal.split(':');
+            options.source = { type, id };
         }
 
         const table = await api.createTable(name, options);
@@ -896,6 +963,14 @@ function openEditTableModal(table) {
     document.getElementById('modal-table-submit').innerText = 'Atualizar Tabela';
     document.getElementById('input-table-name').value = table.name;
     
+    // Ocultar seletores específicos de criação durante edição
+    const varContainer = document.getElementById('modal-table-variation-container');
+    const autoBadge = document.getElementById('modal-table-auto-badge');
+    const groupSheet = document.getElementById('group-new-table-sheet');
+    if (varContainer) varContainer.classList.add('hidden');
+    if (autoBadge) autoBadge.classList.add('hidden');
+    if (groupSheet) groupSheet.classList.add('hidden');
+
     const createBtn = document.getElementById('modal-table-submit');
     createBtn.className = 'w-full bg-blue-700 text-white py-3 rounded-lg font-bold uppercase text-xs hover:bg-blue-800 transition-all';
     
@@ -922,14 +997,28 @@ function resetTableModal() {
     const createBtn = document.getElementById('modal-table-submit');
     createBtn.onclick = createNewTable;
     createBtn.className = 'w-full bg-black text-white py-3 rounded-lg font-bold uppercase text-xs hover:bg-gray-800 transition-all';
-    document.getElementById('input-table-name').value = '';
-    setNewTableModalType('OLD');
+    
+    // Mostrar seletores de criação
+    const varContainer = document.getElementById('modal-table-variation-container');
+    const autoBadge = document.getElementById('modal-table-auto-badge');
+    const groupSheet = document.getElementById('group-new-table-sheet');
+    if (varContainer) varContainer.classList.remove('hidden');
+    if (autoBadge) autoBadge.classList.remove('hidden');
+    if (groupSheet) groupSheet.classList.remove('hidden');
+
+    currentNewTableModalMode = 'NEW';
+    setNewTableVariation('STANDARD');
+    populateBillSourcesDropdowns();
 }
 
 function openNewTableModal() {
     resetTableModal();
     document.getElementById('modal-new-table').classList.remove('hidden');
-    document.getElementById('input-table-name').focus();
+    const input = document.getElementById('input-table-name');
+    if (input) {
+        input.focus();
+        input.select();
+    }
 }
 
 function openContainerModal() {

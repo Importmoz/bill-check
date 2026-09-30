@@ -469,6 +469,15 @@ router.get('/realtime/:tableId', async (req, res) => {
         if (match) {
           matchedAny = true;
           const totals = calculateSheetBillTotals(match.sheet_data);
+
+          // Sincronizar dados em containers do PocketBase para que dashboard e relatórios fiquem sempre atualizados
+          if (parseFloat(c.duty) !== totals.duty || parseFloat(c.freight) !== totals.freight) {
+            pb.collection('containers').update(c.id, {
+              duty: totals.duty,
+              freight: totals.freight
+            }).catch(e => console.warn('[SYNC-PB-CONTAINER]', e.message));
+          }
+
           return {
             id: c.id,
             container_id_str: c.container_id_str,

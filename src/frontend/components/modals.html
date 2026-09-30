@@ -53,31 +53,37 @@
                 <button onclick="closeModal('modal-new-table')" class="font-bold p-1">✕</button>
             </div>
             <div class="p-5 space-y-4">
-                <!-- Seletor de Tipo de Tabela: Manual (OLD) vs Google Sheet (NEW) -->
-                <div>
-                    <label class="block text-[10px] font-bold uppercase mb-1.5 text-gray-500">Modo de Criação</label>
+                <!-- Seletor de Variação de BILL (Padrão vs Nacala) -->
+                <div id="modal-table-variation-container">
+                    <label class="block text-[10px] font-bold uppercase mb-1.5 text-gray-500">Variação do BILL</label>
                     <div class="grid grid-cols-2 gap-1.5 bg-gray-100 p-1 rounded-xl border border-gray-200">
-                        <button type="button" id="btn-modal-type-manual" onclick="window.setNewTableModalType('OLD')" class="py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-white text-black shadow-sm">
-                            Manual (OLD)
+                        <button type="button" id="btn-modal-var-standard" onclick="window.setNewTableVariation('STANDARD')" class="py-2 text-[10px] font-black uppercase rounded-lg transition-all bg-black text-white shadow-sm">
+                            BILL (Padrão)
                         </button>
-                        <button type="button" id="btn-modal-type-sheet" onclick="window.setNewTableModalType('NEW')" class="py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black">
-                            Google Sheets (NEW)
+                        <button type="button" id="btn-modal-var-nacala" onclick="window.setNewTableVariation('NACALA')" class="py-2 text-[10px] font-black uppercase rounded-lg transition-all text-gray-500 hover:text-black">
+                            BILL Nacala
                         </button>
                     </div>
                 </div>
 
-                <!-- Campo de Seleção de Fonte (Visível no modo NEW) -->
-                <div id="group-new-table-sheet" class="hidden">
-                    <label class="block text-[10px] font-bold uppercase mb-1 text-emerald-800">Folha Confirm / Lote Finance</label>
+                <!-- Indicador de Actualização Automática -->
+                <div id="modal-table-auto-badge" class="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-[10px] font-bold">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Actualização Automática em tempo real</span>
+                </div>
+
+                <!-- Campo de Seleção de Fonte (Opcional, com opção de Detecção Automática) -->
+                <div id="group-new-table-sheet">
+                    <label class="block text-[10px] font-bold uppercase mb-1 text-emerald-800">Vincular a Folha Confirm / Lote (Opcional)</label>
                     <select id="input-table-source-select" onchange="window.onNewTableSourceSelected(this.value)" class="w-full p-2.5 bg-emerald-50/50 border-2 border-emerald-200 focus:border-emerald-600 outline-none rounded-lg text-xs font-semibold text-emerald-950">
-                        <option value="">A carregar folhas disponíveis...</option>
+                        <option value="auto">Detecção Automática (Recomendado)</option>
                     </select>
-                    <p class="text-[9px] text-emerald-600 mt-1">Os contentores e valores serão lidos em tempo real da folha Google.</p>
                 </div>
 
                 <div>
                     <label class="block text-[10px] font-bold uppercase mb-1 text-gray-500">Nome da Referência</label>
-                    <input type="text" id="input-table-name" placeholder="Ex: Carga Abril 2024" class="w-full p-3 border-2 border-gray-100 focus:border-black outline-none rounded-lg font-semibold text-black">
+                    <input type="text" id="input-table-name" placeholder="Ex: BILL - 69" class="w-full p-3 border-2 border-gray-200 focus:border-black outline-none rounded-lg font-bold text-black text-sm bg-gray-50 focus:bg-white transition-all">
+                    <p class="text-[9px] text-gray-400 mt-1 font-medium">Nome sugerido automaticamente de acordo com a sequência.</p>
                 </div>
             </div>
             <div class="p-4 bg-gray-100 border-t border-gray-400 rounded-b-xl">

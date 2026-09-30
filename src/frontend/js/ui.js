@@ -630,28 +630,35 @@ export function renderRealtimeBillDetails(realtimeData, onEditContainer = null) 
 }
 
 /**
- * Atualiza os botões e barras da UI conforme o modo OLD ou NEW
+ * Atualiza os botões e barras da UI conforme o modo OLD ou NEW e a política da tabela
  */
-export function updateBillModeUI(mode) {
+export function updateBillModeUI(mode, policy = null) {
     const btnOld = document.getElementById('btn-bill-mode-old');
     const btnNew = document.getElementById('btn-bill-mode-new');
+    const btnRefresh = document.getElementById('btn-bill-refresh');
     const tableActions = document.getElementById('table-actions');
     const syncLoader = document.getElementById('bill-sync-loader');
 
-    if (mode === 'NEW') {
+    const effectivePolicy = policy || mode;
+
+    if (effectivePolicy === 'NEW') {
+        // Tabela de Actualização Automática (BILL >= 68 ou Nacala >= 2): Ocultar OLD completamente
+        if (btnOld) btnOld.classList.add('hidden');
         if (btnNew) {
-            btnNew.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-emerald-600 text-white shadow-sm";
+            btnNew.classList.remove('hidden');
+            btnNew.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-emerald-600 text-white shadow-sm flex items-center gap-1.5";
+            btnNew.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-300 animate-pulse"></span> Actualização Automática`;
         }
-        if (btnOld) {
-            btnOld.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 text-gray-500 hover:text-black";
-        }
+        if (btnRefresh) btnRefresh.classList.remove('hidden');
     } else {
+        // Tabela Antiga / Manual (BILL < 68 ou Nacala < 2): Ocultar Actualização Automática
+        if (btnNew) btnNew.classList.add('hidden');
         if (btnOld) {
-            btnOld.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-white text-black shadow-sm";
+            btnOld.classList.remove('hidden');
+            btnOld.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 bg-gray-800 text-white shadow-sm";
+            btnOld.innerText = "Modo Manual";
         }
-        if (btnNew) {
-            btnNew.className = "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all duration-200 text-gray-500 hover:text-black";
-        }
+        if (btnRefresh) btnRefresh.classList.add('hidden');
         if (syncLoader) syncLoader.classList.add('hidden');
     }
 
