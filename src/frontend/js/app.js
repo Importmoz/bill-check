@@ -69,6 +69,7 @@ window.getNextBillTableName = getNextBillTableName;
 window.setNewTableModalType = setNewTableModalType;
 window.onNewTableSourceSelected = onNewTableSourceSelected;
 window.createNewTable = createNewTable;
+window.toggleShowZeroTables = toggleShowZeroTables;
 window.saveContainer = saveContainer;
 window.deleteContainer = deleteContainer;
 window.confirmPayment = confirmPayment;
@@ -537,6 +538,15 @@ async function showDashboard() {
     } finally {
         ui.setLoader(false);
     }
+}
+
+function toggleShowZeroTables(forceState = null) {
+    if (typeof forceState === 'boolean') {
+        state.showZeroBalanceTables = forceState;
+    } else {
+        state.showZeroBalanceTables = !state.showZeroBalanceTables;
+    }
+    ui.renderDashboard(openTable, openTableActions);
 }
 
 let currentNewTableModalMode = 'OLD';

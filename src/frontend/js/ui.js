@@ -354,7 +354,65 @@ export function renderDashboard(onOpenTable, onOpenActions) {
         return;
     }
 
-    state.tables.forEach((table, idx) => {
+    const showZero = !!state.showZeroBalanceTables;
+    const zeroTablesCount = state.tables.filter(t => Math.abs(t.balance || 0) < 0.01).length;
+    const nonZeroTables = state.tables.filter(t => Math.abs(t.balance || 0) >= 0.01);
+    const visibleTables = showZero ? state.tables : nonZeroTables;
+
+    // Atualizar botão de alternar visualização das tabelas com saldo 0 (apenas ícone de visualizar)
+    const toggleBtn = document.getElementById('btn-toggle-zero-tables');
+    if (toggleBtn) {
+        if (showZero) {
+            toggleBtn.className = "p-2.5 rounded-xl transition-all border flex items-center justify-center bg-gray-900 text-white border-gray-900 shadow-sm active:scale-90";
+            toggleBtn.title = `Ocultar tabelas com saldo 0 (${zeroTablesCount})`;
+            toggleBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+                    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+                    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+                    <line x1="2" y1="2" x2="22" y2="22"/>
+                </svg>
+            `;
+        } else {
+            toggleBtn.className = "p-2.5 rounded-xl transition-all border flex items-center justify-center bg-white hover:bg-gray-100 text-gray-500 hover:text-black border-gray-200 shadow-sm active:scale-90";
+            toggleBtn.title = `Visualizar tabelas com saldo 0 (${zeroTablesCount})`;
+            toggleBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+            `;
+        }
+        if (zeroTablesCount === 0) {
+            toggleBtn.classList.add('opacity-40', 'pointer-events-none');
+        } else {
+            toggleBtn.classList.remove('opacity-40', 'pointer-events-none');
+        }
+    }
+
+    if (visibleTables.length === 0) {
+        if (!showZero && zeroTablesCount > 0) {
+            list.innerHTML = `
+                <div class="col-span-full text-center py-16 bg-white border border-gray-200 rounded-2xl p-8 shadow-sm">
+                    <div class="w-12 h-12 mx-auto mb-3 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                    </div>
+                    <h3 class="font-black text-sm uppercase text-gray-800 mb-1">Todas as tabelas estão liquidadas!</h3>
+                    <p class="text-xs text-gray-500 mb-4">Nenhuma tabela com saldo pendente no momento.</p>
+                    <button onclick="window.toggleShowZeroTables(true)" class="px-5 py-2.5 bg-black text-white text-xs font-bold uppercase rounded-xl hover:bg-gray-800 transition-all shadow-md active:scale-95">
+                        Ver Tabelas Liquidadas (${zeroTablesCount})
+                    </button>
+                </div>
+            `;
+        } else {
+            list.innerHTML = '<div class="col-span-full text-center py-12 text-gray-400 uppercase text-[9px] font-bold tracking-widest">Sem tabelas encontradas.</div>';
+        }
+        return;
+    }
+
+    visibleTables.forEach((table, idx) => {
         const balance = table.balance || 0;
         const isBalanceZero = Math.abs(balance) < 0.01;
         const bgColor = isBalanceZero ? 'bg-green-100/80' : 'bg-red-100/80';
@@ -420,7 +478,10 @@ export function renderDashboardSummary() {
                     <div><div class="text-xs font-bold uppercase text-gray-500 mb-1">Tabelas</div><div class="text-lg font-bold text-gray-800">${state.tables.length}</div></div>
                     <div><div class="text-xs font-bold uppercase text-gray-500 mb-1">Com Dívida</div><div class="text-lg font-bold text-red-700">${stats.debt}</div></div>
                     <div><div class="text-xs font-bold uppercase text-gray-500 mb-1">Com Crédito</div><div class="text-lg font-bold text-blue-700">${stats.credit}</div></div>
-                    <div><div class="text-xs font-bold uppercase text-gray-500 mb-1">Liquidadas</div><div class="text-lg font-bold text-green-700">${stats.zero}</div></div>
+                    <div class="cursor-pointer hover:bg-green-100/60 p-2 rounded-xl transition-all" onclick="window.toggleShowZeroTables()" title="Clique para alternar tabelas com saldo 0">
+                        <div class="text-xs font-bold uppercase text-gray-500 mb-1 underline decoration-dotted">Liquidadas (0)</div>
+                        <div class="text-lg font-bold text-green-700">${stats.zero}</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -4739,42 +4800,65 @@ export async function refreshBankData() {
 }
 
 /**
- * Processa o upload de um extrato bancário
+ * Processa o upload de extratos bancários (suporta múltiplos ficheiros)
  */
 export async function handleBankUpload(input) {
-    const file = input.files[0];
-    if (!file) return;
+    const files = Array.from(input.files || []);
+    if (files.length === 0) return;
 
     const btn = document.getElementById('btn-bank-upload');
     setBtnLoading(btn, true, "A processar...");
-    setLoader(true, "A analisar ficheiro...");
     
-    try {
-        const data = await uploadBankStatement(file);
+    const totalFiles = files.length;
+    let totalNew = 0;
+    let totalDup = 0;
+    let totalFound = 0;
+    let errors = [];
 
-        if (data && data.length > 0) {
-            let countNew = 0;
-            let countDup = 0;
-            for (let i = 0; i < data.length; i++) {
-                const item = data[i];
-                if ((i + 1) % 5 === 0 || i === data.length - 1) {
-                    setLoader(true, `A gravar movimento ${i + 1} de ${data.length}...`);
-                }
-                try {
-                    const result = await saveBankIncome(item);
-                    if (result && result._isNew) {
-                        countNew++;
-                    } else if (result && result._isDuplicate) {
-                        countDup++;
-                    } else {
-                        const isNew = result && result.created && result.updated && (new Date(result.updated) - new Date(result.created) < 2000);
-                        if (isNew) countNew++; else countDup++;
+    try {
+        for (let fIdx = 0; fIdx < totalFiles; fIdx++) {
+            const file = files[fIdx];
+            const fileNum = fIdx + 1;
+            const prefix = totalFiles > 1 ? `[${fileNum}/${totalFiles}] ` : '';
+
+            setLoader(true, `${prefix}A analisar ${file.name}...`);
+
+            try {
+                const data = await uploadBankStatement(file);
+
+                if (data && data.length > 0) {
+                    totalFound += data.length;
+                    for (let i = 0; i < data.length; i++) {
+                        const item = data[i];
+                        if ((i + 1) % 5 === 0 || i === data.length - 1) {
+                            setLoader(true, `${prefix}A gravar movimento ${i + 1} de ${data.length} (${file.name})...`);
+                        }
+                        try {
+                            const result = await saveBankIncome(item);
+                            if (result && result._isNew) {
+                                totalNew++;
+                            } else if (result && result._isDuplicate) {
+                                totalDup++;
+                            } else {
+                                const isNew = result && result.created && result.updated && (new Date(result.updated) - new Date(result.created) < 2000);
+                                if (isNew) totalNew++; else totalDup++;
+                            }
+                        } catch (e) {
+                            console.warn(`[BANK] Erro ao gravar item de ${file.name}:`, e.message);
+                        }
                     }
-                } catch (e) {
-                    console.warn('[BANK] Erro ao gravar item:', e.message);
+                } else {
+                    console.warn(`[BANK] Nenhuma entrada encontrada em ${file.name}`);
                 }
+            } catch (err) {
+                console.error(`[BANK] Erro ao processar ${file.name}:`, err);
+                errors.push(`${file.name}: ${err.message}`);
             }
-            toast(`Importação concluída! Novos: ${countNew}, Duplicados: ${countDup}`, countNew > 0 ? 'success' : 'warning');
+        }
+
+        if (totalFound > 0 || totalNew > 0 || totalDup > 0) {
+            const fileLabel = totalFiles > 1 ? ` de ${totalFiles} ficheiros` : '';
+            toast(`Importação${fileLabel} concluída! Novos: ${totalNew}, Duplicados: ${totalDup}`, totalNew > 0 ? 'success' : 'warning');
             
             // Recarregar os movimentos no ecrã para que o utilizador veja imediatamente os dados importados
             await listBankIncomes('', 50);
@@ -4782,8 +4866,12 @@ export async function handleBankUpload(input) {
             if (wrapper) wrapper.classList.remove('hidden');
             renderBankIncomes();
             renderBankOwnerSummary();
-        } else {
-            toast("Nenhuma entrada de crédito encontrada no ficheiro.", "warning");
+        } else if (errors.length === 0) {
+            toast("Nenhuma entrada de crédito encontrada no(s) ficheiro(s) selecionado(s).", "warning");
+        }
+
+        if (errors.length > 0) {
+            toast(`Erro em ${errors.length} ficheiro(s): ${errors.slice(0, 2).join('; ')}`, "error");
         }
     } catch (error) {
         toast("Erro no processamento: " + error.message, "error");

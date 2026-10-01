@@ -130,6 +130,7 @@ export const state = {
     billConfig: null,
     billRealtimeData: null,
     billSources: null,
+    showZeroBalanceTables: false,
     finance: {
         groups: [],
         sheets: [],
