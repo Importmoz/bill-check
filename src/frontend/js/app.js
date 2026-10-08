@@ -1952,9 +1952,15 @@ async function submitAddConfirmArticle(e) {
             }
         }
 
+        const currentAuthUser = api.pb.authStore.model;
+        const uploaderName = currentAuthUser?.name || currentAuthUser?.email || 'Utilizador';
+        const uploaderId = currentAuthUser?.id || '';
+
         const payload = {
             container: projectName,
             projectId: api.state.confirm?.projectId,
+            uploaderName,
+            uploaderId,
             client: {
                 no: clientIndex,
                 name: client.displayName,
@@ -1980,6 +1986,13 @@ async function submitAddConfirmArticle(e) {
         const result = await api.fillConfirmClient(formData);
         ui.closeModal('modal-confirm-add-article');
         ui.toast(result.message || "Artigo adicionado com sucesso!", "success");
+
+        if (files.length > 0 && api.state.confirm?.sheetId) {
+            api.logConfirmAudit(api.state.confirm.sheetId, clientIndex, client.displayName, 'DOC_UPLOAD', {
+                filesCount: files.length,
+                fileNames: files.map(f => f.name).join(', ')
+            });
+        }
 
         // Recarregar dados do projeto
         if (api.state.confirm?.sheetId) {
@@ -2056,10 +2069,16 @@ async function submitAddConfirmClient(e) {
     ui.setLoader(true, "A registar cliente e a carregar suportes...");
 
     try {
+        const currentAuthUser = api.pb.authStore.model;
+        const uploaderName = currentAuthUser?.name || currentAuthUser?.email || 'Utilizador';
+        const uploaderId = currentAuthUser?.id || '';
+
         const formData = new FormData();
         const payload = {
             container: projectName,
             projectId: api.state.confirm?.projectId,
+            uploaderName,
+            uploaderId,
             client: {
                 no: no || undefined,
                 name,
@@ -2199,6 +2218,15 @@ async function handleFileUpload(input) {
 
     try {
         await api.uploadGDriveFile(file, parentId);
+
+        const client = window.currentActiveClient;
+        if (client && api.state.confirm?.sheetId) {
+            api.logConfirmAudit(api.state.confirm.sheetId, client.no, client.displayName, 'DOC_UPLOAD', {
+                fileName: file.name,
+                folderId: parentId
+            });
+        }
+
         // Recarregar pasta
         openDriveExplorer(parentId);
     } catch (err) {
@@ -2216,6 +2244,15 @@ async function confirmAndDeleteFile(fileId, fileName, parentId) {
     ui.setLoader(true);
     try {
         await api.deleteGDriveFile(fileId);
+
+        const client = window.currentActiveClient;
+        if (client && api.state.confirm?.sheetId) {
+            api.logConfirmAudit(api.state.confirm.sheetId, client.no, client.displayName, 'DOC_DELETE', {
+                fileName: fileName,
+                fileId: fileId
+            });
+        }
+
         // Recarregar pasta
         openDriveExplorer(parentId);
     } catch (err) {
@@ -2599,6 +2636,19 @@ async function saveConfirmToSheet() {
                 name: api.pb.authStore.model?.name || 'Utilizador'
             });
             await api.emitConfirmEvent(spreadsheetId, currentConfirmRow.index, 'UNLOCK');
+
+            // Auditoria de alteração de estado manual
+            try {
+                const clientNo = window.currentActiveClient?.no || (currentConfirmRow.data && currentConfirmRow.data[0]) || '';
+                const clientName = window.currentActiveClient?.displayName || (window.currentActiveClient?.name) || '';
+                api.logConfirmAudit(spreadsheetId, clientNo, clientName, 'ESTADO_ALTERADO', {
+                    status: selectedStatus,
+                    comentario: comment.trim(),
+                    linhaIndex: currentConfirmRow.index
+                }).catch(e => console.warn('[Audit] Erro ao registar auditoria de estado manual:', e));
+            } catch (auditErr) {
+                console.warn('[Audit] Erro ao disparar auditoria de estado:', auditErr);
+            }
         }
         
         // Atualizar estado local com os novos dados da linha de forma síncrona

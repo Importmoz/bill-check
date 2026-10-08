@@ -383,15 +383,34 @@ router.post('/fill-client', upload.array('files', 10), async (req, res) => {
 
         // Fazer upload de cada ficheiro recebido
         if (clientFolderId && files.length > 0) {
+          const uploaderName = payload.uploaderName || payload.userName || '';
+          const uploaderId = payload.uploaderId || payload.userId || '';
+          const nowIso = new Date().toISOString();
+
           for (const f of files) {
             const bufferStream = new Readable();
             bufferStream.push(f.buffer);
             bufferStream.push(null);
 
+            const appProperties = {
+              uploadedAt: nowIso
+            };
+            if (uploaderName) appProperties.uploadedBy = uploaderName;
+            if (uploaderId) appProperties.uploadedById = uploaderId;
+
+            const description = uploaderName
+              ? `Carregado por: ${uploaderName} em ${new Date().toLocaleString('pt-PT')}`
+              : '';
+
             const fileUploadRes = await drive.files.create({
-              resource: { name: f.originalname, parents: [clientFolderId] },
+              resource: { 
+                name: f.originalname, 
+                parents: [clientFolderId],
+                appProperties,
+                description
+              },
               media: { mimeType: f.mimetype, body: bufferStream },
-              fields: 'id, name, webViewLink'
+              fields: 'id, name, webViewLink, appProperties, createdTime, description'
             });
 
             try {
@@ -404,7 +423,10 @@ router.post('/fill-client', upload.array('files', 10), async (req, res) => {
             uploadedFilesResult.push({
               id: fileUploadRes.data.id,
               name: fileUploadRes.data.name,
-              link: fileUploadRes.data.webViewLink
+              link: fileUploadRes.data.webViewLink,
+              appProperties: fileUploadRes.data.appProperties,
+              createdTime: fileUploadRes.data.createdTime,
+              description: fileUploadRes.data.description
             });
           }
           console.log(`[CONFIRM API] ${uploadedFilesResult.length} arquivo(s) enviado(s) para a pasta do cliente.`);
@@ -726,7 +748,7 @@ router.post('/get-client', async (req, res) => {
           clientFolderId = clientFolder.id;
           const listFilesRes = await drive.files.list({
             q: `'${clientFolderId}' in parents and trashed = false`,
-            fields: 'files(id, name, mimeType, size, webViewLink, webContentLink, createdTime)'
+            fields: 'files(id, name, mimeType, size, webViewLink, webContentLink, createdTime, modifiedTime, appProperties, description)'
           });
           files = (listFilesRes.data.files || []).map(f => ({
             id: f.id,
@@ -735,7 +757,9 @@ router.post('/get-client', async (req, res) => {
             size: f.size ? parseInt(f.size, 10) : null,
             webViewLink: f.webViewLink,
             webContentLink: f.webContentLink,
-            createdTime: f.createdTime
+            createdTime: f.createdTime,
+            appProperties: f.appProperties,
+            description: f.description
           }));
         }
       } catch (driveErr) {

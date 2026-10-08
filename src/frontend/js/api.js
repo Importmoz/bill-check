@@ -348,10 +348,20 @@ export async function markPaymentReconciled(id, combinedInfo, allocatedAmount = 
     const totalAmount = parseFloat(original.amount);
     const amountToUse = allocatedAmount !== null ? parseFloat(allocatedAmount) : totalAmount;
 
+    // Capturar o utilizador que está a vincular o pagamento
+    const currentUser = pb.authStore.model;
+    const userName = currentUser?.name || currentUser?.email || 'Operador';
+    const userId = currentUser?.id || '';
+    const nowIso = new Date().toISOString();
+
     // Gerar ou recuperar a Master Reference
     let masterRef = original.reference || "";
     if (!masterRef.includes("(Ref Mestre:")) {
         masterRef = (masterRef ? masterRef + " " : "") + `(Ref Mestre: ${original.id})`;
+    }
+    // Incluir tag de operador na referência para rastreabilidade imediata e resiliente
+    if (!masterRef.includes("[Vinculado:")) {
+        masterRef += ` [Vinculado: ${userName} em ${nowIso.substring(0, 10)}]`;
     }
 
     if (amountToUse < totalAmount) {
@@ -1071,6 +1081,11 @@ export async function uploadGDriveFile(file, parentId) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('parentId', parentId);
+
+    if (pb.authStore.model) {
+        formData.append('uploadedBy', pb.authStore.model.name || pb.authStore.model.email || 'Utilizador');
+        formData.append('uploadedById', pb.authStore.model.id || '');
+    }
     
     const res = await fetch('/api/google/drive/upload', {
         method: 'POST',
@@ -1083,6 +1098,66 @@ export async function uploadGDriveFile(file, parentId) {
     }
     
     return await res.json();
+}
+
+/**
+ * Regista um evento de auditoria no PocketBase (confirm_events)
+ */
+export async function logConfirmAudit(sheetId, clientNo, clientName, actionType, details = {}) {
+    if (!sheetId) return null;
+    const user = pb.authStore.model;
+    const userName = user?.name || user?.email || 'Sistema';
+    const userId = user?.id || '';
+    const nowIso = new Date().toISOString();
+
+    try {
+        const payload = {
+            clientNo: String(clientNo || '').trim(),
+            clientName: String(clientName || '').trim(),
+            actionType,
+            userName,
+            userId,
+            timestamp: nowIso,
+            ...details
+        };
+
+        const rec = await pb.collection('confirm_events').create({
+            sheet_id: sheetId,
+            row_index: parseInt(clientNo, 10) || 0,
+            type: `AUDIT_${actionType}`,
+            payload: payload,
+            user: userId || null
+        });
+        console.log(`[AUDIT] Evento '${actionType}' registado para Cliente ${clientNo}:`, payload);
+        return rec;
+    } catch (err) {
+        console.warn(`[AUDIT] Falha ao registar auditoria '${actionType}':`, err.message);
+        return null;
+    }
+}
+
+/**
+ * Obtém os registos de auditoria de um cliente a partir de confirm_events
+ */
+export async function getClientAuditLogs(sheetId, clientNo) {
+    if (!sheetId) return [];
+    try {
+        const cleanNo = String(clientNo || '').trim();
+        const events = await pb.collection('confirm_events').getFullList({
+            filter: `sheet_id = "${sheetId}" && type ~ "AUDIT_"`,
+            sort: '-created'
+        });
+
+        if (!cleanNo) return events;
+
+        return events.filter(e => {
+            const p = e.payload || {};
+            return String(p.clientNo || e.row_index).trim() === cleanNo;
+        });
+    } catch (err) {
+        console.warn("[AUDIT] Erro ao obter histórico de auditoria:", err.message);
+        return [];
+    }
 }
 
 export async function deleteGDriveFile(fileId) {

@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
 import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js';
 
 export function getPaymentBankDisplay(payment) {
@@ -2015,6 +2015,28 @@ export async function showConfirmDetail(client, clientIndex) {
     const isSameClient = window.currentActiveClient && String(window.currentActiveClientIndex) === String(clientIndex);
     window.currentActiveClient = client;
     window.currentActiveClientIndex = clientIndex;
+
+    // Carregar metadados de auditoria recentes do cliente (armazém, guia)
+    try {
+        const sheetId = state.confirm?.sheetId || '';
+        if (sheetId && client.no) {
+            const auditLogs = await getClientAuditLogs(sheetId, client.no);
+            if (auditLogs && auditLogs.length > 0) {
+                const lastSave = auditLogs.find(l => l.type === 'AUDIT_ARMAZEM_GRAVADO' || l.type === 'AUDIT_ARMAZEM_ENTREGUE');
+                if (lastSave) {
+                    client.lastWarehouseSavedBy = lastSave.payload?.userName || lastSave.expand?.user?.name || 'Operador';
+                    client.lastWarehouseSavedAt = lastSave.created;
+                }
+                const lastGuia = auditLogs.find(l => l.type === 'AUDIT_GUIA_EMITIDA');
+                if (lastGuia) {
+                    client.lastGuiaIssuedBy = lastGuia.payload?.emitidoPor || lastGuia.payload?.userName || lastGuia.expand?.user?.name || 'Operador';
+                    client.lastGuiaIssuedAt = lastGuia.created;
+                }
+            }
+        }
+    } catch (auditFetchErr) {
+        console.warn('[Audit] Erro ao carregar logs preliminares do cliente:', auditFetchErr);
+    }
     const nameEl = document.getElementById('confirm-client-detail-name');
     const idEl = document.getElementById('confirm-client-detail-id');
     const breadcrumbEl = document.getElementById('confirm-breadcrumb');
@@ -2340,13 +2362,35 @@ export async function showConfirmDetail(client, clientIndex) {
             `;
 
             pmts.forEach((payment, idx) => {
+                let vinculadorName = payment.reconciled_by_name || '';
+                let vinculadoEm = payment.reconciled_at || '';
+                if (!vinculadorName && payment.reference) {
+                    const match = payment.reference.match(/\[Vinculado:\s*([^\]|]+)(?:\s*em\s*([^\]]+))?\]/i);
+                    if (match) {
+                        vinculadorName = match[1].trim();
+                        vinculadoEm = match[2] ? match[2].trim() : '';
+                    }
+                }
+                
+                // Limpar tag [Vinculado: ...] da referência para apresentação limpa
+                const displayRef = (payment.reference || payment.description || '---').replace(/\[Vinculado:[^\]]+\]/g, '').trim();
+
                 html += `
                     <div class="grid grid-cols-2 gap-2 text-[11px] text-${color}-900 ${idx !== pmts.length - 1 ? `border-b border-${color}-100 pb-3` : ''}">
                         <div><span class="font-bold text-${color}-700">Banco:</span> ${getPaymentBankDisplay(payment)}</div>
                         <div><span class="font-bold text-${color}-700">Titular da Conta:</span> ${payment.account_owner || '---'}</div>
                         <div><span class="font-bold text-${color}-700">Valor (MZN):</span> ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount)}</div>
-                        <div><span class="font-bold text-${color}-700">Data:</span> ${payment.date ? payment.date.split(' ')[0] : '---'}</div>
-                        <div class="col-span-2"><span class="font-bold text-${color}-700">Referência:</span> ${payment.reference || payment.description || '---'}</div>
+                        <div><span class="font-bold text-${color}-700">Data Extrato:</span> ${payment.date ? payment.date.split(' ')[0] : '---'}</div>
+                        <div class="col-span-2"><span class="font-bold text-${color}-700">Referência:</span> ${displayRef}</div>
+                        ${vinculadorName ? `
+                            <div class="col-span-2 bg-${color}-100/60 p-2 rounded-lg flex items-center justify-between text-[10px] border border-${color}-200/50 mt-1">
+                                <span class="font-bold text-${color}-900 flex items-center gap-1.5">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><polyline points="17 11 19 13 23 9"></polyline></svg>
+                                    Vinculado por: <strong class="text-black font-extrabold">${vinculadorName}</strong>
+                                </span>
+                                ${vinculadoEm ? `<span class="text-[9px] text-${color}-700 font-mono italic">${vinculadoEm}</span>` : ''}
+                            </div>
+                        ` : ''}
                         <div class="col-span-2" id="siblings-${payment.id}"></div>
                     </div>
                 `;
@@ -4107,6 +4151,18 @@ export async function applyBulkUpdate() {
 
         if (updatedCount > 0) {
             toast(`${updatedCount} ordens atualizadas com sucesso em massa!`, "success");
+            try {
+                const clientNo = window.currentActiveClient?.no || '';
+                const clientName = window.currentActiveClient?.displayName || '';
+                logConfirmAudit(spreadsheetId, clientNo, clientName, 'ATUALIZACAO_EM_MASSA', {
+                    banco: selectedBank || null,
+                    estado: selectedStatus || null,
+                    qtdOrdens: updatedCount,
+                    atualizouPagamento: applyConfirmAndPay
+                }).catch(e => console.warn('[Audit] Erro ao registar auditoria de bulk update:', e));
+            } catch (auditErr) {
+                console.warn('[Audit] Erro ao disparar auditoria de bulk update:', auditErr);
+            }
         }
         if (skippedCount > 0) {
             toast(`${skippedCount} ordens ignoradas por estarem a ser editadas por outros utilizadores.`, "warning");
@@ -4174,7 +4230,7 @@ export function renderDriveFiles(files, currentFolderId, containerId = 'confirm-
     files.forEach(file => {
         const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
         const div = document.createElement('div');
-        div.className = "flex items-center gap-2 p-1 px-2 border border-slate-100 hover:border-slate-200 rounded-lg hover:shadow-xs transition-all bg-white hover:bg-slate-50 cursor-pointer group";
+        div.className = "flex items-center gap-2 p-1.5 px-2 border border-slate-100 hover:border-slate-200 rounded-lg hover:shadow-xs transition-all bg-white hover:bg-slate-50 cursor-pointer group";
 
         div.onclick = (e) => {
             if (isFolder) {
@@ -4186,6 +4242,38 @@ export function renderDriveFiles(files, currentFolderId, containerId = 'confirm-
 
         const iconColor = isFolder ? 'text-blue-500' : 'text-slate-400';
 
+        let metaHtml = '';
+        if (isFolder) {
+            metaHtml = `<p class="text-[7px] text-blue-500 font-bold uppercase tracking-wider mt-0.5">Pasta</p>`;
+        } else {
+            const uploader = file.appProperties?.uploadedBy || 
+                (file.description && file.description.includes('Carregado por:') ? file.description.replace(/Carregado por:\s*/i, '').split(/\s+em\s+/)[0]?.trim() : '');
+            
+            const rawDate = file.appProperties?.uploadedAt || file.createdTime;
+            let dateStr = '';
+            if (rawDate) {
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) {
+                    dateStr = d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                }
+            }
+
+            if (uploader || dateStr) {
+                metaHtml = `
+                    <div class="text-[8px] text-slate-400 font-medium flex items-center gap-1 mt-0.5 truncate">
+                        ${uploader ? `
+                            <span class="text-slate-600 font-bold flex items-center gap-0.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-purple-500"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                ${uploader}
+                            </span>
+                        ` : ''}
+                        ${uploader && dateStr ? `<span>•</span>` : ''}
+                        ${dateStr ? `<span>${dateStr}</span>` : ''}
+                    </div>
+                `;
+            }
+        }
+
         div.innerHTML = `
             <div class="${iconColor} shrink-0 flex items-center justify-center">
                 ${isFolder ?
@@ -4195,13 +4283,13 @@ export function renderDriveFiles(files, currentFolderId, containerId = 'confirm-
             </div>
             <div class="flex-1 min-w-0">
                 <p class="font-semibold truncate text-slate-700 group-hover:text-slate-950 text-[10px] leading-tight">${file.name}</p>
-                ${isFolder ? `<p class="text-[7px] text-blue-500 font-bold uppercase tracking-wider mt-0.5">Pasta</p>` : ''}
+                ${metaHtml}
             </div>
             
             <div class="flex items-center gap-1 shrink-0">
                 ${!isFolder ? `
                     <button onclick="event.stopPropagation(); window.confirmAndDeleteFile('${file.id}', '${file.name}', '${currentFolderId}')" 
-                        class="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all rounded opacity-0 group-hover:opacity-100">
+                        class="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all rounded opacity-0 group-hover:opacity-100" title="Apagar ficheiro">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                     </button>
                 ` : ''}
@@ -5681,6 +5769,22 @@ export async function confirmPaymentSelection() {
                             rowData: item.rowData
                         });
                     }
+                }
+
+                // 5. Auditoria: Registar vinculo / reconciliação de pagamento
+                const clientNo = window.currentActiveClient?.no || (window.currentClientRows?.[0]?.no) || '';
+                const clientName = window.currentActiveClient?.displayName || (window.currentClientRows?.[0]?.client) || '';
+                const sheetId = state.confirm?.sheetId || '';
+                try {
+                    logConfirmAudit(sheetId, clientNo, clientName, 'PAGAMENTO_VINCULADO', {
+                        tipo: isFreight ? 'Frete' : 'Duty',
+                        allocatedAmount,
+                        status: filterStatus,
+                        payments: usedPayments.map(p => ({ id: p.id, date: p.date, ref: p.ref, amount: p.amount })),
+                        comment: document.getElementById('mini-filter-comment')?.value || ''
+                    }).catch(auditErr => console.warn('[Audit] Erro ao registar auditoria de pagamento:', auditErr));
+                } catch (auditErr) {
+                    console.warn('[Audit] Erro ao disparar auditoria de pagamento:', auditErr);
                 }
             }
         }
@@ -8138,6 +8242,24 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
                     ${buttonsHtml}
                 </div>
+
+                <!-- Rastreio Operacional (Armazém & Guia) -->
+                <div class="flex flex-wrap items-center justify-between text-[11px] text-slate-500 bg-slate-50/80 border border-slate-200/60 rounded-2xl px-4 py-2.5 mt-2">
+                    <div class="flex items-center gap-4 flex-wrap">
+                        <span class="inline-flex items-center gap-1.5 font-medium">
+                            <span class="text-slate-400">Gravado por:</span>
+                            <strong class="text-slate-700 font-bold">${client.lastWarehouseSavedBy ? `${client.lastWarehouseSavedBy} <span class="text-[10px] text-slate-400 font-normal">(${formatDateDisplay(client.lastWarehouseSavedAt)})</span>` : '<span class="text-slate-400 font-normal italic">Não registado</span>'}</strong>
+                        </span>
+                        <span class="text-slate-300">|</span>
+                        <span class="inline-flex items-center gap-1.5 font-medium">
+                            <span class="text-slate-400">Guia emitida por:</span>
+                            <strong class="text-slate-700 font-bold">${client.lastGuiaIssuedBy ? `${client.lastGuiaIssuedBy} <span class="text-[10px] text-slate-400 font-normal">(${formatDateDisplay(client.lastGuiaIssuedAt)})</span>` : '<span class="text-slate-400 font-normal italic">Ainda não emitida</span>'}</strong>
+                        </span>
+                    </div>
+                    <button type="button" onclick="ui.openClientAuditModal()" class="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer inline-flex items-center gap-1">
+                        Histórico completo &rarr;
+                    </button>
+                </div>
             </div>
             ` : `
             <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4 mt-4">
@@ -8339,6 +8461,25 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
                 rObj.originalRow = item.rowData;
             }
         });
+
+        // Atualizar rastreio local
+        const opUser = pb.authStore.model?.name || pb.authStore.model?.email || 'Operador';
+        const nowIso = new Date().toISOString();
+        client.lastWarehouseSavedBy = opUser;
+        client.lastWarehouseSavedAt = nowIso;
+
+        // Auditoria: Armazém gravado / entregue
+        const actionType = deliveredVal === 'SIM' ? 'ARMAZEM_ENTREGUE' : 'ARMAZEM_GRAVADO';
+        logConfirmAudit(state.confirm.sheetId, client.no, client.displayName, actionType, {
+            descarregado: totalDischargeInput,
+            entregue: totalDeliverInput,
+            dataEntrega: deliverDateVal,
+            entregueA: deliverToVal,
+            contacto: contactoVal,
+            armazenagemPago: storagePaidVal,
+            isencao: motivoIsencaoVal,
+            statusEntrega: deliveredVal
+        }).catch(err => console.warn('[Audit] Erro ao registar auditoria de armazém:', err));
 
         // Re-renderizar o detalhe do cliente para atualizar a tabela
         await showConfirmDetail(client, window.currentActiveClientIndex);
@@ -8646,6 +8787,21 @@ export function printDeliveryNote() {
     const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
     const textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
 
+    const issuerName = pb.authStore.model?.name || pb.authStore.model?.email || 'Operador Autorizado';
+    const nowIso = new Date().toISOString();
+    client.lastGuiaIssuedBy = issuerName;
+    client.lastGuiaIssuedAt = nowIso;
+
+    // Auditoria: Emissão de Guia de Entrega
+    const spreadsheetId = state.confirm?.sheetId || '';
+    logConfirmAudit(spreadsheetId, client.no, client.displayName, 'GUIA_EMITIDA', {
+        emitidoPor: issuerName,
+        volumesEntregues: totalDelivered,
+        recebedor: receiverName,
+        contacto: receiverContact,
+        dataEntrega: deliveryDate
+    }).catch(err => console.warn('[Audit] Erro ao registar emissão de guia:', err));
+
     const printWindow = window.open('', '_blank', 'width=800,height=900');
     printWindow.document.write(`
         <!DOCTYPE html>
@@ -8693,7 +8849,8 @@ export function printDeliveryNote() {
                 </div>
                 <div class="doc-info">
                     <h2>Guia de Entrega</h2>
-                    <p>Data de Emissão: ${new Date().toLocaleDateString('pt-BR')}</p>
+                    <p>Data de Emissão: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+                    <p>Emitido por: <strong>${issuerName}</strong></p>
                 </div>
             </div>
 
@@ -8753,7 +8910,7 @@ export function printDeliveryNote() {
 
             <div class="signatures">
                 <div class="sig-box">
-                    <p>Jupiter Logistics Lda</p>
+                    <p>Jupiter Logistics Lda (${issuerName})</p>
                     <span>Assinatura do Responsável</span>
                 </div>
                 <div class="sig-box">
@@ -10379,3 +10536,187 @@ window.openVerifyClientProject = function(sheetId, folderId, projectName, client
         }
     }, 1200);
 };
+
+/**
+ * Abre o modal de auditoria e linha do tempo do cliente ativo
+ */
+export async function openClientAuditModal() {
+    const client = window.currentActiveClient;
+    if (!client) {
+        toast("Selecione primeiro um cliente para ver o histórico de auditoria.", "warning");
+        return;
+    }
+    const modal = document.getElementById('modal-confirm-audit-trail');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+
+    const subtitleEl = document.getElementById('modal-audit-client-subtitle');
+    if (subtitleEl) {
+        subtitleEl.innerText = `CLIENTE: ${client.displayName || 'SEM NOME'} (Nº ${client.no || '—'})`;
+    }
+
+    const contentEl = document.getElementById('modal-audit-timeline-content');
+    if (!contentEl) return;
+    contentEl.innerHTML = `
+        <div class="p-8 text-center text-xs font-bold text-slate-400 uppercase italic flex items-center justify-center gap-2">
+            <svg class="animate-spin w-4 h-4 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>
+            A carregar histórico e auditoria...
+        </div>
+    `;
+
+    try {
+        const sheetId = state.confirm?.sheetId || '';
+        const logs = await getClientAuditLogs(sheetId, client.no);
+
+        // Também reunir ficheiros do Google Drive já conhecidos para este cliente
+        const driveEvents = [];
+        if (state.confirm.clientFiles && state.confirm.clientFiles.length > 0) {
+            state.confirm.clientFiles.forEach(f => {
+                let uploader = f.appProperties?.uploadedBy || '';
+                if (!uploader && f.description && f.description.startsWith('Carregado por: ')) {
+                    uploader = f.description.replace('Carregado por: ', '').trim();
+                }
+                if (uploader) {
+                    driveEvents.push({
+                        created: f.appProperties?.uploadedAt || f.createdTime || new Date().toISOString(),
+                        type: 'AUDIT_DOC_UPLOAD',
+                        userDisplay: uploader,
+                        payload: {
+                            actionType: 'DOC_UPLOAD',
+                            userName: uploader,
+                            fileName: f.name,
+                            source: 'Google Drive'
+                        }
+                    });
+                }
+            });
+        }
+
+        // Juntar logs do PocketBase e eventos do Drive, remover duplicados e ordenar decrescente
+        const allTimeline = [];
+        if (logs && Array.isArray(logs)) {
+            logs.forEach(l => {
+                const p = l.payload || {};
+                allTimeline.push({
+                    id: l.id,
+                    created: l.created,
+                    type: l.type,
+                    userDisplay: p.userName || l.expand?.user?.name || l.expand?.user?.email || 'Operador',
+                    role: p.userRole || '',
+                    payload: p
+                });
+            });
+        }
+
+        // Adicionar eventos de ficheiros drive que possam não estar ainda no log
+        driveEvents.forEach(de => {
+            const alreadyLogged = allTimeline.some(t => t.type === 'AUDIT_DOC_UPLOAD' && t.payload?.fileName === de.payload.fileName);
+            if (!alreadyLogged) {
+                allTimeline.push(de);
+            }
+        });
+
+        // Ordenar por data decrescente
+        allTimeline.sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
+
+        if (allTimeline.length === 0) {
+            contentEl.innerHTML = `
+                <div class="p-8 text-center bg-white rounded-2xl border border-slate-100 text-slate-400">
+                    <p class="text-xs font-bold uppercase mb-1">Sem registos de auditoria</p>
+                    <p class="text-[11px]">As novas ações realizadas neste cliente (documentos, pagamentos, armazém) aparecerão aqui automaticamente.</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Gerar timeline HTML
+        const actionLabels = {
+            'AUDIT_DOC_UPLOAD': { label: 'Documento Carregado', color: 'bg-blue-500', icon: '📄' },
+            'AUDIT_DOC_DELETE': { label: 'Documento Eliminado', color: 'bg-red-500', icon: '🗑️' },
+            'AUDIT_PAGAMENTO_VINCULADO': { label: 'Pagamento Reconciliado', color: 'bg-emerald-500', icon: '💳' },
+            'AUDIT_ESTADO_ALTERADO': { label: 'Estado Alterado', color: 'bg-amber-500', icon: '🔄' },
+            'AUDIT_ATUALIZACAO_EM_MASSA': { label: 'Atualização em Massa', color: 'bg-indigo-500', icon: '⚡' },
+            'AUDIT_ARMAZEM_GRAVADO': { label: 'Armazém Atualizado', color: 'bg-purple-500', icon: '📦' },
+            'AUDIT_ARMAZEM_ENTREGUE': { label: 'Carga Entregue', color: 'bg-teal-500', icon: '✅' },
+            'AUDIT_GUIA_EMITIDA': { label: 'Guia de Entrega Emitida', color: 'bg-cyan-500', icon: '🖨️' },
+            'AUDIT_CLIENT_CREATED': { label: 'Cliente Criado', color: 'bg-emerald-600', icon: '✨' },
+            'AUDIT_ARTICLE_ADDED': { label: 'Artigo Adicionado', color: 'bg-sky-600', icon: '➕' }
+        };
+
+        let html = `<div class="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">`;
+
+        allTimeline.forEach(item => {
+            const meta = actionLabels[item.type] || { label: item.type.replace('AUDIT_', ''), color: 'bg-slate-500', icon: '📌' };
+            const dateStr = formatDateDisplay(item.created);
+            const p = item.payload || {};
+            const userLabel = item.userDisplay || p.userName || 'Operador';
+
+            let detailHtml = '';
+            if (item.type === 'AUDIT_DOC_UPLOAD') {
+                detailHtml = `Ficheiro: <strong class="text-slate-800">${p.fileName || p.originalName || 'Documento'}</strong>`;
+            } else if (item.type === 'AUDIT_DOC_DELETE') {
+                detailHtml = `Ficheiro eliminado: <strong class="text-slate-800">${p.fileName || 'Documento'}</strong>`;
+            } else if (item.type === 'AUDIT_PAGAMENTO_VINCULADO') {
+                detailHtml = `
+                    <div>Tipo: <strong class="text-slate-800">${p.tipo || 'Duty'}</strong> | Valor: <strong class="text-emerald-700">${formatMZN(p.allocatedAmount || 0)}</strong></div>
+                    ${p.payments && p.payments.length ? `<div class="text-[10px] text-slate-500 mt-0.5">Refs: ${p.payments.map(x => x.ref).filter(Boolean).join(', ')}</div>` : ''}
+                    ${p.comment ? `<div class="text-[10px] text-amber-700 italic mt-0.5">Nota: "${p.comment}"</div>` : ''}
+                `;
+            } else if (item.type === 'AUDIT_ARMAZEM_GRAVADO' || item.type === 'AUDIT_ARMAZEM_ENTREGUE') {
+                detailHtml = `
+                    <div>Descarregado: <strong>${p.descarregado ?? '—'}</strong> | Entregue: <strong>${p.entregue ?? '—'}</strong></div>
+                    ${p.entregueA ? `<div class="text-[10px] text-slate-600 mt-0.5">Entregue a: <strong>${p.entregueA}</strong> (${p.contacto || 'Sem contacto'})</div>` : ''}
+                    ${p.armazenagemPago ? `<div class="text-[10px] text-slate-500">Armazenagem: <strong>${p.armazenagemPago === 'SIM' ? 'PAGO' : 'PENDENTE'}</strong></div>` : ''}
+                `;
+            } else if (item.type === 'AUDIT_GUIA_EMITIDA') {
+                detailHtml = `
+                    <div>Emitida por: <strong>${p.emitidoPor || userLabel}</strong></div>
+                    <div class="text-[10px] text-slate-600 mt-0.5">Volumes: <strong>${p.volumesEntregues ?? '—'}</strong> | Recebedor: <strong>${p.recebedor || '—'}</strong></div>
+                `;
+            } else if (item.type === 'AUDIT_ESTADO_ALTERADO') {
+                detailHtml = `Novo estado: <strong class="text-indigo-700">${p.status || '—'}</strong> ${p.comentario ? `(Nota: "${p.comentario}")` : ''}`;
+            } else if (item.type === 'AUDIT_ATUALIZACAO_EM_MASSA') {
+                detailHtml = `Atualizadas <strong class="text-slate-800">${p.qtdOrdens} ordens</strong> ${p.estado ? `para estado <strong>${p.estado}</strong>` : ''} ${p.banco ? `no banco <strong>${p.banco}</strong>` : ''}`;
+            } else if (item.type === 'AUDIT_ARTICLE_ADDED') {
+                detailHtml = `Artigo: <strong class="text-slate-800">${p.orderNumber || p.subNumber || 'Novo'}</strong> (${p.cbm || 0} CBM, ${p.packages || 0} Pkgs)`;
+            } else if (item.type === 'AUDIT_CLIENT_CREATED') {
+                detailHtml = `Cliente registado com <strong class="text-slate-800">${p.totalOrders || 1} ordens</strong>`;
+            }
+
+            html += `
+                <div class="relative group">
+                    <div class="absolute -left-[19px] top-1.5 w-3.5 h-3.5 rounded-full ${meta.color} border-2 border-white shadow-xs"></div>
+                    <div class="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs hover:border-slate-300 transition-all">
+                        <div class="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-xs">${meta.icon}</span>
+                                <span class="text-xs font-black uppercase text-slate-800 tracking-tight">${meta.label}</span>
+                            </div>
+                            <span class="text-[10px] font-bold text-slate-400">${dateStr}</span>
+                        </div>
+                        <div class="text-[11px] text-slate-600 space-y-0.5">
+                            ${detailHtml}
+                        </div>
+                        <div class="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                            <span>Por: <strong class="text-slate-700">${userLabel}</strong></span>
+                            ${item.role ? `<span class="uppercase text-[9px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-bold">${item.role}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `</div>`;
+        contentEl.innerHTML = html;
+
+    } catch (err) {
+        console.error('[AUDIT] Erro ao carregar timeline de auditoria:', err);
+        contentEl.innerHTML = `
+            <div class="p-6 text-center bg-red-50 rounded-2xl border border-red-200 text-red-700">
+                <p class="text-xs font-bold uppercase mb-1">Erro ao carregar auditoria</p>
+                <p class="text-[11px]">${err.message}</p>
+            </div>
+        `;
+    }
+}
+window.openClientAuditModal = openClientAuditModal;

@@ -37,8 +37,13 @@
                             <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
                         </button>
 
-                        <button id="btn-toggle-reconciliation" onclick="document.getElementById('payment-info-container').classList.toggle('hidden')" class="bg-white text-slate-500 border border-slate-200 p-2 rounded-lg hover:bg-slate-50 transition-all shadow-xs active:scale-95 cursor-pointer flex items-center justify-center" title="Ocultar/Ver Histórico">
+                        <button id="btn-toggle-reconciliation" onclick="document.getElementById('payment-info-container').classList.toggle('hidden')" class="bg-white text-slate-500 border border-slate-200 p-2 rounded-lg hover:bg-slate-50 transition-all shadow-xs active:scale-95 cursor-pointer flex items-center justify-center" title="Ocultar/Ver Histórico de Pagamentos">
                             <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+
+                        <button id="btn-toggle-audit-history" onclick="ui.openClientAuditModal()" class="bg-white text-slate-600 hover:text-blue-700 hover:border-blue-200 border border-slate-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer" title="Ver Histórico de Auditoria">
+                            <svg class="w-3.5 h-3.5 text-blue-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                            <span>Auditoria</span>
                         </button>
 
                         <button id="btn-add-confirm-article" onclick="window.openAddConfirmArticleModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer" title="Adicionar Artigo e Suportes">

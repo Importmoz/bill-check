@@ -195,10 +195,29 @@ router.post('/drive/upload', upload.single('file'), async (req, res) => {
       const nameParam = req.body.name || req.query.name;
       const finalName = nameParam || file.originalname;
 
+      const uploadedBy = req.body.uploadedBy || req.query.uploadedBy || req.body.userName || '';
+      const uploadedById = req.body.uploadedById || req.query.uploadedById || req.body.userId || '';
+      const nowIso = new Date().toISOString();
+
+      const appProperties = {
+        uploadedAt: nowIso
+      };
+      if (uploadedBy) appProperties.uploadedBy = uploadedBy;
+      if (uploadedById) appProperties.uploadedById = uploadedById;
+
+      const description = uploadedBy 
+        ? `Carregado por: ${uploadedBy} em ${new Date().toLocaleString('pt-PT')}`
+        : '';
+
     const response = await drive.files.create({
-      resource: { name: finalName, parents: [parentId] },
+      resource: { 
+        name: finalName, 
+        parents: [parentId],
+        appProperties,
+        description
+      },
       media: { mimeType: file.mimetype, body: bufferStream },
-      fields: 'id, name, webViewLink'
+      fields: 'id, name, webViewLink, appProperties, createdTime, description'
     });
 
     // Adicionar permissão pública para poder ser visualizado
@@ -260,7 +279,7 @@ router.post('/drive/list', async (req, res) => {
     const response = await drive.files.list({
       q: query,
       pageSize: 1000,
-      fields: 'files(id, name, mimeType, webViewLink, thumbnailLink)',
+      fields: 'files(id, name, mimeType, webViewLink, thumbnailLink, createdTime, modifiedTime, appProperties, description)',
     });
     
     const files = response.data.files || [];
