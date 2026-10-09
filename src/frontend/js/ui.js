@@ -2797,6 +2797,22 @@ export function openWarehouseStatusModal() {
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE']);
     const balanceFreightIdx = findCol(['BALANCE FREIGHT', 'SALDO FRETE']);
     const packagesIdx = findCol(['PACKAGES', 'VOLUMES', 'QTIES']);
+    const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
+    const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
+    const deliverDateIdx = findCol(['DELIVER DATE', 'DATA ENTREGA']);
+    const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
+    const pag1Idx = findCol(['PAG 1', 'PAG1']);
+    const pag2Idx = findCol(['PAG 2', 'PAG2']);
+    const pag3Idx = findCol(['PAG 3', 'PAG3']);
+    const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(idx => idx !== -1);
+
+    const phoneIdx = findCol(['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CELULAR', 'PHONE_NUMBER', 'TEL', 'MOBILE']);
+    const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+    const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
+
+    const dischargeDateStr = state.confirm?.dischargeDate || '';
+    const dDate = parseDate(dischargeDateStr);
+    const todayStr = new Date().toISOString().split('T')[0];
     
     let noIdx = columns.findIndex(c => {
         const h = String(c || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -2857,51 +2873,273 @@ export function openWarehouseStatusModal() {
     
     // Obter o nome do projeto ativo
     const projectName = document.getElementById('confirm-project-active-name')?.innerText || 'Projeto Atual';
+
+    let grandTotalQuantity = 0;
+    let grandTotalStorage = 0;
+    let grandTotalPendingStorage = 0;
+    let grandTotalPaidStorage = 0;
+    const clientList = [];
+
+    groupedUndelivered.forEach((client, key) => {
+        let totalDutyBalance = 0;
+        let totalDuty = 0;
+        let totalPrepaid = 0;
+        let totalFreightBalance = 0;
+        let totalQuantity = 0;
+        let isDutyConfirmed = true;
+        let hasPaymentAfterDischarge = false;
+
+        client.rows.forEach(r => {
+            const bal = balanceIdx !== -1 ? parseFloat(String(r[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+            const status = statusIdx !== -1 ? String(r[statusIdx] || '').toUpperCase() : '';
+            
+            totalDutyBalance += bal;
+            if (status === '' || status === 'PENDENTE' || status === 'AGUARDA PAGAMENTO' || status === '?' || status.includes('ERRADO')) {
+                if (bal > 0) isDutyConfirmed = false;
+            }
+            
+            const fBal = balanceFreightIdx !== -1 ? parseFloat(String(r[balanceFreightIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+            totalFreightBalance += fBal;
+            
+            const qty = packagesIdx !== -1 ? parseFloat(String(r[packagesIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+            totalQuantity += qty;
+
+            const dVal = dutyIdx !== -1 ? parseFloat(String(r[dutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+            const pVal = dutyPrepaidIdx !== -1 ? parseFloat(String(r[dutyPrepaidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
+            totalDuty += dVal;
+            totalPrepaid += pVal;
+
+            pagIndices.forEach(pIdx => {
+                const dateStr = r[pIdx];
+                if (dateStr && String(dateStr).trim() !== '' && String(dateStr).trim() !== '—') {
+                    const pDate = parseDate(dateStr);
+                    if (pDate && dDate && pDate.getTime() > dDate.getTime()) {
+                        hasPaymentAfterDischarge = true;
+                    }
+                }
+            });
+        });
+        
+        if (totalDutyBalance > 1.0) isDutyConfirmed = false;
+        const isFreightConfirmed = totalFreightBalance <= 1.0;
+
+        // Dados operacionais da primeira linha
+        const firstRow = client.rows[0] || [];
+        const deliverDateVal = deliverDateIdx !== -1 ? (firstRow[deliverDateIdx] || '') : '';
+        const storagePaidVal = storagePaidIdx !== -1 ? String(firstRow[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
+
+        // Regra de antecipação
+        const isFullyPaid = (totalDutyBalance <= 1.0);
+        const isAnticipated = (totalPrepaid >= totalDuty) || (isFullyPaid && !hasPaymentAfterDischarge);
+
+        // Dias decorridos
+        const deliverDateStr = deliverDateVal && deliverDateVal !== '—' ? deliverDateVal : '';
+        const targetEndDateStr = deliverDateStr || todayStr;
+        const targetEndDate = parseDate(targetEndDateStr);
+
+        let daysDiff = 0;
+        if (dDate && targetEndDate) {
+            const timeDiff = targetEndDate.getTime() - dDate.getTime();
+            daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
+            if (daysDiff > 0) {
+                daysDiff -= 1;
+            }
+        }
+
+        // Regra de cálculo de armazenagem
+        let storageCost = 0;
+        if (dischargeDateStr) {
+            if (isAnticipated) {
+                if (daysDiff <= 3) {
+                    storageCost = 0;
+                } else {
+                    storageCost = (daysDiff - 3) * 1000;
+                }
+            } else {
+                if (daysDiff <= 3) {
+                    storageCost = daysDiff * 500;
+                } else {
+                    storageCost = 1500 + (daysDiff - 3) * 1000;
+                }
+            }
+        }
+
+        const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
+
+        grandTotalQuantity += totalQuantity;
+        grandTotalStorage += storageCost;
+        if (isStoragePaid) {
+            grandTotalPaidStorage += storageCost;
+        } else {
+            grandTotalPendingStorage += storageCost;
+        }
+
+        // Extrair contacto/telefone do cliente
+        let clientPhone = '';
+        const phoneCols = [phoneIdx, contactoIdx].filter(idx => idx !== -1);
+        for (const pIdx of phoneCols) {
+            for (const r of client.rows) {
+                const val = r[pIdx];
+                if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== '—' && String(val).trim() !== '-') {
+                    clientPhone = String(val).trim();
+                    break;
+                }
+            }
+            if (clientPhone) break;
+        }
+
+        if (!clientPhone && state.confirm?.groupedClients) {
+            const foundGroup = state.confirm.groupedClients.find(g => g.groupId === key);
+            if (foundGroup) {
+                if (foundGroup.clientPhone && foundGroup.clientPhone !== '—') clientPhone = foundGroup.clientPhone;
+                else if (foundGroup.phone && foundGroup.phone !== '—') clientPhone = foundGroup.phone;
+            }
+        }
+
+        let phoneHtml = '<span class="text-slate-300 font-normal text-[11px]">—</span>';
+        if (clientPhone) {
+            const rawParts = clientPhone.split(/(?:[,;/|]+)|(?:\s+e\s+)/i).map(p => p.trim()).filter(Boolean);
+            const parts = [];
+            rawParts.forEach(p => {
+                const sub = p.split(/\s+/).filter(Boolean);
+                if (sub.length > 1 && sub.every(s => /^\+?\d{8,12}$/.test(s))) {
+                    parts.push(...sub);
+                } else {
+                    parts.push(p);
+                }
+            });
+
+            if (parts.length > 0) {
+                phoneHtml = `<div class="inline-flex items-center gap-1 flex-wrap">` + parts.map(part => `
+                    <span onclick="event.stopPropagation(); window.copyToClipboard('${part.replace(/'/g, "\\'")}', 'Contacto ${part} copiado!')" 
+                          class="px-1.5 py-0.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 rounded font-semibold text-[10px] tracking-normal cursor-pointer transition-colors inline-flex items-center gap-1 select-all" 
+                          title="Clique para copiar ${part}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-slate-400"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        ${part}
+                    </span>
+                `).join('') + `</div>`;
+            }
+        }
+
+        // Extrair nota de contacto sobre pagamento/retirada
+        let contactNote = '';
+        if (contactNoteIdx !== -1) {
+            for (const r of client.rows) {
+                const val = r[contactNoteIdx];
+                if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== '—' && String(val).trim() !== '-') {
+                    contactNote = String(val).trim();
+                    break;
+                }
+            }
+        }
+        if (!contactNote && state.confirm?.groupedClients) {
+            const foundGroup = state.confirm.groupedClients.find(g => g.groupId === key);
+            if (foundGroup && foundGroup.contactNote) {
+                contactNote = String(foundGroup.contactNote).trim();
+            }
+        }
+
+        let contactNoteHtml = '';
+        if (contactNote) {
+            contactNoteHtml = `
+                <div class="flex items-center gap-1.5 group max-w-xs">
+                    <span onclick="event.stopPropagation(); ui.openContactNoteModal('${key}')" 
+                          class="text-[10px] text-slate-700 bg-amber-50 hover:bg-amber-100/80 border border-amber-200/80 rounded-lg px-2 py-1 leading-snug cursor-pointer transition-all flex items-start gap-1 flex-1 select-all" 
+                          title="Clique para editar: ${contactNote.replace(/"/g, '&quot;')}">
+                        <span class="text-amber-600 font-bold flex-shrink-0">💬</span>
+                        <span class="line-clamp-2">${contactNote}</span>
+                    </span>
+                    <button type="button" onclick="event.stopPropagation(); ui.openContactNoteModal('${key}')" 
+                            class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-indigo-600 rounded transition-all cursor-pointer flex-shrink-0" 
+                            title="Editar nota">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </button>
+                </div>
+            `;
+        } else {
+            contactNoteHtml = `
+                <button type="button" onclick="event.stopPropagation(); ui.openContactNoteModal('${key}')" 
+                        class="px-2 py-0.5 rounded-lg border border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/70 text-slate-400 hover:text-indigo-600 font-bold text-[9px] uppercase tracking-wider transition-all inline-flex items-center gap-1 cursor-pointer"
+                        title="Adicionar nota de contacto sobre pagamento/retirada">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    Nota
+                </button>
+            `;
+        }
+
+        clientList.push({
+            key,
+            client,
+            clientPhone,
+            phoneHtml,
+            contactNote,
+            contactNoteHtml,
+            totalQuantity,
+            isDutyConfirmed,
+            isFreightConfirmed,
+            storageCost,
+            isStoragePaid,
+            daysDiff
+        });
+    });
     
     let html = `
-    <div id="modal-warehouse-status" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in p-4 sm:p-6" onclick="ui.closeModal('modal-warehouse-status')">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-slide-up" onclick="event.stopPropagation()">
+    <div id="modal-warehouse-status" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in p-2 sm:p-4 md:p-6" onclick="ui.closeModal('modal-warehouse-status')">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-[96vw] xl:max-w-[1440px] 2xl:max-w-[1600px] max-h-[92vh] flex flex-col overflow-hidden animate-slide-up" onclick="event.stopPropagation()">
             
             <div id="warehouse-export-wrapper" class="flex flex-col flex-1 overflow-hidden bg-white">
-                <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 flex-wrap gap-3">
                     <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                        <div class="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 flex-shrink-0">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                         </div>
                         <div>
                             <h2 class="text-lg font-black text-slate-800 tracking-tight">Mercadorias em Armazém - <span class="text-indigo-600">${projectName}</span></h2>
-                            <p class="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Data do Relatório: ${new Date().toLocaleDateString('pt-PT')} | Gerado pelo Bill-Check</p>
+                            <div class="flex items-center gap-2 flex-wrap text-[11px] font-medium text-slate-500 mt-0.5">
+                                <span>Data: ${new Date().toLocaleDateString('pt-PT')}</span>
+                                <span>•</span>
+                                <span class="bg-slate-200/80 text-slate-700 font-bold px-2 py-0.5 rounded-md">Volumes: <strong>${grandTotalQuantity} Vol</strong></span>
+                                <span class="bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-md border border-indigo-100">Armazenagem Total: <strong>${formatMZN(grandTotalStorage)}</strong></span>
+                            </div>
                         </div>
                     </div>
                     <div class="flex items-center gap-2" id="modal-actions-exclude">
-                        <button onclick="ui.downloadWarehousePDF()" class="p-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg transition-all shadow-sm" title="Baixar PDF da Tabela">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        <button onclick="ui.downloadWarehouseImage()" class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg transition-all shadow-sm cursor-pointer flex items-center gap-1.5 text-xs font-bold" title="Baixar Imagem PNG da Tabela">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                            <span>Imagem</span>
                         </button>
-                        <button onclick="ui.closeModal('modal-warehouse-status')" class="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-2 rounded-full transition-colors">
+                        <button onclick="ui.downloadWarehousePDF()" class="px-3 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg transition-all shadow-sm cursor-pointer flex items-center gap-1.5 text-xs font-bold" title="Baixar PDF da Tabela">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            <span>PDF</span>
+                        </button>
+                        <button onclick="ui.closeModal('modal-warehouse-status')" class="text-slate-400 hover:text-slate-600 hover:bg-slate-200 p-2 rounded-full transition-colors cursor-pointer ml-1" title="Fechar">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                         </button>
                     </div>
                 </div>
                 
                 <div class="flex-1 overflow-auto p-4 bg-white custom-scrollbar relative">
-                    <table id="warehouse-table-export" class="w-full text-left border-collapse min-w-max bg-white">
+                    <table id="warehouse-table-export" class="w-full min-w-full text-left border-collapse bg-white">
                         <thead class="sticky top-0 bg-white shadow-sm z-10">
-                            <tr>
-                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 w-8 text-center">#</th>
-                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">ID / Nº Processo</th>
-                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100">Cliente</th>
-                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center">Volumes</th>
-                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center">Duty</th>
-                                <th class="px-2 py-0.5 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center">Frete</th>
+                            <tr class="bg-slate-50/80">
+                                <th class="px-2.5 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 w-10 text-center">#</th>
+                                <th class="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 whitespace-nowrap">ID / Nº Processo</th>
+                                <th class="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 min-w-[160px]">Cliente</th>
+                                <th class="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 whitespace-nowrap">Contacto</th>
+                                <th class="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 min-w-[180px]">Nota / Estado Contacto</th>
+                                <th class="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center whitespace-nowrap">Volumes</th>
+                                <th class="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center whitespace-nowrap">Duty</th>
+                                <th class="px-3 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-center whitespace-nowrap">Frete</th>
+                                <th class="px-4 py-2 text-[10px] font-black text-slate-400 uppercase tracking-wider border-b border-slate-100 text-right whitespace-nowrap">Armazenagem</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-slate-100 bg-white">
     `;
     
-    if (groupedUndelivered.size === 0) {
+    if (clientList.length === 0) {
         html += `
             <tr>
-                <td colspan="6" class="px-6 py-12 text-center text-slate-400">
+                <td colspan="9" class="px-6 py-12 text-center text-slate-400">
                     <div class="flex justify-center mb-3">
                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-slate-300"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                     </div>
@@ -2911,48 +3149,34 @@ export function openWarehouseStatusModal() {
             </tr>
         `;
     } else {
-        groupedUndelivered.forEach((client, key) => {
-            let totalDutyBalance = 0;
-            let totalFreightBalance = 0;
-            let totalQuantity = 0;
-            let isDutyConfirmed = true;
-            
-            client.rows.forEach(r => {
-                const bal = balanceIdx !== -1 ? parseFloat(String(r[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-                const status = statusIdx !== -1 ? String(r[statusIdx] || '').toUpperCase() : '';
+        clientList.forEach(item => {
+            const dutyBadge = item.isDutyConfirmed 
+                ? '<span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-bold text-[9px] uppercase">✅ Pago</span>'
+                : '<span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold text-[9px] uppercase">❌ Pendente</span>';
                 
-                totalDutyBalance += bal;
-                if (status === '' || status === 'PENDENTE' || status === 'AGUARDA PAGAMENTO' || status === '?' || status.includes('ERRADO')) {
-                    if (bal > 0) isDutyConfirmed = false;
-                }
-                
-                const fBal = balanceFreightIdx !== -1 ? parseFloat(String(r[balanceFreightIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-                totalFreightBalance += fBal;
-                
-                const qty = packagesIdx !== -1 ? parseFloat(String(r[packagesIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-                totalQuantity += qty;
-            });
-            
-            if (totalDutyBalance > 1.0) isDutyConfirmed = false;
-            
-            const isFreightConfirmed = totalFreightBalance <= 1.0;
-            
-            const dutyBadge = isDutyConfirmed 
-                ? '<span class="px-1 py-0 rounded-full bg-green-100 text-green-700 font-bold text-[9px] uppercase">✅ Pago</span>'
-                : '<span class="px-1 py-0 rounded-full bg-red-100 text-red-700 font-bold text-[9px] uppercase">❌ Pendente</span>';
-                
-            const freightBadge = isFreightConfirmed
-                ? '<span class="px-1 py-0 rounded-full bg-green-100 text-green-700 font-bold text-[9px] uppercase">✅ Pago</span>'
-                : '<span class="px-1 py-0 rounded-full bg-red-100 text-red-700 font-bold text-[9px] uppercase">❌ Pendente</span>';
+            const freightBadge = item.isFreightConfirmed
+                ? '<span class="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-bold text-[9px] uppercase">✅ Pago</span>'
+                : '<span class="px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold text-[9px] uppercase">❌ Pendente</span>';
             
             html += `
-                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.openClientFromWarehouse('${key}')" title="Clique para abrir detalhes do cliente">
-                    <td class="px-2 py-0 text-[10px] font-bold text-slate-400 text-center">${client.no || ''}</td>
-                    <td class="px-2 py-0 text-[11px] font-bold text-slate-700 whitespace-nowrap">${client.idCode}</td>
-                    <td class="px-2 py-0 text-[11px] font-bold text-slate-900">${client.name}</td>
-                    <td class="px-2 py-0 text-[11px] font-black text-slate-600 text-center">${totalQuantity}</td>
-                    <td class="px-2 py-0 text-center">${dutyBadge}</td>
-                    <td class="px-2 py-0 text-center">${freightBadge}</td>
+                <tr class="hover:bg-slate-50 transition-colors cursor-pointer" onclick="window.openClientFromWarehouse('${item.key}')" title="Clique para abrir detalhes do cliente">
+                    <td class="px-2.5 py-2 text-[10px] font-bold text-slate-400 text-center">${item.client.no || ''}</td>
+                    <td class="px-3 py-2 text-[11px] font-bold text-slate-700 whitespace-nowrap">${item.client.idCode}</td>
+                    <td class="px-3 py-2 text-[11px] font-bold text-slate-900">${item.client.name}</td>
+                    <td class="px-3 py-2 text-[11px] text-slate-600 whitespace-nowrap">${item.phoneHtml}</td>
+                    <td class="px-3 py-2 text-[11px] text-slate-700">${item.contactNoteHtml}</td>
+                    <td class="px-3 py-2 text-[11px] font-black text-slate-600 text-center whitespace-nowrap">${item.totalQuantity}</td>
+                    <td class="px-3 py-2 text-center whitespace-nowrap">${dutyBadge}</td>
+                    <td class="px-3 py-2 text-center whitespace-nowrap">${freightBadge}</td>
+                    <td class="px-4 py-2 text-right whitespace-nowrap">
+                        <span class="text-[11px] font-black ${item.storageCost > 0 ? (item.isStoragePaid ? 'text-green-700' : 'text-slate-900') : 'text-slate-400'}">
+                            ${formatMZN(item.storageCost)}
+                        </span>
+                        ${item.storageCost > 0 ? (item.isStoragePaid 
+                            ? '<span class="ml-1 text-[8px] font-bold text-green-700 bg-green-100 px-1 py-0.5 rounded uppercase">Pago</span>' 
+                            : '<span class="ml-1 text-[8px] font-bold text-red-700 bg-red-100 px-1 py-0.5 rounded uppercase">Pendente</span>') 
+                        : ''}
+                    </td>
                 </tr>
             `;
         });
@@ -2960,6 +3184,23 @@ export function openWarehouseStatusModal() {
     
     html += `
                     </tbody>
+                    ${clientList.length > 0 ? `
+                    <tfoot class="sticky bottom-0 bg-slate-50 shadow-sm border-t-2 border-slate-200">
+                        <tr class="font-black text-slate-800">
+                            <td colspan="5" class="px-3 py-2.5 text-[10px] font-black uppercase text-slate-700">
+                                TOTAL GERAL (${clientList.length} Clientes)
+                            </td>
+                            <td class="px-3 py-2.5 text-[11px] font-black text-center text-slate-900 whitespace-nowrap">
+                                ${grandTotalQuantity} Vol
+                            </td>
+                            <td class="px-3 py-2.5 text-center text-[10px] text-slate-400">—</td>
+                            <td class="px-3 py-2.5 text-center text-[10px] text-slate-400">—</td>
+                            <td class="px-4 py-2.5 text-[12px] font-black text-right text-indigo-700 whitespace-nowrap">
+                                ${formatMZN(grandTotalStorage)}
+                            </td>
+                        </tr>
+                    </tfoot>
+                    ` : ''}
                     </table>
                 </div>
             </div>
@@ -3018,14 +3259,46 @@ export async function downloadWarehousePDF() {
             },
             bodyStyles: {
                 textColor: [71, 85, 105], // slate-600
-                fontSize: 9
+                fontSize: 8.5
             },
             alternateRowStyles: {
                 fillColor: [248, 250, 252] // slate-50
             },
+            footStyles: {
+                fillColor: [241, 245, 249], // slate-100
+                textColor: [30, 41, 59], // slate-800
+                fontStyle: 'bold',
+                fontSize: 9
+            },
+            columnStyles: {
+                0: { cellWidth: 20, halign: 'center' }, // #
+                1: { cellWidth: 65 },                   // ID / Nº Processo
+                2: { cellWidth: 90 },                   // Cliente
+                3: { cellWidth: 65 },                   // Contacto
+                4: { cellWidth: 85 },                   // Nota / Contacto
+                5: { cellWidth: 40, halign: 'center' }, // Volumes
+                6: { cellWidth: 45, halign: 'center' }, // Duty
+                7: { cellWidth: 45, halign: 'center' }, // Frete
+                8: { cellWidth: 60, halign: 'right' }   // Armazenagem
+            },
             didParseCell: function(data) {
-                // Remove emojis and style status columns
-                if (data.section === 'body' && (data.column.index === 4 || data.column.index === 5)) {
+                // Limpar texto de Contacto na exportação
+                if (data.section === 'body' && data.column.index === 3) {
+                    const rawText = (data.cell.raw.innerText || data.cell.raw.textContent || '').replace(/[^\x00-\x7F\sA-Za-z0-9.,/+-]/g, '').trim();
+                    data.cell.text = [rawText || '—'];
+                }
+                // Limpar texto de Nota na exportação
+                if (data.section === 'body' && data.column.index === 4) {
+                    let rawText = (data.cell.raw.innerText || data.cell.raw.textContent || '').replace(/[^\x00-\x7F\sA-Za-z0-9.,/+-]/g, '').trim();
+                    if (rawText.toUpperCase() === 'NOTA' || rawText === '+ NOTA') rawText = '—';
+                    data.cell.text = [rawText || '—'];
+                }
+                // Centralizar coluna de volumes
+                if (data.column.index === 5) {
+                    data.cell.styles.halign = 'center';
+                }
+                // Remove emojis and style status columns (Duty e Frete)
+                if (data.section === 'body' && (data.column.index === 6 || data.column.index === 7)) {
                     const rawText = (data.cell.raw.innerText || data.cell.raw.textContent || '').toUpperCase();
                     if (rawText.includes('PAGO')) {
                         data.cell.text = ['PAGO'];
@@ -3035,6 +3308,15 @@ export async function downloadWarehousePDF() {
                         data.cell.text = ['PENDENTE'];
                         data.cell.styles.textColor = [220, 38, 38]; // red-600
                         data.cell.styles.fontStyle = 'bold';
+                    }
+                }
+                // Alinhar a coluna e rodapé de Armazenagem à direita
+                if (data.column.index === 8) {
+                    data.cell.styles.halign = 'right';
+                    data.cell.styles.fontStyle = 'bold';
+                    if (data.section === 'body') {
+                        const rawText = (data.cell.raw.innerText || data.cell.raw.textContent || '').replace(/[^\x00-\x7F\sA-Za-z0-9.,-]/g, '').trim();
+                        data.cell.text = [rawText];
                     }
                 }
             }
@@ -3051,6 +3333,46 @@ export async function downloadWarehousePDF() {
         toast('Erro ao gerar PDF.', 'error');
     }
 }
+
+export async function downloadWarehouseImage() {
+    try {
+        const wrapperEl = document.getElementById('warehouse-export-wrapper');
+        if (!wrapperEl) {
+            toast('Elemento da tabela não encontrado.', 'error');
+            return;
+        }
+        if (typeof window.html2canvas === 'undefined') {
+            toast('Biblioteca html2canvas não está carregada.', 'error');
+            return;
+        }
+        setLoader(true, 'A gerar imagem PNG de alta resolução...');
+        
+        const projectNameStr = document.getElementById('confirm-project-active-name')?.innerText || 'projeto';
+        const safeName = projectNameStr.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        
+        const canvas = await window.html2canvas(wrapperEl, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: "#ffffff",
+            logging: false,
+            ignoreElements: (element) => element.id === 'modal-actions-exclude'
+        });
+        
+        const link = document.createElement('a');
+        link.download = `armazem_${safeName}_${new Date().toISOString().split('T')[0]}.png`;
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        
+        setLoader(false);
+        toast('Imagem descarregada com sucesso!', 'success');
+    } catch (err) {
+        console.error('Erro ao gerar imagem:', err);
+        setLoader(false);
+        toast('Erro ao gerar imagem: ' + (err.message || err), 'error');
+    }
+}
+window.downloadWarehouseImage = downloadWarehouseImage;
+window.downloadWarehousePDF = downloadWarehousePDF;
 
 window.openClientFromWarehouse = function(groupId) {
     if (!state.confirm || !state.confirm.groupedClients) return;
@@ -3081,6 +3403,357 @@ window.openClientWithLoader = function(groupId) {
         toast('Não foi possível carregar os detalhes do cliente.', 'error');
     }
 };
+
+/**
+ * Garante que a coluna NOTA CONTACTO existe no GSheet e em memória
+ */
+export async function ensureContactNoteColumn() {
+    const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
+    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+    const targets = ['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE'].map(cleanString);
+    
+    let idx = columns.findIndex(c => targets.includes(cleanString(c)));
+    if (idx !== -1) return idx;
+
+    // Criar coluna 'NOTA CONTACTO' no cabeçalho
+    const colName = 'NOTA CONTACTO';
+    const newColumns = [...columns, colName];
+    idx = newColumns.length - 1;
+
+    let cleanSheetName = '';
+    if (state.confirm.range && state.confirm.range.includes('!')) {
+        cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
+    }
+    const sheetPrefix = cleanSheetName ? `'${cleanSheetName}'!` : '';
+    const lastColLetter = getColLetter(idx);
+    const range = `${sheetPrefix}${lastColLetter}1`;
+
+    try {
+        state.confirm.columns = newColumns;
+        if (state.confirm.data && state.confirm.data.length > 0) {
+            state.confirm.data[0] = newColumns;
+            for (let i = 1; i < state.confirm.data.length; i++) {
+                if (state.confirm.data[i] && Array.isArray(state.confirm.data[i])) {
+                    while (state.confirm.data[i].length < newColumns.length) {
+                        state.confirm.data[i].push('');
+                    }
+                }
+            }
+        }
+        await updateGSheet(state.confirm.sheetId, range, [[colName]]);
+    } catch (e) {
+        console.warn('Erro ao criar coluna NOTA CONTACTO no GSheet:', e.message);
+    }
+
+    return idx;
+}
+window.ensureContactNoteColumn = ensureContactNoteColumn;
+
+/**
+ * Abre o modal de edição de nota de contacto do cliente
+ */
+export function openContactNoteModal(clientKey) {
+    if (!state.confirm || !state.confirm.data) {
+        toast('Dados da tabela não carregados.', 'warning');
+        return;
+    }
+
+    let clientName = '';
+    let clientIdCode = '';
+    let clientPhone = '';
+    let currentNote = '';
+
+    const columns = state.confirm.columns || state.confirm.data[0] || [];
+    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+    
+    const findCol = (targets) => {
+        const cleaned = targets.map(cleanString);
+        for (const t of cleaned) {
+            const idx = columns.findIndex(c => cleanString(c) === t);
+            if (idx !== -1) return idx;
+        }
+        for (const t of cleaned) {
+            const idx = columns.findIndex(c => cleanString(c).includes(t));
+            if (idx !== -1) return idx;
+        }
+        return -1;
+    };
+
+    const idCodeIdx = findCol(['ID CODE', 'CODE ID', 'ID']);
+    const nameIdx = findCol(['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
+    const phoneIdx = findCol(['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CELULAR', 'PHONE_NUMBER', 'TEL', 'MOBILE']);
+    const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
+    const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
+
+    // Procurar nas linhas do cliente
+    const clientRows = [];
+    let lastId = '';
+    let lastName = '';
+    for (let i = 1; i < state.confirm.data.length; i++) {
+        const r = state.confirm.data[i];
+        if (!r || r.length === 0) continue;
+        const idVal = idCodeIdx !== -1 ? String(r[idCodeIdx] || '').trim() : '';
+        const nameVal = nameIdx !== -1 ? String(r[nameIdx] || '').trim() : '';
+        if (idVal) lastId = idVal;
+        if (nameVal) lastName = nameVal;
+        const gid = `${lastId}_${lastName}`.replace(/\s+/g, '_') || `ROW_${i}`;
+        if (gid === clientKey) {
+            clientRows.push({ row: r, index: i });
+            if (!clientName) clientName = lastName;
+            if (!clientIdCode) clientIdCode = lastId;
+        }
+    }
+
+    // Se tiver grupo em memória
+    const group = state.confirm.groupedClients?.find(g => g.groupId === clientKey);
+    if (group) {
+        if (!clientName) clientName = group.displayName || group.name;
+        if (!clientIdCode) clientIdCode = group.displayIdCode || group.idCode;
+        if (group.contactNote) currentNote = group.contactNote;
+    }
+
+    // Telefone
+    const phoneCols = [phoneIdx, contactoIdx].filter(x => x !== -1);
+    for (const pIdx of phoneCols) {
+        for (const item of clientRows) {
+            const v = item.row[pIdx];
+            if (v && String(v).trim() !== '' && String(v).trim() !== '—') {
+                clientPhone = String(v).trim();
+                break;
+            }
+        }
+        if (clientPhone) break;
+    }
+
+    // Nota atual
+    if (!currentNote && contactNoteIdx !== -1) {
+        for (const item of clientRows) {
+            const v = item.row[contactNoteIdx];
+            if (v && String(v).trim() !== '' && String(v).trim() !== '—') {
+                currentNote = String(v).trim();
+                break;
+            }
+        }
+    }
+
+    const modalId = 'modal-contact-note-editor';
+    const existing = document.getElementById(modalId);
+    if (existing) existing.remove();
+
+    const quickChips = [
+        "📞 Contactado - Promete Pagar",
+        "🚚 Contactado - Promete Retirar",
+        "⏳ Aguarda Pagamento",
+        "❌ Não Atende / Sem Resposta",
+        "📲 Enviado WhatsApp",
+        "🧾 Comprovativo Enviado",
+        "✅ Carga Pronta para Retirar"
+    ];
+
+    const todayDate = new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' });
+
+    const html = `
+    <div id="${modalId}" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[150] animate-fade-in p-4" onclick="ui.closeModal('${modalId}')">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-slide-up border border-slate-100" onclick="event.stopPropagation()">
+            <!-- Cabeçalho -->
+            <div class="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-black text-slate-800 tracking-tight">Estado do Contacto com Cliente</h3>
+                        <p class="text-[11px] text-slate-500 font-medium">Registo para pagamento e retirada da carga</p>
+                    </div>
+                </div>
+                <button type="button" onclick="ui.closeModal('${modalId}')" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <!-- Dados do Cliente -->
+            <div class="px-6 py-3 bg-amber-50/50 border-b border-amber-100/60 flex items-center justify-between flex-wrap gap-2 text-xs">
+                <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Cliente</span>
+                    <strong class="text-slate-800 font-bold">${clientName || 'Cliente'}</strong>
+                    ${clientIdCode ? `<span class="text-slate-500 text-[11px] ml-1">(${clientIdCode})</span>` : ''}
+                </div>
+                ${clientPhone ? `
+                <div class="text-right">
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block">Contacto</span>
+                    <span class="text-indigo-600 font-bold text-[11px] inline-flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        ${clientPhone}
+                    </span>
+                </div>
+                ` : ''}
+            </div>
+
+            <!-- Corpo -->
+            <div class="p-6 space-y-4">
+                <!-- Sugestões rápidas -->
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-400 mb-2">Sugestões Rápidas (Clique para inserir):</label>
+                    <div class="flex flex-wrap gap-1.5">
+                        ${quickChips.map(chip => `
+                            <button type="button" 
+                                    onclick="ui.applyQuickContactChip('${chip.replace(/'/g, "\\'")}', '${todayDate}')"
+                                    class="text-[10px] font-semibold bg-slate-100 hover:bg-amber-100 hover:text-amber-900 text-slate-700 px-2 py-1 rounded-lg border border-slate-200/80 transition-colors cursor-pointer">
+                                ${chip}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>
+
+                <!-- Campo de Texto -->
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-400 mb-1.5">Nota / Resumo da Conversa:</label>
+                    <textarea id="modal-contact-note-input" rows="3" 
+                              class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 focus:bg-white outline-none transition-all placeholder:text-slate-400"
+                              placeholder="Descreva o ponto de situação do contacto com o cliente (ex: Prometeu pagar até amanhã e levantar a carga no sábado)...">${currentNote}</textarea>
+                </div>
+            </div>
+
+            <!-- Rodapé / Ações -->
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                ${currentNote ? `
+                <button type="button" onclick="ui.saveContactNote('${clientKey}', '')" class="text-[11px] font-bold text-red-600 hover:text-red-700 hover:underline cursor-pointer">
+                    Remover Nota
+                </button>
+                ` : '<div></div>'}
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="ui.closeModal('${modalId}')" class="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200 transition-colors cursor-pointer">
+                        Cancelar
+                    </button>
+                    <button type="button" id="btn-save-contact-note" onclick="ui.saveContactNote('${clientKey}')" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                        Guardar Nota
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    `;
+
+    document.getElementById('modals-container')?.insertAdjacentHTML('beforeend', html);
+    document.getElementById('modal-contact-note-input')?.focus();
+}
+window.openContactNoteModal = openContactNoteModal;
+
+/**
+ * Insere um chip rápido na nota de contacto
+ */
+export function applyQuickContactChip(chipText, dateStr) {
+    const textarea = document.getElementById('modal-contact-note-input');
+    if (!textarea) return;
+    const current = textarea.value.trim();
+    const entry = dateStr ? `[${dateStr}] ${chipText}` : chipText;
+    if (!current) {
+        textarea.value = entry;
+    } else {
+        textarea.value = `${current} | ${entry}`;
+    }
+    textarea.focus();
+}
+window.applyQuickContactChip = applyQuickContactChip;
+
+/**
+ * Salva a nota de contacto no GSheet e em memória
+ */
+export async function saveContactNote(clientKey, directNote = null) {
+    const input = document.getElementById('modal-contact-note-input');
+    const newNote = directNote !== null ? directNote : (input ? input.value.trim() : '');
+    const btn = document.getElementById('btn-save-contact-note');
+
+    try {
+        if (btn) setBtnLoading(btn, true);
+
+        // Garantir que a coluna NOTA CONTACTO existe no GSheet e em memória
+        const contactNoteIdx = await ensureContactNoteColumn();
+        if (contactNoteIdx === -1) {
+            throw new Error('Não foi possível identificar ou criar a coluna NOTA CONTACTO.');
+        }
+
+        const columns = state.confirm.columns || state.confirm.data[0] || [];
+        const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+        const idCodeIdx = findColumnIndex(columns, ['ID CODE', 'CODE ID', 'ID']);
+        const nameIdx = findColumnIndex(columns, ['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
+
+        const batchUpdates = [];
+        let sheetName = 'Folha1';
+        if (state.confirm.range && state.confirm.range.includes('!')) {
+            sheetName = state.confirm.range.split('!')[0];
+        }
+
+        let lastId = '';
+        let lastName = '';
+        let clientNo = '—';
+        let clientName = '';
+
+        for (let i = 1; i < state.confirm.data.length; i++) {
+            const r = state.confirm.data[i];
+            if (!r || r.length === 0) continue;
+            const idVal = idCodeIdx !== -1 ? String(r[idCodeIdx] || '').trim() : '';
+            const nameVal = nameIdx !== -1 ? String(r[nameIdx] || '').trim() : '';
+            if (idVal) lastId = idVal;
+            if (nameVal) lastName = nameVal;
+            const gid = `${lastId}_${lastName}`.replace(/\s+/g, '_') || `ROW_${i}`;
+
+            if (gid === clientKey) {
+                while (r.length <= contactNoteIdx) r.push('');
+                r[contactNoteIdx] = newNote;
+                batchUpdates.push({
+                    range: formatSheetRange(sheetName, `${getColLetter(contactNoteIdx)}${i + 1}`),
+                    values: [[newNote]]
+                });
+                if (!clientName) clientName = lastName;
+            }
+        }
+
+        // Atualizar no grupo em memória
+        if (state.confirm.groupedClients) {
+            const group = state.confirm.groupedClients.find(g => g.groupId === clientKey);
+            if (group) {
+                group.contactNote = newNote;
+                if (group.no) clientNo = group.no;
+                if (group.displayName) clientName = group.displayName;
+                if (group.rows) {
+                    group.rows.forEach(rObj => {
+                        if (rObj.originalRow) {
+                            while (rObj.originalRow.length <= contactNoteIdx) rObj.originalRow.push('');
+                            rObj.originalRow[contactNoteIdx] = newNote;
+                        }
+                    });
+                }
+            }
+        }
+
+        // Enviar batch ao GSheet
+        if (batchUpdates.length > 0) {
+            await updateGSheetBatch(state.confirm.sheetId, batchUpdates);
+        }
+
+        // Registar auditoria
+        logConfirmAudit(state.confirm.sheetId, clientNo, clientName, 'NOTA_CONTACTO_ATUALIZADA', {
+            nota: newNote,
+            clientKey
+        }).catch(err => console.warn('[Audit] Erro ao registar nota de contacto:', err));
+
+        // Fechar modal do editor de nota
+        closeModal('modal-contact-note-editor');
+
+        // Reabrir / atualizar modal de mercadorias em armazém para refletir a nova nota imediatamente
+        openWarehouseStatusModal();
+
+        toast(newNote ? 'Nota de contacto guardada com sucesso!' : 'Nota removida com sucesso.', 'success');
+    } catch (err) {
+        console.error('Erro ao guardar nota de contacto:', err);
+        toast('Erro ao guardar nota: ' + err.message, 'error');
+    } finally {
+        if (btn) setBtnLoading(btn, false);
+    }
+}
+window.saveContactNote = saveContactNote;
 
 export function toggleConfirmArmazem(mode) {
     const confirmTab = document.getElementById('btn-tab-confirm');
@@ -7791,6 +8464,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const pag1Idx = findCol(['PAG 1', 'PAG1']);
         const pag2Idx = findCol(['PAG 2', 'PAG2']);
         const pag3Idx = findCol(['PAG 3', 'PAG3']);
+        const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
 
         // Verificar se todas as colunas de armazém existem
         const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
@@ -7866,6 +8540,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
         const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
         const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? (firstRowData[motivoIsencaoIdx] || '') : '';
+        const contactNoteVal = contactNoteIdx !== -1 ? (firstRowData[contactNoteIdx] || '') : (client.contactNote || '');
         const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
         const deliveredVal = deliveredIdx !== -1 ? String(firstRowData[deliveredIdx] || '').trim().toUpperCase() : 'NAO';
         const isDelivered = (deliveredVal === 'SIM' || deliveredVal === 'ENTREGUE' || deliveredVal === 'YES');
@@ -8211,6 +8886,15 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
+                    <div class="col-span-1 md:col-span-2">
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5 flex items-center justify-between">
+                            <span>Nota / Estado Contacto</span>
+                            <span class="text-[8px] text-amber-600 font-bold normal-case">💬 Pagamento & Retirada</span>
+                        </label>
+                        <input type="text" name="notaContacto" value="${contactNoteVal}" placeholder="Ex: Contactado, promete pagar amanhã" 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    </div>
                     <div class="col-span-2">
                         <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-400 mb-1.5 cursor-pointer hover:text-indigo-600 transition-colors">
                             <input type="checkbox" onchange="ui.toggleIsencaoFields(this)" ${motivoIsencaoVal ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
@@ -8298,6 +8982,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateInput = container.querySelector('input[name="deliverDate"]');
     const deliverToInput = container.querySelector('input[name="deliverTo"]');
     const contactoInput = container.querySelector('input[name="contacto"]');
+    const notaContactoInput = container.querySelector('input[name="notaContacto"]');
     const motivoIsencaoInput = container.querySelector('input[name="motivoIsencao"]');
     const storagePaidInput = container.querySelector('select[name="storagePaid"]');
 
@@ -8317,6 +9002,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateVal = formatDateForSheet(deliverDateValRaw);
     const deliverToVal = deliverToInput ? deliverToInput.value.trim() : '';
     const contactoVal = contactoInput ? contactoInput.value.trim() : '';
+    const notaContactoVal = notaContactoInput ? notaContactoInput.value.trim() : '';
     const motivoIsencaoVal = motivoIsencaoInput ? motivoIsencaoInput.value.trim() : '';
     const storagePaidVal = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
 
@@ -8350,6 +9036,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
     const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
+    let contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
+    if (contactNoteIdx === -1 && notaContactoVal) {
+        contactNoteIdx = await ensureContactNoteColumn();
+    }
 
     if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1 || storagePaidIdx === -1 || deliveredIdx === -1) {
         toast('Erro: Colunas de Armazém não encontradas.', 'error');
@@ -8433,6 +9123,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             rowData[contactoIdx] = contactoVal;
             batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(contactoIdx)}${rowNum}`), values: [[contactoVal]] });
         }
+        if (contactNoteIdx !== -1) {
+            rowData[contactNoteIdx] = notaContactoVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(contactNoteIdx)}${rowNum}`), values: [[notaContactoVal]] });
+        }
         if (motivoIsencaoIdx !== -1) {
             rowData[motivoIsencaoIdx] = motivoIsencaoVal;
             batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(motivoIsencaoIdx)}${rowNum}`), values: [[motivoIsencaoVal]] });
@@ -8467,6 +9161,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
         const nowIso = new Date().toISOString();
         client.lastWarehouseSavedBy = opUser;
         client.lastWarehouseSavedAt = nowIso;
+        client.contactNote = notaContactoVal;
 
         // Auditoria: Armazém gravado / entregue
         const actionType = deliveredVal === 'SIM' ? 'ARMAZEM_ENTREGUE' : 'ARMAZEM_GRAVADO';
@@ -8476,6 +9171,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             dataEntrega: deliverDateVal,
             entregueA: deliverToVal,
             contacto: contactoVal,
+            notaContacto: notaContactoVal,
             armazenagemPago: storagePaidVal,
             isencao: motivoIsencaoVal,
             statusEntrega: deliveredVal
