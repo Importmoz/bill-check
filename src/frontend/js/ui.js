@@ -3449,6 +3449,48 @@ export async function ensureContactNoteColumn() {
 }
 window.ensureContactNoteColumn = ensureContactNoteColumn;
 
+export async function ensureViaturaColumn() {
+    const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
+    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+    const targets = ['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE'].map(cleanString);
+    
+    let idx = columns.findIndex(c => targets.includes(cleanString(c)));
+    if (idx !== -1) return idx;
+
+    // Criar coluna 'VIATURA / MATRÍCULA' no cabeçalho
+    const colName = 'VIATURA / MATRÍCULA';
+    const newColumns = [...columns, colName];
+    idx = newColumns.length - 1;
+
+    let cleanSheetName = '';
+    if (state.confirm.range && state.confirm.range.includes('!')) {
+        cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
+    }
+    const sheetPrefix = cleanSheetName ? `'${cleanSheetName}'!` : '';
+    const lastColLetter = getColLetter(idx);
+    const range = `${sheetPrefix}${lastColLetter}1`;
+
+    try {
+        state.confirm.columns = newColumns;
+        if (state.confirm.data && state.confirm.data.length > 0) {
+            state.confirm.data[0] = newColumns;
+            for (let i = 1; i < state.confirm.data.length; i++) {
+                if (state.confirm.data[i] && Array.isArray(state.confirm.data[i])) {
+                    while (state.confirm.data[i].length < newColumns.length) {
+                        state.confirm.data[i].push('');
+                    }
+                }
+            }
+        }
+        await updateGSheet(state.confirm.sheetId, range, [[colName]]);
+    } catch (e) {
+        console.warn('Erro ao criar coluna VIATURA / MATRÍCULA no GSheet:', e.message);
+    }
+
+    return idx;
+}
+window.ensureViaturaColumn = ensureViaturaColumn;
+
 /**
  * Abre o modal de edição de nota de contacto do cliente
  */
@@ -8378,22 +8420,28 @@ window.checkAndCreateWarehouseColumns = checkAndCreateWarehouseColumns;
  * Renderiza o painel operacional de Armazém nos detalhes do cliente
  */
 export function parseDate(dateStr) {
-    if (!dateStr || dateStr === '—') return null;
+    if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === 'Invalid Date') return null;
+    if (dateStr instanceof Date) {
+        return isNaN(dateStr.getTime()) ? null : dateStr;
+    }
     const trimmed = String(dateStr).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-        const parts = trimmed.split('-');
-        return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+    if (!trimmed || trimmed === '—' || trimmed === '-' || trimmed === 'Invalid Date') return null;
+
+    // Formato YYYY-MM-DD (com ou sem timestamp/timezone)
+    const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (isoMatch) {
+        return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]), 0, 0, 0, 0);
     }
-    const parts = trimmed.split('/');
-    if (parts.length === 3) {
-        const dd = Number(parts[0]);
-        const mm = Number(parts[1]);
-        const yyyy = Number(parts[2]);
-        if (!isNaN(dd) && !isNaN(mm) && !isNaN(yyyy)) {
-            return new Date(yyyy, mm - 1, dd, 0, 0, 0, 0);
-        }
+
+    // Formato DD/MM/YYYY ou DD-MM-YYYY (com ou sem timestamp)
+    const slashMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (slashMatch) {
+        return new Date(Number(slashMatch[3]), Number(slashMatch[2]) - 1, Number(slashMatch[1]), 0, 0, 0, 0);
     }
-    const parsed = new Date(trimmed);
+
+    // Fallback nativo
+    const clean = trimmed.replace(' ', 'T');
+    const parsed = new Date(clean);
     if (!isNaN(parsed.getTime())) {
         const d = new Date(parsed);
         d.setHours(0, 0, 0, 0);
@@ -8401,6 +8449,19 @@ export function parseDate(dateStr) {
     }
     return null;
 }
+
+window.updateArmazemSaldo = function() {
+    const dischargeInput = document.querySelector('#armazem-form-container input[name="discharge"]');
+    const deliverInput = document.querySelector('#armazem-form-container input[name="deliver"]');
+    const saldoBadge = document.getElementById('armazem-calc-saldo');
+    const entregueBadge = document.getElementById('armazem-badge-entregue');
+    if (!saldoBadge) return;
+    const discharge = parseFloat(dischargeInput?.value) || 0;
+    const deliver = parseFloat(deliverInput?.value) || 0;
+    const saldo = Math.max(0, discharge - deliver);
+    saldoBadge.innerText = `${saldo} Vol`;
+    if (entregueBadge) entregueBadge.innerText = `${deliver} Vol`;
+};
 
 export async function renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed) {
     const container = document.getElementById('armazem-operations-container');
@@ -8465,6 +8526,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const pag2Idx = findCol(['PAG 2', 'PAG2']);
         const pag3Idx = findCol(['PAG 3', 'PAG3']);
         const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
+        const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
 
         // Verificar se todas as colunas de armazém existem
         const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
@@ -8541,6 +8603,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
         const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? (firstRowData[motivoIsencaoIdx] || '') : '';
         const contactNoteVal = contactNoteIdx !== -1 ? (firstRowData[contactNoteIdx] || '') : (client.contactNote || '');
+        const viaturaVal = viaturaIdx !== -1 ? (firstRowData[viaturaIdx] || '') : (client.viatura || '');
         const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
         const deliveredVal = deliveredIdx !== -1 ? String(firstRowData[deliveredIdx] || '').trim().toUpperCase() : 'NAO';
         const isDelivered = (deliveredVal === 'SIM' || deliveredVal === 'ENTREGUE' || deliveredVal === 'YES');
@@ -8621,7 +8684,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         // Estado do pagamento da armazenagem
         const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
 
-        // Verificar se toda a informação necessária para a emissão da guia está gravada
+        // Verificar se a entrega está autorizada para emissão de Guia Dupla
         const hasDeliveryInfoSaved = totalDelivered > 0 && 
                                      String(deliverDateVal).trim() !== '' && 
                                      String(deliverDateVal).trim() !== '—' &&
@@ -8630,7 +8693,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                                      String(contactoVal).trim() !== '' && 
                                      String(contactoVal).trim() !== '—';
 
-        const canEmitGuia = hasDeliveryInfoSaved && isStoragePaid;
+        const canEmitGuia = allowDelivery;
         const isEditable = !isDelivered && (!hasDeliveryInfoSaved || isAdmin);
 
         // Cabeçalho da Guia com a data de descarga e dados de armazenagem
@@ -8649,7 +8712,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
                     <div>
                         <h4 class="font-black text-xs uppercase tracking-wider text-emerald-900">Carga Entregue ✅</h4>
-                        <p class="text-[11px] text-emerald-700 font-semibold mt-1">A entrega desta carga foi confirmada e encerrada. A edição dos dados está bloqueada.</p>
+                        <p class="text-[11px] text-emerald-700 font-semibold mt-1">A entrega desta carga foi confirmada e encerrada. Pode reimprimir a <strong>Guia Dupla (Armazém e Portaria)</strong> a qualquer momento.</p>
                     </div>
                 </div>
             `;
@@ -8664,7 +8727,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         </div>
                         <div>
                             <h4 class="font-black text-xs uppercase tracking-wider text-orange-900">Entrega Extraordinária Ativa ⚠️</h4>
-                            <p class="text-[11px] text-orange-800 font-semibold mt-1">A entrega foi forçada manualmente por um administrador.<br>Motivo: <strong>${motivoExtra}</strong></p>
+                            <p class="text-[11px] text-orange-800 font-semibold mt-1">A entrega foi forçada manualmente por um administrador.<br>Motivo: <strong>${motivoExtra}</strong>. A Guia Dupla pode ser emitida.</p>
                         </div>
                     </div>
                 `;
@@ -8687,20 +8750,20 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                         </div>
                         <div>
-                            <h4 class="font-black text-xs uppercase tracking-wider text-green-900">Entrega Autorizada ✅</h4>
-                            <p class="text-[11px] text-green-700 font-semibold mt-1">Os Direitos Aduaneiros estão CONFIRMADOS, o Frete está PAGO e a Armazenagem está liquidada/isenta. A guia de entrega está pronta para emissão.</p>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-green-900">Entrega Autorizada — Guia Dupla Pronta ✅</h4>
+                            <p class="text-[11px] text-green-700 font-semibold mt-1">Dados operacionais registados. A <strong>Guia Dupla em Folha Única</strong> (1ª Via para Armazém e 2ª Via para Portaria) está pronta para emissão.</p>
                         </div>
                     </div>
                 `;
             } else {
                 bannerHtml = `
-                    <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-amber-500">
-                        <div class="p-2 bg-amber-100 rounded-xl text-amber-600 flex-shrink-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <div class="bg-green-50 border border-green-200 text-green-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-green-500">
+                        <div class="p-2 bg-green-100 rounded-xl text-green-600 flex-shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                         </div>
                         <div>
-                            <h4 class="font-black text-xs uppercase tracking-wider text-amber-900">Aguardando Informações de Entrega ⚠️</h4>
-                            <p class="text-[11px] text-amber-700 font-semibold mt-1">A entrega está pré-autorizada (Duty Confirmado e Frete Pago), mas a guia só pode ser emitida após gravar os dados de descarga/entrega e confirmar a armazenagem.</p>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-green-900">Entrega Autorizada — Guia Dupla Pronta ✅</h4>
+                            <p class="text-[11px] text-green-700 font-semibold mt-1">Duty, Frete e Armazenagem estão regularizados. Pode emitir a <strong>Guia Dupla em Folha Única</strong> (1ª Via para Armazém e 2ª Via para Portaria) com os campos para preenchimento manual no terreno.</p>
                         </div>
                     </div>
                 `;
@@ -8745,9 +8808,9 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             Reabrir
                         </button>
                         <button onclick="ui.printDeliveryNote()" 
-                            class="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
+                            class="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia Dupla (Armazém e Portaria)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Emitir Guia
+                            Emitir Guia Dupla
                         </button>
                     </div>
                 `;
@@ -8755,9 +8818,9 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                 buttonsHtml = `
                     <div class="${btnSpan}">
                         <button onclick="ui.printDeliveryNote()" 
-                            class="w-full py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
+                            class="w-full py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia Dupla (Armazém e Portaria)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Emitir Guia
+                            Emitir Guia Dupla
                         </button>
                     </div>
                 `;
@@ -8765,11 +8828,16 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         } else {
             if (!hasDeliveryInfoSaved) {
                 buttonsHtml = `
-                    <div class="${btnSpan}">
+                    <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
                         <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
-                            class="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
+                            class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
                             <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                             Gravar
+                        </button>
+                        <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: A entrega não está autorizada.\', \'warning\')'}" 
+                            class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Armazém e Portaria)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                            Emitir Guia Dupla
                         </button>
                     </div>
                 `;
@@ -8787,10 +8855,10 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                             Entregue
                         </button>
-                        <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: O pagamento de armazenagem está pendente.\', \'warning\')'}" 
-                            class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia de Entrega' : 'Bloqueado: Pagamento de armazenagem pendente'}">
+                        <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: A entrega não está autorizada.\', \'warning\')'}" 
+                            class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Armazém e Portaria)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Emitir Guia
+                            Emitir Guia Dupla
                         </button>
                     </div>
                 `;
@@ -8841,13 +8909,13 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             Ordens: <strong class="text-slate-700 ml-1 font-extrabold">${ordersString}</strong>
                         </span>
                         <span class="text-slate-400 font-bold uppercase text-[9px] bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg">
-                            Total Original: <strong class="text-indigo-900 ml-1 font-extrabold">${totalOriginal} Vol</strong>
-                        </span>
-                        <span class="text-slate-400 font-bold uppercase text-[9px] bg-sky-50 text-sky-700 px-2.5 py-1 rounded-lg">
-                            Descarregado: <strong class="text-sky-900 ml-1 font-extrabold">${dischargeVal || '0'} Vol</strong>
+                            Total Carga: <strong class="text-indigo-900 ml-1 font-extrabold">${parseFloat(dischargeVal) || totalOriginal || 0} Vol</strong>
                         </span>
                         <span class="text-slate-400 font-bold uppercase text-[9px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg">
-                            Entregue: <strong class="text-emerald-900 ml-1 font-extrabold">${deliverVal || '0'} Vol</strong>
+                            Entregue: <strong class="text-emerald-900 ml-1 font-extrabold" id="armazem-badge-entregue">${deliverVal || '0'} Vol</strong>
+                        </span>
+                        <span class="text-slate-400 font-bold uppercase text-[9px] bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200">
+                            Saldo em Armazém: <strong class="text-amber-900 ml-1 font-extrabold" id="armazem-calc-saldo">${Math.max(0, (parseFloat(dischargeVal || totalOriginal) || 0) - (parseFloat(deliverVal) || 0))} Vol</strong>
                         </span>
                         ${dischargeDateBadge}
                         ${storageBadgesHtml}
@@ -8859,14 +8927,19 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     <div>
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Descarregado</label>
                         <input type="number" name="discharge" value="${dischargeVal}" placeholder="Qtd" 
+                            oninput="window.updateArmazemSaldo()"
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
                     <div>
-                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue</label>
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5 flex items-center justify-between">
+                            <span>Entregue (Manual)</span>
+                            <span class="text-[8px] text-indigo-600 font-bold">Qtd</span>
+                        </label>
                         <input type="number" name="deliver" value="${deliverVal}" placeholder="Qtd" 
+                            oninput="window.updateArmazemSaldo()"
                             ${!isEditable ? 'disabled' : ''}
-                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'text-slate-800'}">
                     </div>
                     <div>
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Data Entrega</label>
@@ -8874,7 +8947,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
-                    <div>
+                    <div class="col-span-1 md:col-span-2">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue A</label>
                         <input type="text" name="deliverTo" value="${deliverToVal}" placeholder="Nome" 
                             ${!isEditable ? 'disabled' : ''}
@@ -8888,6 +8961,15 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
                     <div class="col-span-1 md:col-span-2">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5 flex items-center justify-between">
+                            <span>Viatura / Matrícula</span>
+                            <span class="text-[8px] text-slate-500 font-bold normal-case">🚗 Se vier de carro</span>
+                        </label>
+                        <input type="text" name="viatura" value="${viaturaVal}" placeholder="Ex: ABC-123-MC / Toyota" 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                    </div>
+                    <div class="col-span-1 md:col-span-3">
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5 flex items-center justify-between">
                             <span>Nota / Estado Contacto</span>
                             <span class="text-[8px] text-amber-600 font-bold normal-case">💬 Pagamento & Retirada</span>
                         </label>
@@ -8895,7 +8977,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
-                    <div class="col-span-2">
+                    <div class="col-span-1 md:col-span-2">
                         <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-400 mb-1.5 cursor-pointer hover:text-indigo-600 transition-colors">
                             <input type="checkbox" onchange="ui.toggleIsencaoFields(this)" ${motivoIsencaoVal ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
                             <span>Adicionar Isenção / Notas</span>
@@ -8916,7 +8998,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             </div>
                         </div>
                     </div>
-                    <div class="${storageCost === 0 ? 'hidden' : ''}">
+                    <div class="col-span-1 md:col-span-1 ${storageCost === 0 ? 'hidden' : ''}">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Armazenagem</label>
                         <select name="storagePaid" ${!isEditable ? 'disabled' : ''}
                             class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
@@ -8982,6 +9064,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateInput = container.querySelector('input[name="deliverDate"]');
     const deliverToInput = container.querySelector('input[name="deliverTo"]');
     const contactoInput = container.querySelector('input[name="contacto"]');
+    const viaturaInput = container.querySelector('input[name="viatura"]');
     const notaContactoInput = container.querySelector('input[name="notaContacto"]');
     const motivoIsencaoInput = container.querySelector('input[name="motivoIsencao"]');
     const storagePaidInput = container.querySelector('select[name="storagePaid"]');
@@ -9002,6 +9085,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateVal = formatDateForSheet(deliverDateValRaw);
     const deliverToVal = deliverToInput ? deliverToInput.value.trim() : '';
     const contactoVal = contactoInput ? contactoInput.value.trim() : '';
+    const viaturaVal = viaturaInput ? viaturaInput.value.trim() : '';
     const notaContactoVal = notaContactoInput ? notaContactoInput.value.trim() : '';
     const motivoIsencaoVal = motivoIsencaoInput ? motivoIsencaoInput.value.trim() : '';
     const storagePaidVal = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
@@ -9039,6 +9123,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     let contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
     if (contactNoteIdx === -1 && notaContactoVal) {
         contactNoteIdx = await ensureContactNoteColumn();
+    }
+    let viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
+    if (viaturaIdx === -1 && viaturaVal) {
+        viaturaIdx = await ensureViaturaColumn();
     }
 
     if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1 || storagePaidIdx === -1 || deliveredIdx === -1) {
@@ -9123,6 +9211,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             rowData[contactoIdx] = contactoVal;
             batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(contactoIdx)}${rowNum}`), values: [[contactoVal]] });
         }
+        if (viaturaIdx !== -1) {
+            rowData[viaturaIdx] = viaturaVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(viaturaIdx)}${rowNum}`), values: [[viaturaVal]] });
+        }
         if (contactNoteIdx !== -1) {
             rowData[contactNoteIdx] = notaContactoVal;
             batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(contactNoteIdx)}${rowNum}`), values: [[notaContactoVal]] });
@@ -9162,6 +9254,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
         client.lastWarehouseSavedBy = opUser;
         client.lastWarehouseSavedAt = nowIso;
         client.contactNote = notaContactoVal;
+        client.viatura = viaturaVal;
 
         // Auditoria: Armazém gravado / entregue
         const actionType = deliveredVal === 'SIM' ? 'ARMAZEM_ENTREGUE' : 'ARMAZEM_GRAVADO';
@@ -9171,6 +9264,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             dataEntrega: deliverDateVal,
             entregueA: deliverToVal,
             contacto: contactoVal,
+            viatura: viaturaVal,
             notaContacto: notaContactoVal,
             armazenagemPago: storagePaidVal,
             isencao: motivoIsencaoVal,
@@ -9385,6 +9479,7 @@ export function printDeliveryNote() {
     const pag1Idx = findCol(['PAG 1', 'PAG1']);
     const pag2Idx = findCol(['PAG 2', 'PAG2']);
     const pag3Idx = findCol(['PAG 3', 'PAG3']);
+    const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
 
     let totalOriginal = 0;
     const ordersList = [];
@@ -9411,20 +9506,75 @@ export function printDeliveryNote() {
 
     let receiverName = '—';
     let receiverContact = '—';
-    let deliveryDate = new Date().toLocaleDateString('pt-BR');
+    let deliveryDate = new Date().toLocaleDateString('pt-PT');
+    let viaturaVal = viaturaIdx !== -1 ? (firstRowData[viaturaIdx] || '') : (client.viatura || '');
 
     const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
     const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
     const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
-    const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
 
     if (deliverToVal && deliverToVal !== '—') receiverName = deliverToVal;
     if (contactoVal && contactoVal !== '—') receiverContact = contactoVal;
     if (deliverDateVal && deliverDateVal !== '—') deliveryDate = deliverDateVal;
 
+    // Verificar se há valores preenchidos no formulário aberto atualmente
+    const formContainer = document.getElementById('armazem-form-container');
+    if (formContainer) {
+        const liveDeliverTo = formContainer.querySelector('input[name="deliverTo"]')?.value?.trim();
+        const liveContacto = formContainer.querySelector('input[name="contacto"]')?.value?.trim();
+        const liveDate = formContainer.querySelector('input[name="deliverDate"]')?.value?.trim();
+        const liveDeliver = formContainer.querySelector('input[name="deliver"]')?.value?.trim();
+        const liveViatura = formContainer.querySelector('input[name="viatura"]')?.value?.trim();
+        if (liveDeliverTo) receiverName = liveDeliverTo;
+        if (liveContacto) receiverContact = liveContacto;
+        if (liveDate) deliveryDate = liveDate;
+        if (liveViatura) viaturaVal = liveViatura;
+        if (liveDeliver && parseFloat(liveDeliver) > 0) totalDelivered = parseFloat(liveDeliver);
+    }
+    if (receiverContact === '—' && client.clientPhone) {
+        receiverContact = client.clientPhone;
+    }
+    if (receiverName === '—' && clientName) {
+        receiverName = clientName;
+    }
+
+    const issuerName = pb.authStore.model?.name || pb.authStore.model?.email || 'Operador Autorizado';
+    const now = new Date();
+    const nowIso = now.toISOString();
+    client.lastGuiaIssuedBy = issuerName;
+    client.lastGuiaIssuedAt = nowIso;
+
+    // Gerar Nº único da Guia
+    const dateCode = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    const cleanClientNum = String(clientNo || '001').replace(/[^0-9]/g, '').padStart(3, '0');
+    const guiaNumber = `GD-${dateCode}-${cleanClientNum}`;
+    client.lastGuiaNumber = guiaNumber;
+
+    const dataEmissao = now.toLocaleDateString('pt-PT');
+    const horaEmissao = now.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+
+    // Auditoria: Emissão de Guia de Entrega
+    const spreadsheetId = state.confirm?.sheetId || '';
+    logConfirmAudit(spreadsheetId, client.no, client.displayName, 'GUIA_EMITIDA', {
+        numeroGuia: guiaNumber,
+        emitidoPor: issuerName,
+        volumesEntregues: totalDelivered,
+        recebedor: receiverName,
+        contacto: receiverContact,
+        viatura: viaturaVal,
+        dataEntrega: deliveryDate
+    }).catch(err => console.warn('[Audit] Erro ao registar emissão de guia:', err));
+
+    const totalCarga = totalDischarged > 0 ? totalDischarged : totalOriginal;
+
+    const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
+
     // --- CÁLCULO DE ARMAZENAGEM PARA IMPRESSÃO ---
-    const dischargeDateStr = state.confirm.dischargeDate || '';
+    const dischargeDateStr = state.confirm?.dischargeDate || '';
     const dDate = parseDate(dischargeDateStr);
+    const dischargeDateDisplay = dDate 
+        ? dDate.toLocaleDateString('pt-PT') 
+        : (dischargeDateStr && dischargeDateStr !== '—' && dischargeDateStr !== 'Invalid Date' ? dischargeDateStr : '—');
     
     let totalDuty = 0;
     let totalPrepaid = 0;
@@ -9483,136 +9633,379 @@ export function printDeliveryNote() {
     const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
     const textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
 
-    const issuerName = pb.authStore.model?.name || pb.authStore.model?.email || 'Operador Autorizado';
-    const nowIso = new Date().toISOString();
-    client.lastGuiaIssuedBy = issuerName;
-    client.lastGuiaIssuedAt = nowIso;
+    // Helper para gerar o HTML de cada via mantendo a identidade visual original
+    const generateViaHtml = (viaType) => {
+        const isArmazem = viaType === 'ARMAZEM';
+        const docTitle = isArmazem ? 'Guia de Entrega' : 'Guia de Saída';
+        const badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA' : '2ª VIA — PORTARIA & SEGURANÇA';
+        const badgeStyle = isArmazem 
+            ? 'background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;' 
+            : 'background: #fef3c7; color: #92400e; border: 1px solid #fde68a;';
+        
+        const actionColTitle = isArmazem ? 'Levantado nesta Guia' : 'Volumes a Sair';
+        const actionColColor = isArmazem ? '#4f46e5' : '#0284c7';
+        
+        const noteText = isArmazem
+            ? '<strong>Nota Armazém:</strong> Esta via fica retida no armazém após a conferência e entrega. O fiel regista manualmente os volumes levantados e o saldo restante. Emitida por Jupiter e conferida pelo recebedor.'
+            : '<strong>Nota Portaria:</strong> A segurança da portaria confere os volumes na viatura com o valor autorizado pelo fiel do armazém, carimba e retém esta via para validação diária com o armazém.';
+        
+        const sigBox1 = isArmazem
+            ? `<div class="sig-box">
+                   <p>Jupiter Logistics Lda (${issuerName})</p>
+                   <span>Assinatura de quem emite a Guia</span>
+               </div>`
+            : `<div class="sig-box">
+                   <p>Fiel do Armazém</p>
+                   <span>Assinatura do Fiel do Armazém (Hora: ____:____)</span>
+               </div>`;
 
-    // Auditoria: Emissão de Guia de Entrega
-    const spreadsheetId = state.confirm?.sheetId || '';
-    logConfirmAudit(spreadsheetId, client.no, client.displayName, 'GUIA_EMITIDA', {
-        emitidoPor: issuerName,
-        volumesEntregues: totalDelivered,
-        recebedor: receiverName,
-        contacto: receiverContact,
-        dataEntrega: deliveryDate
-    }).catch(err => console.warn('[Audit] Erro ao registar emissão de guia:', err));
+        const sigBox2 = isArmazem
+            ? `<div class="sig-box">
+                   <p>${receiverName}</p>
+                   <span>Assinatura do Recebedor</span>
+               </div>`
+            : `<div class="sig-box">
+                   <p>Portaria & Segurança</p>
+                   <span>Visto / Carimbo da Portaria (Hora Saída: ____:____)</span>
+               </div>`;
 
-    const printWindow = window.open('', '_blank', 'width=800,height=900');
+        return `
+            <div class="guia-half">
+                <div class="header">
+                    <div class="logo-section">
+                        <h1 style="color: #0f172a; margin: 0 0 3px 0; font-size: 17px; font-weight: 800; letter-spacing: -0.03em;">JUPITER LOGISTICS LDA</h1>
+                        <div style="font-size: 8px; color: #475569; font-weight: 600; line-height: 1.35;">
+                            Av. do Trabalho nº 1412, 3º Andar • Tel: +258 21401334 • Cel: +258 84 0485 691<br>
+                            NUIT: 400574472 • Email: commercial@jupiter-logistics.co.mz
+                        </div>
+                    </div>
+                    <div class="doc-info">
+                        <h2>${docTitle}</h2>
+                        <div style="margin: 2px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
+                        <p style="font-size: 9.5px; font-weight: 700; color: #0f172a; margin: 2px 0 0 0;">Nº Guia: <strong>${guiaNumber}</strong></p>
+                        <p style="font-size: 8px; margin: 1px 0 0 0;">Data: ${dataEmissao} ${horaEmissao} | Op: <strong>${issuerName}</strong></p>
+                    </div>
+                </div>
+
+                <div class="details-grid">
+                    <div class="card">
+                        <h3>Dados do Cliente</h3>
+                        <p><span>Cliente:</span> ${clientName}</p>
+                        <p><span>ID Code:</span> ${clientCode}</p>
+                        <p><span>Nº do Cliente:</span> ${clientNo}</p>
+                        <p><span>Projeto/Lista:</span> ${projectName}</p>
+                    </div>
+                    <div class="card">
+                        <h3>Informações de Recebimento</h3>
+                        <p><span>Entregue A:</span> ${receiverName}</p>
+                        <p><span>Contacto:</span> ${receiverContact}</p>
+                        <p><span>Data de Entrega:</span> ${deliveryDate}</p>
+                        <p><span>Viatura / Matrícula:</span> <strong>${viaturaVal ? viaturaVal : '_________________'}</strong></p>
+                    </div>
+                    <div class="card">
+                        <h3>Controlo de Armazenagem</h3>
+                        <p><span>Data Descarga:</span> ${dischargeDateDisplay}</p>
+                        <p><span>Dias Decorridos:</span> ${daysDiff} dias</p>
+                        <p><span>Custo Armazenagem:</span> ${formatMZN(storageCost)}</p>
+                        <p><span>Estado Pagamento:</span> <strong style="color: ${isStoragePaid ? '#10b981' : '#ef4444'};">${textStoragePaid}</strong></p>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 38%;">Descrição da Mercadoria</th>
+                            <th style="width: 14%; text-align: center;">Volumes Enviados</th>
+                            <th style="width: 16%; text-align: center;">Volumes Descarregados</th>
+                            <th style="width: 16%; text-align: center; color: ${actionColColor};">${actionColTitle}</th>
+                            <th style="width: 16%; text-align: center; color: ${actionColColor};">Saldo Restante Armazém</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <td style="padding: 5px 7px; font-weight: bold; font-size: 9.5px; color: #1e293b;">
+                                Mercadoria do Cliente (Ordens: ${ordersString})
+                            </td>
+                            <td style="padding: 5px 7px; text-align: center; font-size: 9.5px; color: #334155;">${totalOriginal}</td>
+                            <td style="padding: 5px 7px; text-align: center; font-size: 9.5px; color: #334155;">${totalDischarged}</td>
+                            <td style="padding: 5px 7px; text-align: center; font-weight: bold; font-size: 9.5px; color: ${actionColColor};">
+                                <span style="display:inline-block; min-width:55px; border-bottom:1.5px dashed ${actionColColor}; height:14px; vertical-align:bottom;">&nbsp;</span> <span style="font-size:9px; color:#64748b; font-weight:600;">Vol</span>
+                            </td>
+                            <td style="padding: 5px 7px; text-align: center; font-weight: bold; font-size: 9.5px; color: ${actionColColor};">
+                                <span style="display:inline-block; min-width:55px; border-bottom:1.5px dashed ${actionColColor}; height:14px; vertical-align:bottom;">&nbsp;</span> <span style="font-size:9px; color:#64748b; font-weight:600;">Vol</span>
+                            </td>
+                        </tr>
+                        <tr class="totals-row">
+                            <td style="padding: 5px 7px; font-weight: bold; font-size: 9.5px;">TOTAL</td>
+                            <td style="padding: 5px 7px; text-align: center; font-weight: bold; font-size: 9.5px;">${totalOriginal}</td>
+                            <td style="padding: 5px 7px; text-align: center; font-weight: bold; font-size: 9.5px;">${totalDischarged}</td>
+                            <td style="padding: 5px 7px; text-align: center; font-size: 8px; color: #64748b; font-style: italic;">[ Preenchimento Manual ]</td>
+                            <td style="padding: 5px 7px; text-align: center; font-size: 8px; color: #64748b; font-style: italic;">[ Preenchimento Manual ]</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div style="font-size: 8px; color: #64748b; border-left: 2.5px solid ${actionColColor}; padding-left: 8px; line-height: 1.3; margin: 2px 0 4px 0;">
+                    ${noteText}
+                </div>
+
+                <div class="signatures">
+                    ${sigBox1}
+                    ${sigBox2}
+                </div>
+            </div>
+        `;
+    };
+
+    const printWindow = window.open('', '_blank', 'width=860,height=980');
     printWindow.document.write(`
         <!DOCTYPE html>
-        <html>
+        <html lang="pt">
         <head>
-            <title>Guia de Entrega - ${clientName}</title>
+            <meta charset="UTF-8">
+            <title>Guia de Entrega Dupla - ${clientName} (${guiaNumber})</title>
             <style>
-                body { font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; color: #1e293b; line-height: 1.5; }
-                .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #4f46e5; padding-bottom: 20px; margin-bottom: 30px; }
-                .logo-section h1 { margin: 0; color: #4f46e5; font-size: 28px; font-weight: 800; tracking-tight: -0.05em; }
-                .logo-section p { margin: 5px 0 0 0; font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.1em; }
-                .doc-info { text-align: right; }
-                .doc-info h2 { margin: 0; color: #1e293b; font-size: 20px; font-weight: 800; text-transform: uppercase; }
-                .doc-info p { margin: 5px 0 0 0; font-size: 12px; color: #64748b; font-weight: 600; }
-                .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 40px; }
-                .card { border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; background: #f8fafc; }
-                .card h3 { margin: 0 0 10px 0; font-size: 10px; font-weight: 800; text-transform: uppercase; color: #4f46e5; letter-spacing: 0.05em; }
-                .card p { margin: 4px 0; font-size: 12px; font-weight: 600; }
-                .card span { color: #64748b; font-weight: normal; }
-                table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
-                th { background: #f1f5f9; padding: 12px 10px; text-align: left; font-size: 10px; text-transform: uppercase; font-weight: 800; color: #475569; border-bottom: 2px solid #cbd5e1; }
-                .totals-row { background: #f8fafc; border-top: 2px solid #cbd5e1; font-weight: bold; }
-                .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; }
-                .sig-box { border-top: 1px dashed #cbd5e1; padding-top: 15px; text-align: center; }
-                .sig-box p { margin: 5px 0 0 0; font-size: 12px; font-weight: bold; color: #1e293b; }
-                .sig-box span { font-size: 10px; color: #64748b; }
-                .btn-print { background: #4f46e5; color: white; padding: 10px 20px; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; display: block; margin: 0 auto 30px auto; }
+                @page {
+                    size: A4 portrait;
+                    margin: 4mm 6mm;
+                }
+                * {
+                    box-sizing: border-box;
+                    margin: 0;
+                    padding: 0;
+                }
+                body {
+                    font-family: 'Segoe UI', Arial, sans-serif;
+                    color: #1e293b;
+                    line-height: 1.35;
+                    background: #f8fafc;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .btn-print-bar {
+                    background: #4f46e5;
+                    color: white;
+                    padding: 8px 16px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    position: sticky;
+                    top: 0;
+                    z-index: 100;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                .btn-print {
+                    background: white;
+                    color: #4f46e5;
+                    font-weight: 800;
+                    font-size: 12px;
+                    border: none;
+                    padding: 6px 16px;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                .btn-print:hover {
+                    background: #f1f5f9;
+                }
+                .page-wrapper {
+                    width: 210mm;
+                    max-height: 296mm;
+                    height: 296mm;
+                    margin: 0 auto;
+                    background: white;
+                    padding: 4mm 8mm;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    box-sizing: border-box;
+                }
+                .guia-half {
+                    height: 48.2%;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    box-sizing: border-box;
+                }
+                .header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: flex-start;
+                    border-bottom: 2px solid #4f46e5;
+                    padding-bottom: 4px;
+                    margin-bottom: 4px;
+                }
+                .logo-section h1 {
+                    margin: 0;
+                    color: #0f172a;
+                    font-size: 17px;
+                    font-weight: 800;
+                    letter-spacing: -0.03em;
+                }
+                .logo-section div {
+                    font-size: 8px;
+                    color: #475569;
+                    font-weight: 600;
+                    line-height: 1.35;
+                }
+                .doc-info {
+                    text-align: right;
+                }
+                .doc-info h2 {
+                    margin: 0;
+                    color: #1e293b;
+                    font-size: 14px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                }
+                .doc-info p {
+                    margin: 1px 0 0 0;
+                    font-size: 8.5px;
+                    color: #64748b;
+                    font-weight: 600;
+                }
+                .via-badge {
+                    display: inline-block;
+                    font-size: 8px;
+                    font-weight: 800;
+                    padding: 1.5px 6px;
+                    border-radius: 3px;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                }
+                .details-grid {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr 1fr;
+                    gap: 6px;
+                    margin-bottom: 4px;
+                }
+                .card {
+                    border: 1px solid #e2e8f0;
+                    padding: 5px 8px;
+                    border-radius: 6px;
+                    background: #f8fafc;
+                }
+                .card h3 {
+                    margin: 0 0 3px 0;
+                    font-size: 8.5px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                    color: #4f46e5;
+                    letter-spacing: 0.04em;
+                }
+                .card p {
+                    margin: 1.5px 0;
+                    font-size: 9px;
+                    font-weight: 600;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .card span {
+                    color: #64748b;
+                    font-weight: normal;
+                }
+                table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 4px;
+                }
+                th {
+                    background: #f1f5f9;
+                    padding: 4px 6px;
+                    text-align: left;
+                    font-size: 8px;
+                    text-transform: uppercase;
+                    font-weight: 800;
+                    color: #475569;
+                    border-bottom: 1.5px solid #cbd5e1;
+                }
+                td {
+                    padding: 4px 6px;
+                    font-size: 9px;
+                    border-bottom: 1px solid #e2e8f0;
+                }
+                .totals-row {
+                    background: #f8fafc;
+                    border-top: 1.5px solid #cbd5e1;
+                    font-weight: bold;
+                }
+                .signatures {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 24px;
+                    margin-top: 4px;
+                }
+                .sig-box {
+                    border-top: 1px dashed #cbd5e1;
+                    padding-top: 3px;
+                    text-align: center;
+                }
+                .sig-box p {
+                    margin: 1px 0 0 0;
+                    font-size: 9px;
+                    font-weight: bold;
+                    color: #1e293b;
+                }
+                .sig-box span {
+                    font-size: 7.5px;
+                    color: #64748b;
+                }
+                .cut-separator {
+                    height: 2.5%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    color: #64748b;
+                    font-size: 7.5px;
+                    font-weight: 700;
+                    letter-spacing: 0.05em;
+                    text-transform: uppercase;
+                    user-select: none;
+                    margin: 1px 0;
+                }
+                .cut-line {
+                    flex: 1;
+                    border-top: 1px dashed #94a3b8;
+                }
+                .cut-scissors {
+                    font-size: 11px;
+                }
                 @media print {
-                    .btn-print { display: none; }
-                    body { margin: 20px; }
+                    .btn-print-bar { display: none !important; }
+                    body { background: white !important; margin: 0 !important; }
+                    .page-wrapper {
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        width: 100% !important;
+                        height: 100vh !important;
+                        max-height: 100vh !important;
+                    }
                 }
             </style>
         </head>
         <body>
-            <button class="btn-print" onclick="window.print()">Imprimir Guia de Entrega</button>
-
-            <div class="header">
-                <div class="logo-section">
-                    <h1 style="color: #0f172a; margin: 0 0 6px 0; font-size: 26px; font-weight: 800; letter-spacing: -0.03em;">JUPITER LOGISTICS LDA</h1>
-                    <div style="font-size: 9px; color: #475569; font-weight: 600; line-height: 1.4;">
-                        Av. do Trabalho nº 1412, 3º Andar<br>
-                        Tel: +258 21401334 | Cel: +258 84 0485 691<br>
-                        NUIT: 400574472 | Email: commercial@jupiter-logistics.co.mz
-                    </div>
-                </div>
-                <div class="doc-info">
-                    <h2>Guia de Entrega</h2>
-                    <p>Data de Emissão: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
-                    <p>Emitido por: <strong>${issuerName}</strong></p>
-                </div>
+            <div class="btn-print-bar">
+                <span style="font-size: 12px; font-weight: 700;">Guia Dupla Oficial (Folha Única A4 — 1ª Via Armazém / 2ª Via Portaria)</span>
+                <button class="btn-print" onclick="window.print()">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                    Imprimir Guia Dupla
+                </button>
             </div>
 
-            <div class="details-grid">
-                <div class="card">
-                    <h3>Dados do Cliente</h3>
-                    <p><span>Cliente:</span> ${clientName}</p>
-                    <p><span>ID Code:</span> ${clientCode}</p>
-                    <p><span>Nº do Cliente:</span> ${clientNo}</p>
-                    <p><span>Projeto/Lista:</span> ${projectName}</p>
+            <div class="page-wrapper">
+                ${generateViaHtml('ARMAZEM')}
+                <div class="cut-separator">
+                    <span class="cut-scissors">✂</span>
+                    <div class="cut-line"></div>
+                    <span>DESTAQUE AQUI — 1ª VIA RETIDA NO ARMAZÉM / 2ª VIA RETIDA NA PORTARIA</span>
+                    <div class="cut-line"></div>
+                    <span class="cut-scissors">✂</span>
                 </div>
-                <div class="card">
-                    <h3>Informações de Recebimento</h3>
-                    <p><span>Entregue A:</span> ${receiverName}</p>
-                    <p><span>Contacto:</span> ${receiverContact}</p>
-                    <p><span>Data de Entrega:</span> ${deliveryDate}</p>
-                </div>
-                <div class="card">
-                    <h3>Controlo de Armazenagem</h3>
-                    <p><span>Data Descarga:</span> ${dischargeDateStr ? new Date(dischargeDateStr + 'T00:00:00').toLocaleDateString('pt-PT') : '—'}</p>
-                    <p><span>Dias Decorridos:</span> ${daysDiff} dias</p>
-                    <p><span>Custo Armazenagem:</span> ${formatMZN(storageCost)}</p>
-                    <p><span>Estado Pagamento:</span> <strong style="color: ${isStoragePaid ? '#10b981' : '#ef4444'};">${textStoragePaid}</strong></p>
-                </div>
-            </div>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th style="width: 45%;">Descrição da Mercadoria</th>
-                        <th style="width: 15%; text-align: center;">Volumes Enviados</th>
-                        <th style="width: 20%; text-align: center;">Volumes Descarregados</th>
-                        <th style="width: 20%; text-align: center;">Volumes Entregues</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr style="border-bottom: 1px solid #e2e8f0;">
-                        <td style="padding: 12px 10px; font-weight: bold; font-size: 12px; color: #1e293b;">
-                            Mercadoria do Cliente (Ordens: ${ordersString})
-                        </td>
-                        <td style="padding: 12px 10px; text-align: center; font-size: 12px; color: #334155;">${totalOriginal}</td>
-                        <td style="padding: 12px 10px; text-align: center; font-size: 12px; color: #334155;">${totalDischarged}</td>
-                        <td style="padding: 12px 10px; text-align: center; font-weight: bold; font-size: 12px; color: #10b981;">${totalDelivered}</td>
-                    </tr>
-                    <tr class="totals-row">
-                        <td style="padding: 12px 10px; font-weight: bold;">TOTAL</td>
-                        <td style="padding: 12px 10px; text-align: center; font-weight: bold;">${totalOriginal}</td>
-                        <td style="padding: 12px 10px; text-align: center; font-weight: bold;">${totalDischarged}</td>
-                        <td style="padding: 12px 10px; text-align: center; font-weight: bold; color: #10b981;">${totalDelivered}</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <div style="font-size: 11px; color: #64748b; margin-top: 40px; border-left: 3px solid #cbd5e1; padding-left: 15px;">
-                <strong>Nota:</strong> Esta guia confirma que os volumes acima listados foram devidamente conferidos e entregues em perfeitas condições. O recebedor declara ter recebido a mercadoria conforme descrito.
-            </div>
-
-            <div class="signatures">
-                <div class="sig-box">
-                    <p>Jupiter Logistics Lda (${issuerName})</p>
-                    <span>Assinatura do Responsável</span>
-                </div>
-                <div class="sig-box">
-                    <p>${receiverName}</p>
-                    <span>Assinatura do Recebedor</span>
-                </div>
+                ${generateViaHtml('PORTARIA')}
             </div>
         </body>
         </html>
