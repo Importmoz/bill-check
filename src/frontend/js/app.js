@@ -2487,6 +2487,16 @@ async function saveConfirmToSheet() {
     }
 
     let selectedStatus = document.getElementById('select-confirm-status').value;
+    const currentStatus = String(currentConfirmRow.data[statusIdx] || '').trim().toUpperCase();
+
+    if (selectedStatus === 'CONFIRMADO' && currentStatus !== 'CONFIRMADO') {
+        const verifyFn = (window.ui && window.ui.verifyConfirmSecretKey) || window.verifyConfirmSecretKey;
+        const authorized = verifyFn ? await verifyFn() : false;
+        if (!authorized) {
+            return;
+        }
+    }
+
     const updatedRow = [...currentConfirmRow.data];
 
     const paidIdx = columns.findIndex((c, i) => {

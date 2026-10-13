@@ -1577,10 +1577,8 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             }
         }
 
-        // Se o saldo for liquidado (<= 1.0) e houver valor pago ou pré-pago, marca como CONFIRMADO
-        if ((rowStatus.toUpperCase() === 'PENDENTE' || rowStatus.toUpperCase() === 'AGUARDA PAGAMENTO' || rowStatus.toUpperCase() === 'PARCIAL') && balanceVal <= 1.0 && (paidVal > 0 || prepaidVal > 0)) {
-            rowStatus = 'CONFIRMADO';
-        } else if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
+        // Se estiver CONFIRMADO mas o saldo for superior a 1.0, despromove para PARCIAL
+        if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
             rowStatus = 'PARCIAL';
         }
 
@@ -2250,8 +2248,6 @@ export async function showConfirmDetail(client, clientIndex) {
             rowStatus = rowStatus.toUpperCase();
             if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
                 rowStatus = 'PARCIAL';
-            } else if ((rowStatus === 'PARCIAL' || rowStatus === 'PENDENTE' || rowStatus === 'AGUARDA PAGAMENTO') && balance <= 1.0 && (paid > 0 || dutyPrepaid > 0)) {
-                rowStatus = 'CONFIRMADO';
             }
 
             if (rowStatus !== 'CONFIRMADO') {
@@ -3941,8 +3937,6 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     rowStatus = rowStatus.toUpperCase();
     if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
         rowStatus = 'PARCIAL';
-    } else if ((rowStatus === 'PARCIAL' || rowStatus === 'PENDENTE' || rowStatus === 'AGUARDA PAGAMENTO') && balance <= 1.0 && (paid > 0 || dutyPrepaid > 0)) {
-        rowStatus = 'CONFIRMADO';
     }
 
     const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowIndex];
@@ -4014,8 +4008,6 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         rStatus = rStatus.toUpperCase();
         if (rStatus === 'CONFIRMADO' && bal > 1.0) {
             rStatus = 'PARCIAL';
-        } else if ((rStatus === 'PARCIAL' || rStatus === 'PENDENTE' || rStatus === 'AGUARDA PAGAMENTO') && bal <= 1.0 && (getNum(rData, paidIdx) > 0 || getNum(rData, dutyPrepIdx) > 0)) {
-            rStatus = 'CONFIRMADO';
         }
 
         if (rStatus !== 'CONFIRMADO') allConfirmed = false;
@@ -4678,6 +4670,60 @@ export async function changeBankInDuty(originalRowIndex, newBankValue) {
     }
 }
 
+/**
+ * Solicita e valida uma chave secreta para autorizar a confirmação manual do estado CONFIRMADO
+ */
+export async function verifyConfirmSecretKey() {
+    const entered = window.prompt(
+        "🔐 AUTORIZAÇÃO DE CONFIRMAÇÃO MANUAL\n\n" +
+        "O estado 'CONFIRMADO' só deve ser atribuído vinculando o pagamento bancário ou através de autorização com chave secreta.\n\n" +
+        "Introduza a Chave Secreta ou a sua palavra-passe de utilizador:"
+    );
+
+    if (entered === null || entered.trim() === '') {
+        toast("Operação cancelada: Chave secreta não introduzida.", "warning");
+        return false;
+    }
+
+    const trimmed = entered.trim();
+    const upper = trimmed.toUpperCase();
+
+    // 1. Chave configurada localmente no navegador (se existir)
+    const customKey1 = localStorage.getItem('confirm_secret_key');
+    const customKey2 = localStorage.getItem('jupiter_secret_key');
+    if ((customKey1 && trimmed === customKey1.trim()) || (customKey2 && trimmed === customKey2.trim())) {
+        toast("Autorização concedida via chave configurada! ✅", "success");
+        return true;
+    }
+
+    // 2. Chaves mestras predefinidas
+    const validMasterKeys = ['2026', 'JUPITER2026', 'JUPITER', 'ADMIN2026'];
+    if (validMasterKeys.includes(upper)) {
+        toast("Autorização concedida com sucesso! ✅", "success");
+        return true;
+    }
+
+    // 3. Validação via palavra-passe da conta atual no PocketBase
+    try {
+        if (typeof pb !== 'undefined' && pb.authStore && pb.authStore.model) {
+            const loginId = pb.authStore.model.email || pb.authStore.model.username;
+            if (loginId) {
+                const authCheck = await pb.collection('users').authWithPassword(loginId, trimmed);
+                if (authCheck && authCheck.token) {
+                    toast("Autorização concedida via credenciais de utilizador! ✅", "success");
+                    return true;
+                }
+            }
+        }
+    } catch (e) {
+        // Palavra-passe incorreta
+    }
+
+    toast("Chave secreta incorreta! A alteração para CONFIRMADO foi recusada. ❌", "error");
+    return false;
+}
+window.verifyConfirmSecretKey = verifyConfirmSecretKey;
+
 export async function applyBulkUpdate() {
     const role = pb.authStore.model?.role || 'USER';
     const isL1 = role === 'USER' || role === 'USER_L1';
@@ -4702,6 +4748,14 @@ export async function applyBulkUpdate() {
     if (!selectedBank && !selectedStatus) {
         toast("Por favor, selecione um Banco ou um Estado para aplicar.", "warning");
         return;
+    }
+
+    // Se o utilizador selecionou CONFIRMADO, exigir chave secreta
+    if (selectedStatus === 'CONFIRMADO') {
+        const authorized = await verifyConfirmSecretKey();
+        if (!authorized) {
+            return;
+        }
     }
 
     let applyConfirmAndPay = false;
@@ -4783,9 +4837,6 @@ export async function applyBulkUpdate() {
                 const amountDutyVal = amtDutyIdx !== -1 ? (parseFloat(String(rowData[amtDutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
                 if (paidIdx !== -1) rowData[paidIdx] = amountDutyVal;
                 if (balanceIdx !== -1) rowData[balanceIdx] = 0;
-                if (statusIdx !== -1 && !effectiveStatus) {
-                    rowData[statusIdx] = 'CONFIRMADO';
-                }
                 modified = true;
             }
 
@@ -4850,12 +4901,6 @@ export async function applyBulkUpdate() {
                         batchUpdates.push({
                             range: formatSheetRange(sheetName, `${getColLetter(paidIdx)}${rowNum}`),
                             values: [[rowData[paidIdx]]]
-                        });
-                    }
-                    if (!effectiveStatus && statusIdx !== -1) {
-                        batchUpdates.push({
-                            range: formatSheetRange(sheetName, `${getColLetter(statusIdx)}${rowNum}`),
-                            values: [[rowData[statusIdx]]]
                         });
                     }
                     wrotePaidAndBalance = true;
