@@ -501,7 +501,12 @@ export async function readGSheet(projectRecord, range = 'A1:AZ1000', skipModifie
         const pbData = pbRecord.sheet_data;
         state.confirm.data = pbData.values || pbData;
         state.confirm.notes = pbData.notes || [];
-        state.confirm.range = pbData.range || 'Folha1!A1:AZ1000';
+        state.confirm.range = pbData.range || 'Sheet1!A1:AZ1000';
+        if (state.confirm.range && state.confirm.range.includes('!')) {
+            state.confirm.sheetTitle = state.confirm.range.split('!')[0].replace(/'/g, '');
+        } else {
+            state.confirm.sheetTitle = 'Sheet1';
+        }
         if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
 
         if (conflictDetected) {
@@ -541,7 +546,12 @@ export async function readGSheet(projectRecord, range = 'A1:AZ1000', skipModifie
         const data = await res.json();
         state.confirm.data = data.values || data;
         state.confirm.notes = data.notes || [];
-        state.confirm.range = data.range || 'Folha1!A1:AZ1000';
+        state.confirm.range = data.range || 'Sheet1!A1:AZ1000';
+        if (state.confirm.range && state.confirm.range.includes('!')) {
+            state.confirm.sheetTitle = state.confirm.range.split('!')[0].replace(/'/g, '');
+        } else {
+            state.confirm.sheetTitle = 'Sheet1';
+        }
         if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
 
         // Atualizar PocketBase com snapshot mais recente
@@ -592,7 +602,12 @@ export async function readGSheet(projectRecord, range = 'A1:AZ1000', skipModifie
             const pbData = pbRecord.sheet_data;
             state.confirm.data = pbData.values || pbData;
             state.confirm.notes = pbData.notes || [];
-            state.confirm.range = pbData.range || 'Folha1!A1:AZ1000';
+            state.confirm.range = pbData.range || 'Sheet1!A1:AZ1000';
+            if (state.confirm.range && state.confirm.range.includes('!')) {
+                state.confirm.sheetTitle = state.confirm.range.split('!')[0].replace(/'/g, '');
+            } else {
+                state.confirm.sheetTitle = 'Sheet1';
+            }
             if (state.confirm.data && state.confirm.data.length > 0) state.confirm.columns = state.confirm.data[0];
             
             window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));

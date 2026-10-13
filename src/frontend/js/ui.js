@@ -4,6 +4,7 @@
 import { formatMZN, formatDateDisplay } from './utils.js';
 import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
 import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js';
+import { JUPITER_LOGO_DATA_URL } from './logoData.js';
 
 export function getPaymentBankDisplay(payment) {
     let rawBank = payment.bank;
@@ -1576,12 +1577,10 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             }
         }
 
-        // Se estiver como PENDENTE ou AGUARDA PAGAMENTO mas já tiver prepaid total e saldo zero, marca confirmado
-        if ((rowStatus.toUpperCase() === 'PENDENTE' || rowStatus.toUpperCase() === 'AGUARDA PAGAMENTO') && balanceVal === 0 && prepaidVal > 0) {
+        // Se o saldo for liquidado (<= 1.0) e houver valor pago ou pré-pago, marca como CONFIRMADO
+        if ((rowStatus.toUpperCase() === 'PENDENTE' || rowStatus.toUpperCase() === 'AGUARDA PAGAMENTO' || rowStatus.toUpperCase() === 'PARCIAL') && balanceVal <= 1.0 && (paidVal > 0 || prepaidVal > 0)) {
             rowStatus = 'CONFIRMADO';
-        }
-
-        if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
+        } else if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
             rowStatus = 'PARCIAL';
         }
 
@@ -2251,6 +2250,8 @@ export async function showConfirmDetail(client, clientIndex) {
             rowStatus = rowStatus.toUpperCase();
             if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
                 rowStatus = 'PARCIAL';
+            } else if ((rowStatus === 'PARCIAL' || rowStatus === 'PENDENTE' || rowStatus === 'AGUARDA PAGAMENTO') && balance <= 1.0 && (paid > 0 || dutyPrepaid > 0)) {
+                rowStatus = 'CONFIRMADO';
             }
 
             if (rowStatus !== 'CONFIRMADO') {
@@ -3940,6 +3941,8 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     rowStatus = rowStatus.toUpperCase();
     if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
         rowStatus = 'PARCIAL';
+    } else if ((rowStatus === 'PARCIAL' || rowStatus === 'PENDENTE' || rowStatus === 'AGUARDA PAGAMENTO') && balance <= 1.0 && (paid > 0 || dutyPrepaid > 0)) {
+        rowStatus = 'CONFIRMADO';
     }
 
     const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowIndex];
@@ -4009,7 +4012,11 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         let rStatus = String(rData[statusIdx] || 'PENDENTE').trim();
         if (rStatus === '?') rStatus = 'PENDENTE';
         rStatus = rStatus.toUpperCase();
-        if (rStatus === 'CONFIRMADO' && bal > 1.0) rStatus = 'PARCIAL';
+        if (rStatus === 'CONFIRMADO' && bal > 1.0) {
+            rStatus = 'PARCIAL';
+        } else if ((rStatus === 'PARCIAL' || rStatus === 'PENDENTE' || rStatus === 'AGUARDA PAGAMENTO') && bal <= 1.0 && (getNum(rData, paidIdx) > 0 || getNum(rData, dutyPrepIdx) > 0)) {
+            rStatus = 'CONFIRMADO';
+        }
 
         if (rStatus !== 'CONFIRMADO') allConfirmed = false;
     });
@@ -4497,9 +4504,17 @@ export async function saveConfirmOrderEdit(e) {
 
     try {
         const spreadsheetId = state.confirm.sheetId;
-        let sheetName = 'Folha1';
+        let sheetName = state.confirm.sheetTitle || 'Sheet1';
         if (state.confirm.range && state.confirm.range.includes('!')) {
             sheetName = state.confirm.range.split('!')[0];
+        }
+        sheetName = (sheetName || '').replace(/^'+|'+$/g, '').trim();
+        if (!sheetName || sheetName.toUpperCase() === 'FOLHA1') {
+            if (state.confirm.sheetTitle && state.confirm.sheetTitle.toUpperCase() !== 'FOLHA1') {
+                sheetName = state.confirm.sheetTitle;
+            } else {
+                sheetName = 'Sheet1';
+            }
         }
         const rowNum = o.originalIndex + 1;
 
@@ -4710,9 +4725,17 @@ export async function applyBulkUpdate() {
         const columns = state.confirm.columns || [];
         const spreadsheetId = state.confirm.sheetId;
 
-        let sheetName = 'Folha1';
+        let sheetName = state.confirm.sheetTitle || 'Sheet1';
         if (state.confirm.range && state.confirm.range.includes('!')) {
             sheetName = state.confirm.range.split('!')[0];
+        }
+        sheetName = (sheetName || '').replace(/^'+|'+$/g, '').trim();
+        if (!sheetName || sheetName.toUpperCase() === 'FOLHA1') {
+            if (state.confirm.sheetTitle && state.confirm.sheetTitle.toUpperCase() !== 'FOLHA1') {
+                sheetName = state.confirm.sheetTitle;
+            } else {
+                sheetName = 'Sheet1';
+            }
         }
 
         const bankDutyIdx = findColumnIndex(columns, ['BANK IN DUTY', 'BANK', 'BANCO']);
@@ -4760,6 +4783,9 @@ export async function applyBulkUpdate() {
                 const amountDutyVal = amtDutyIdx !== -1 ? (parseFloat(String(rowData[amtDutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
                 if (paidIdx !== -1) rowData[paidIdx] = amountDutyVal;
                 if (balanceIdx !== -1) rowData[balanceIdx] = 0;
+                if (statusIdx !== -1 && !effectiveStatus) {
+                    rowData[statusIdx] = 'CONFIRMADO';
+                }
                 modified = true;
             }
 
@@ -4785,6 +4811,27 @@ export async function applyBulkUpdate() {
             }
 
             if (modified) {
+                // Sincronizar em memória local imediatamente
+                if (rowInfo.originalRow) {
+                    if (selectedBank && bankDutyIdx !== -1) rowInfo.originalRow[bankDutyIdx] = rowData[bankDutyIdx];
+                    if (paidIdx !== -1) rowInfo.originalRow[paidIdx] = rowData[paidIdx];
+                    if (balanceIdx !== -1) rowInfo.originalRow[balanceIdx] = rowData[balanceIdx];
+                    if (statusIdx !== -1) rowInfo.originalRow[statusIdx] = rowData[statusIdx];
+                }
+                if (window.currentActiveClient && window.currentActiveClient.rows) {
+                    const acr = window.currentActiveClient.rows.find(r => r.originalIndex === originalIndex);
+                    if (acr) {
+                        if (paidIdx !== -1) acr.paid = rowData[paidIdx];
+                        if (balanceIdx !== -1) acr.balance = rowData[balanceIdx];
+                        if (acr.originalRow) {
+                            if (selectedBank && bankDutyIdx !== -1) acr.originalRow[bankDutyIdx] = rowData[bankDutyIdx];
+                            if (paidIdx !== -1) acr.originalRow[paidIdx] = rowData[paidIdx];
+                            if (balanceIdx !== -1) acr.originalRow[balanceIdx] = rowData[balanceIdx];
+                            if (statusIdx !== -1) acr.originalRow[statusIdx] = rowData[statusIdx];
+                        }
+                    }
+                }
+
                 // Emitir LOCK temporário para o real-time
                 emitConfirmEvent(spreadsheetId, originalIndex, 'LOCK', { name: pb.authStore.model?.name || 'Utilizador' });
 
@@ -4805,12 +4852,12 @@ export async function applyBulkUpdate() {
                             values: [[rowData[paidIdx]]]
                         });
                     }
-                    // if (balanceIdx !== -1) {
-                    //     batchUpdates.push({
-                    //         range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${rowNum}`),
-                    //         values: [[rowData[balanceIdx]]]
-                    //     });
-                    // }
+                    if (!effectiveStatus && statusIdx !== -1) {
+                        batchUpdates.push({
+                            range: formatSheetRange(sheetName, `${getColLetter(statusIdx)}${rowNum}`),
+                            values: [[rowData[statusIdx]]]
+                        });
+                    }
                     wrotePaidAndBalance = true;
                 }
 
@@ -4828,12 +4875,6 @@ export async function applyBulkUpdate() {
                                 values: [[rowData[paidIdx]]]
                             });
                         }
-                        // if (balanceIdx !== -1) {
-                        //     batchUpdates.push({
-                        //         range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${rowNum}`),
-                        //         values: [[rowData[balanceIdx]]]
-                        //     });
-                        // }
                     }
                 }
 
@@ -6185,7 +6226,7 @@ export async function confirmPaymentSelection() {
             const isFreight = window.paymentReconciliationContext === 'FREIGHT';
 
             let statusIdx = -1, pag1Idx = -1, pag2Idx = -1, pag3Idx = -1, obsIdx = -1, paidIdx = -1, balanceIdx = -1, amountIdx = -1;
-            let bankFreightIdx = -1, notaFreightIdx = -1, notaDutyIdx = -1;
+            let bankFreightIdx = -1, notaFreightIdx = -1, notaDutyIdx = -1, bankDutyIdx = -1;
 
             if (isFreight) {
                 paidIdx = findColumnIndex(columns, ['PAID FREIGHT']);
@@ -6198,6 +6239,7 @@ export async function confirmPaymentSelection() {
                 pag3Idx = findColumnIndex(columns, ['PAG FRETE 3']);
             } else {
                 statusIdx = findColumnIndex(columns, ['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+                bankDutyIdx = findColumnIndex(columns, ['BANK IN DUTY', 'BANK', 'BANCO']);
                 notaDutyIdx = findColumnIndex(columns, ['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
                 pag1Idx = findColumnIndex(columns, ['PAG 1', 'PAG1']);
                 pag2Idx = findColumnIndex(columns, ['PAG 2', 'PAG2']);
@@ -6212,9 +6254,42 @@ export async function confirmPaymentSelection() {
             }
 
             if (state.confirm.sheetId) {
-                let sheetName = 'Folha1';
+                let sheetName = '';
                 if (state.confirm.range && state.confirm.range.includes('!')) {
                     sheetName = state.confirm.range.split('!')[0];
+                } else if (state.confirm.sheetTitle) {
+                    sheetName = state.confirm.sheetTitle;
+                }
+                sheetName = (sheetName || '').replace(/^'+|'+$/g, '').trim();
+                if (!sheetName || sheetName.toUpperCase() === 'FOLHA1') {
+                    if (state.confirm.sheetTitle && state.confirm.sheetTitle.toUpperCase() !== 'FOLHA1') {
+                        sheetName = state.confirm.sheetTitle;
+                    } else if (state.confirm.range && state.confirm.range.includes('Sheet1')) {
+                        sheetName = 'Sheet1';
+                    } else {
+                        sheetName = 'Sheet1';
+                    }
+                }
+
+                // Resolver banco para Duty a partir dos pagamentos selecionados
+                let dutyBankVal = '';
+                if (!isFreight && selectedPaymentsForLink.length > 0) {
+                    const firstPayment = selectedPaymentsForLink[0];
+                    let rawSelectedBank = firstPayment ? String(firstPayment.bank || '').toUpperCase().trim() : '';
+                    if (rawSelectedBank && rawSelectedBank !== '—') {
+                        if ((rawSelectedBank === 'BCI' || rawSelectedBank === 'BIM') && !rawSelectedBank.includes('BOSS') && !rawSelectedBank.includes('JUPITER')) {
+                            const owner = firstPayment ? String(firstPayment.account_owner || firstPayment.accountOwner || '').toUpperCase() : '';
+                            const ref = firstPayment ? String(firstPayment.reference || firstPayment.ref || '').toUpperCase() : '';
+                            if (owner.includes('BOSS') || owner.includes('FILIPE') || ref.includes('BOSS') || ref.includes('FILIPE')) {
+                                rawSelectedBank = `${rawSelectedBank} BOSS`;
+                            } else if (owner.includes('JUPITER') || ref.includes('JUPITER')) {
+                                rawSelectedBank = `${rawSelectedBank} JUPITER`;
+                            } else {
+                                rawSelectedBank = `${rawSelectedBank} JUPITER`;
+                            }
+                        }
+                        dutyBankVal = rawSelectedBank;
+                    }
                 }
 
                 // Encontrar o originalIndex da primeira linha (ordem) do cliente ativo
@@ -6251,15 +6326,18 @@ export async function confirmPaymentSelection() {
                     const rowData = [...rawRow];
 
                     let newStatus = filterStatus;
+                    const isExceptionStatus = ['AGUARDA PAGAMENTO', 'RE-VERIFICANDO', 'SEM COMPROVATIVO', 'COMPROVATIVO ERRADO'].includes(filterStatus);
 
-                    if (newStatus === 'PENDENTE' && !isFreight) {
+                    if (filterStatus === 'PENDENTE' && !isFreight) {
                         // Reverter pagamentos (apenas para duty)
+                        newStatus = 'PENDENTE';
                         if (paidIdx !== -1) rowData[paidIdx] = '';
                         if (balanceIdx !== -1) rowData[balanceIdx] = rowObj.amountDuty;
+                        if (bankDutyIdx !== -1) rowData[bankDutyIdx] = '';
                     } else {
                         // Distribuir o valor do pagamento
-                        const currentBalance = isFreight ? rowObj.balFreight : rowObj.balance;
-                        const currentPaid = isFreight ? rowObj.pdFreight : rowObj.paid;
+                        const currentBalance = isFreight ? (parseFloat(rowObj.balFreight) || 0) : (parseFloat(rowObj.balance) || 0);
+                        const currentPaid = isFreight ? (parseFloat(rowObj.pdFreight) || 0) : (parseFloat(rowObj.paid) || 0);
                         
                         let allocatedForThisRow = 0;
                         if (currentBalance > 0 && allocatedAmountRemaining > 0) {
@@ -6291,10 +6369,42 @@ export async function confirmPaymentSelection() {
                                     }
                                 }
                             }
+                        } else {
+                            rowObj.paid = newPaid;
+                            rowObj.balance = newBalance;
+                            if (dutyBankVal) rowObj.bankDuty = dutyBankVal;
+                            if (rowObj.originalRow) {
+                                if (paidIdx !== -1) rowObj.originalRow[paidIdx] = newPaid;
+                                if (balanceIdx !== -1) rowObj.originalRow[balanceIdx] = newBalance;
+                                if (bankDutyIdx !== -1 && dutyBankVal) rowObj.originalRow[bankDutyIdx] = dutyBankVal;
+                            }
+                            if (window.currentActiveClient && window.currentActiveClient.rows) {
+                                const activeClientRow = window.currentActiveClient.rows.find(r => r.originalIndex === originalIndex);
+                                if (activeClientRow) {
+                                    activeClientRow.paid = newPaid;
+                                    activeClientRow.balance = newBalance;
+                                    if (dutyBankVal) activeClientRow.bankDuty = dutyBankVal;
+                                    if (activeClientRow.originalRow) {
+                                        if (paidIdx !== -1) activeClientRow.originalRow[paidIdx] = newPaid;
+                                        if (balanceIdx !== -1) activeClientRow.originalRow[balanceIdx] = newBalance;
+                                        if (bankDutyIdx !== -1 && dutyBankVal) activeClientRow.originalRow[bankDutyIdx] = dutyBankVal;
+                                    }
+                                }
+                            }
                         }
 
-                        if (newStatus === 'CONFIRMADO' && !isFreight) {
-                            if (newBalance > 1.0) newStatus = 'PARCIAL';
+                        // Determinar status por ordem individual:
+                        if (isExceptionStatus) {
+                            newStatus = filterStatus;
+                        } else if (!isFreight) {
+                            if (newBalance <= 1.0) {
+                                newStatus = 'CONFIRMADO';
+                            } else if (newPaid > 0) {
+                                newStatus = 'PARCIAL';
+                            } else {
+                                const rawCur = String(rawRow[statusIdx] || 'PENDENTE').trim().toUpperCase();
+                                newStatus = (rawCur === 'CONFIRMADO' || rawCur === 'PARCIAL') ? 'PENDENTE' : (rawCur || 'PENDENTE');
+                            }
                         }
 
                         // Mapear as datas dos pagamentos selecionados diretamente nas colunas correspondentes (PAG 1, PAG 2, PAG 3)
@@ -6305,24 +6415,40 @@ export async function confirmPaymentSelection() {
                             if (dateVal !== undefined) {
                                 console.log(`[DEBUG-VINCULO] Linha ${sheetRowNumber} - Coluna PAG ${i + 1} (index ${pIdx}) recebe data: "${dateVal}"`);
                                 rowData[pIdx] = dateVal;
+                                if (rowObj.originalRow) rowObj.originalRow[pIdx] = dateVal;
                             }
                         }
                     }
 
                     if (statusIdx !== -1 && !isFreight) {
                         rowData[statusIdx] = newStatus;
+                        if (rowObj.originalRow) rowObj.originalRow[statusIdx] = newStatus;
+                        if (window.currentActiveClient && window.currentActiveClient.rows) {
+                            const acr = window.currentActiveClient.rows.find(r => r.originalIndex === originalIndex);
+                            if (acr && acr.originalRow) acr.originalRow[statusIdx] = newStatus;
+                        }
+                    }
+
+                    if (!isFreight && dutyBankVal && bankDutyIdx !== -1) {
+                        rowData[bankDutyIdx] = dutyBankVal;
                     }
 
                     if (!isFreight && notaDutyIdx !== -1) {
                         // Limpar a Nota Duty (resposta do operador) sempre que um pagamento é vinculado
                         rowData[notaDutyIdx] = '';
+                        if (rowObj.originalRow) rowObj.originalRow[notaDutyIdx] = '';
                     }
 
                     if (newStatus === 'PENDENTE' && !isFreight) {
-                        // Se for PENDENTE, limpar as datas de pagamento
+                        // Se for PENDENTE, limpar as datas de pagamento e banco
                         const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(i => i !== -1);
                         for (const pIdx of pagIndices) {
                             rowData[pIdx] = '';
+                            if (rowObj.originalRow) rowObj.originalRow[pIdx] = '';
+                        }
+                        if (bankDutyIdx !== -1) {
+                            rowData[bankDutyIdx] = '';
+                            if (rowObj.originalRow) rowObj.originalRow[bankDutyIdx] = '';
                         }
                     }
 
@@ -6381,8 +6507,12 @@ export async function confirmPaymentSelection() {
                     if (paidIdx !== -1) {
                         batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(paidIdx)}${sheetRowNumber}`), values: [[rowData[paidIdx]]] });
                     }
-                    if (isFreight && balanceIdx !== -1) {
-                        batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${sheetRowNumber}`), values: [[rowData[balanceIdx]]] });
+                    if (!isFreight && bankDutyIdx !== -1) {
+                        if (newStatus === 'PENDENTE') {
+                            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(bankDutyIdx)}${sheetRowNumber}`), values: [['']] });
+                        } else if (dutyBankVal) {
+                            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(bankDutyIdx)}${sheetRowNumber}`), values: [[dutyBankVal]] });
+                        }
                     }
                     if (statusIdx !== -1 && !isFreight) {
                         batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(statusIdx)}${sheetRowNumber}`), values: [[rowData[statusIdx]]] });
@@ -6423,6 +6553,14 @@ export async function confirmPaymentSelection() {
                         originalIndex,
                         rowData,
                         newStatus
+                    });
+                }
+
+                // Atualizar lista de status do cliente ativo de forma síncrona
+                if (window.currentActiveClient && window.currentActiveClient.rows) {
+                    window.currentActiveClient.statuses = window.currentActiveClient.rows.map(r => {
+                        const rData = state.confirm.data[r.originalIndex] || r.originalRow;
+                        return statusIdx !== -1 ? String(rData[statusIdx] || 'PENDENTE').trim().toUpperCase() : 'PENDENTE';
                     });
                 }
 
@@ -9671,47 +9809,53 @@ export function printDeliveryNote() {
 
         return `
             <div class="guia-half">
+                <div class="watermark-bg">
+                    <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Watermark" />
+                </div>
                 <div class="header">
                     <div class="logo-section">
-                        <h1 style="color: #0f172a; margin: 0 0 3px 0; font-size: 17px; font-weight: 800; letter-spacing: -0.03em;">JUPITER LOGISTICS LDA</h1>
-                        <div style="font-size: 8px; color: #475569; font-weight: 600; line-height: 1.35;">
-                            Av. do Trabalho nº 1412, 3º Andar • Tel: +258 21401334 • Cel: +258 84 0485 691<br>
-                            NUIT: 400574472 • Email: commercial@jupiter-logistics.co.mz
+                        <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Logistics" class="header-logo" />
+                        <div>
+                            <h1 class="company-title">JUPITER LOGISTICS LDA</h1>
+                            <div class="company-sub">
+                                Av. do Trabalho nº 1412, 3º Andar • Tel: +258 21401334 • Cel: +258 84 0485 691<br>
+                                NUIT: 400574472 • Email: commercial@jupiter-logistics.co.mz
+                            </div>
                         </div>
                     </div>
                     <div class="doc-info">
                         <h2>${docTitle}</h2>
                         <div style="margin: 2px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
-                        <p style="font-size: 9.5px; font-weight: 700; color: #0f172a; margin: 2px 0 0 0;">Nº Guia: <strong>${guiaNumber}</strong></p>
-                        <p style="font-size: 8px; margin: 1px 0 0 0;">Data: ${dataEmissao} ${horaEmissao} | Op: <strong>${issuerName}</strong></p>
+                        <p class="guia-no">Nº Guia: <strong>${guiaNumber}</strong></p>
+                        <p class="guia-meta">Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
                     </div>
                 </div>
 
                 <div class="details-grid">
                     <div class="card">
                         <h3>Dados do Cliente</h3>
-                        <p><span>Cliente:</span> ${clientName}</p>
-                        <p><span>ID Code:</span> ${clientCode}</p>
-                        <p><span>Nº do Cliente:</span> ${clientNo}</p>
-                        <p><span>Projeto/Lista:</span> ${projectName}</p>
+                        <p><span class="lbl">Cliente:</span> <strong class="val">${clientName}</strong></p>
+                        <p><span class="lbl">ID Code:</span> <strong class="val">${clientCode}</strong></p>
+                        <p><span class="lbl">Nº Cliente:</span> <strong class="val">${clientNo}</strong></p>
+                        <p><span class="lbl">Projeto/Lista:</span> <strong class="val">${projectName}</strong></p>
                     </div>
                     <div class="card">
                         <h3>Informações de Recebimento</h3>
-                        <p><span>Entregue A:</span> ${receiverName}</p>
-                        <p><span>Contacto:</span> ${receiverContact}</p>
-                        <p><span>Data de Entrega:</span> ${deliveryDate}</p>
-                        <p><span>Viatura / Matrícula:</span> <strong>${viaturaVal ? viaturaVal : '_________________'}</strong></p>
+                        <p><span class="lbl">Entregue A:</span> <strong class="val">${receiverName}</strong></p>
+                        <p><span class="lbl">Contacto:</span> <strong class="val">${receiverContact}</strong></p>
+                        <p><span class="lbl">Data Entrega:</span> <strong class="val">${deliveryDate}</strong></p>
+                        <p><span class="lbl">Viatura / Matrícula:</span> <strong class="val viatura-val">${viaturaVal ? viaturaVal : '_________________'}</strong></p>
                     </div>
                     <div class="card">
                         <h3>Controlo de Armazenagem</h3>
-                        <p><span>Data Descarga:</span> ${dischargeDateDisplay}</p>
-                        <p><span>Dias Decorridos:</span> ${daysDiff} dias</p>
-                        <p><span>Custo Armazenagem:</span> ${formatMZN(storageCost)}</p>
-                        <p><span>Estado Pagamento:</span> <strong style="color: ${isStoragePaid ? '#10b981' : '#ef4444'};">${textStoragePaid}</strong></p>
+                        <p><span class="lbl">Data Descarga:</span> <strong class="val">${dischargeDateDisplay}</strong></p>
+                        <p><span class="lbl">Dias Decorridos:</span> <strong class="val">${daysDiff} dias</strong></p>
+                        <p><span class="lbl">Custo Armaz.:</span> <strong class="val">${formatMZN(storageCost)}</strong></p>
+                        <p><span class="lbl">Estado Pag.:</span> <strong class="val" style="color: ${isStoragePaid ? '#047857' : '#b91c1c'}; font-weight: 900;">${textStoragePaid}</strong></p>
                     </div>
                 </div>
 
-                <table>
+                <table class="guia-table">
                     <thead>
                         <tr>
                             <th style="width: 38%;">Descrição da Mercadoria</th>
@@ -9722,30 +9866,31 @@ export function printDeliveryNote() {
                         </tr>
                     </thead>
                     <tbody>
-                        <tr style="border-bottom: 1px solid #e2e8f0;">
-                            <td style="padding: 5px 7px; font-weight: bold; font-size: 9.5px; color: #1e293b;">
-                                Mercadoria do Cliente (Ordens: ${ordersString})
+                        <tr>
+                            <td class="td-desc">
+                                <strong>Mercadoria do Cliente</strong>
+                                <div class="orders-desc">Ordens: ${ordersString}</div>
                             </td>
-                            <td style="padding: 5px 7px; text-align: center; font-size: 9.5px; color: #334155;">${totalOriginal}</td>
-                            <td style="padding: 5px 7px; text-align: center; font-size: 9.5px; color: #334155;">${totalDischarged}</td>
-                            <td style="padding: 5px 7px; text-align: center; font-weight: bold; font-size: 9.5px; color: ${actionColColor};">
-                                <span style="display:inline-block; min-width:55px; border-bottom:1.5px dashed ${actionColColor}; height:14px; vertical-align:bottom;">&nbsp;</span> <span style="font-size:9px; color:#64748b; font-weight:600;">Vol</span>
+                            <td class="td-num">${totalOriginal}</td>
+                            <td class="td-num">${totalDischarged}</td>
+                            <td class="td-action">
+                                <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
                             </td>
-                            <td style="padding: 5px 7px; text-align: center; font-weight: bold; font-size: 9.5px; color: ${actionColColor};">
-                                <span style="display:inline-block; min-width:55px; border-bottom:1.5px dashed ${actionColColor}; height:14px; vertical-align:bottom;">&nbsp;</span> <span style="font-size:9px; color:#64748b; font-weight:600;">Vol</span>
+                            <td class="td-action">
+                                <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
                             </td>
                         </tr>
                         <tr class="totals-row">
-                            <td style="padding: 5px 7px; font-weight: bold; font-size: 9.5px;">TOTAL</td>
-                            <td style="padding: 5px 7px; text-align: center; font-weight: bold; font-size: 9.5px;">${totalOriginal}</td>
-                            <td style="padding: 5px 7px; text-align: center; font-weight: bold; font-size: 9.5px;">${totalDischarged}</td>
-                            <td style="padding: 5px 7px; text-align: center; font-size: 8px; color: #64748b; font-style: italic;">[ Preenchimento Manual ]</td>
-                            <td style="padding: 5px 7px; text-align: center; font-size: 8px; color: #64748b; font-style: italic;">[ Preenchimento Manual ]</td>
+                            <td class="td-desc"><strong>TOTAL GERAL</strong></td>
+                            <td class="td-num"><strong>${totalOriginal}</strong></td>
+                            <td class="td-num"><strong>${totalDischarged}</strong></td>
+                            <td class="td-manual">[ Preenchimento Manual ]</td>
+                            <td class="td-manual">[ Preenchimento Manual ]</td>
                         </tr>
                     </tbody>
                 </table>
 
-                <div style="font-size: 8px; color: #64748b; border-left: 2.5px solid ${actionColColor}; padding-left: 8px; line-height: 1.3; margin: 2px 0 4px 0;">
+                <div class="note-box" style="border-left-color: ${actionColColor};">
                     ${noteText}
                 </div>
 
@@ -9757,13 +9902,13 @@ export function printDeliveryNote() {
         `;
     };
 
-    const printWindow = window.open('', '_blank', 'width=860,height=980');
+    const printWindow = window.open('', '_blank', 'width=880,height=980');
     printWindow.document.write(`
         <!DOCTYPE html>
         <html lang="pt">
         <head>
             <meta charset="UTF-8">
-            <title>Guia de Entrega Dupla - ${clientName} (${guiaNumber})</title>
+            <title>Guia Dupla Oficial - ${clientName} (${guiaNumber})</title>
             <style>
                 @page {
                     size: A4 portrait;
@@ -9775,204 +9920,359 @@ export function printDeliveryNote() {
                     padding: 0;
                 }
                 body {
-                    font-family: 'Segoe UI', Arial, sans-serif;
-                    color: #1e293b;
+                    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+                    color: #0f172a;
                     line-height: 1.35;
-                    background: #f8fafc;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
+                    background: #f1f5f9;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
                 }
                 .btn-print-bar {
-                    background: #4f46e5;
+                    background: #1e1b4b;
                     color: white;
-                    padding: 8px 16px;
+                    padding: 10px 20px;
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
                     position: sticky;
                     top: 0;
-                    z-index: 100;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    z-index: 1000;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
                 }
                 .btn-print {
-                    background: white;
-                    color: #4f46e5;
+                    background: #2563eb;
+                    color: white;
                     font-weight: 800;
-                    font-size: 12px;
+                    font-size: 13px;
                     border: none;
-                    padding: 6px 16px;
-                    border-radius: 6px;
+                    padding: 8px 20px;
+                    border-radius: 8px;
                     cursor: pointer;
                     display: flex;
                     align-items: center;
-                    gap: 6px;
+                    gap: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    transition: all 0.2s;
                 }
                 .btn-print:hover {
-                    background: #f1f5f9;
+                    background: #1d4ed8;
+                    transform: translateY(-1px);
                 }
                 .page-wrapper {
                     width: 210mm;
-                    max-height: 296mm;
-                    height: 296mm;
-                    margin: 0 auto;
+                    max-width: 210mm;
+                    height: 288mm;
+                    max-height: 288mm;
+                    margin: 12px auto;
                     background: white;
-                    padding: 4mm 8mm;
+                    padding: 4mm 6mm;
                     display: flex;
                     flex-direction: column;
                     justify-content: space-between;
                     box-sizing: border-box;
+                    box-shadow: 0 4px 25px rgba(0,0,0,0.1);
                 }
                 .guia-half {
-                    height: 48.2%;
+                    position: relative;
+                    height: 48.5%;
                     display: flex;
                     flex-direction: column;
                     justify-content: space-between;
                     box-sizing: border-box;
+                    overflow: hidden;
+                    border: 1.5px solid #cbd5e1;
+                    border-radius: 6px;
+                    padding: 8px 12px;
+                    background: #ffffff;
+                }
+                .watermark-bg {
+                    position: absolute;
+                    top: 52%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 270px;
+                    height: 270px;
+                    opacity: 0.085;
+                    pointer-events: none;
+                    z-index: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .watermark-bg img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: contain;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                }
+                .header, .details-grid, .guia-table, .note-box, .signatures {
+                    position: relative;
+                    z-index: 1;
                 }
                 .header {
                     display: flex;
                     justify-content: space-between;
-                    align-items: flex-start;
-                    border-bottom: 2px solid #4f46e5;
-                    padding-bottom: 4px;
-                    margin-bottom: 4px;
+                    align-items: center;
+                    border-bottom: 2px solid #0f172a;
+                    padding-bottom: 5px;
+                    margin-bottom: 5px;
                 }
-                .logo-section h1 {
+                .logo-section {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                }
+                .header-logo {
+                    width: 44px;
+                    height: 44px;
+                    object-fit: contain;
+                }
+                .company-title {
                     margin: 0;
                     color: #0f172a;
-                    font-size: 17px;
-                    font-weight: 800;
-                    letter-spacing: -0.03em;
+                    font-size: 18px;
+                    font-weight: 900;
+                    letter-spacing: -0.02em;
+                    line-height: 1.1;
                 }
-                .logo-section div {
-                    font-size: 8px;
-                    color: #475569;
+                .company-sub {
+                    font-size: 9px;
+                    color: #1e293b;
                     font-weight: 600;
                     line-height: 1.35;
+                    margin-top: 2px;
                 }
                 .doc-info {
                     text-align: right;
                 }
                 .doc-info h2 {
                     margin: 0;
-                    color: #1e293b;
-                    font-size: 14px;
-                    font-weight: 800;
+                    color: #0f172a;
+                    font-size: 16px;
+                    font-weight: 900;
                     text-transform: uppercase;
-                }
-                .doc-info p {
-                    margin: 1px 0 0 0;
-                    font-size: 8.5px;
-                    color: #64748b;
-                    font-weight: 600;
+                    letter-spacing: 0.01em;
+                    line-height: 1.1;
                 }
                 .via-badge {
                     display: inline-block;
-                    font-size: 8px;
-                    font-weight: 800;
-                    padding: 1.5px 6px;
-                    border-radius: 3px;
-                    letter-spacing: 0.04em;
+                    font-size: 9.5px;
+                    font-weight: 900;
+                    padding: 2px 8px;
+                    border-radius: 4px;
+                    letter-spacing: 0.03em;
                     text-transform: uppercase;
+                    margin-top: 2px;
+                }
+                .guia-no {
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #0f172a;
+                    margin: 2px 0 0 0;
+                }
+                .guia-no strong {
+                    font-weight: 900;
+                    color: #000;
+                }
+                .guia-meta {
+                    font-size: 9px;
+                    color: #334155;
+                    margin: 1px 0 0 0;
+                    font-weight: 600;
+                }
+                .guia-meta strong {
+                    color: #0f172a;
                 }
                 .details-grid {
                     display: grid;
                     grid-template-columns: 1fr 1fr 1fr;
-                    gap: 6px;
-                    margin-bottom: 4px;
+                    gap: 8px;
+                    margin-bottom: 5px;
                 }
                 .card {
-                    border: 1px solid #e2e8f0;
-                    padding: 5px 8px;
+                    border: 1.5px solid #cbd5e1;
+                    padding: 6px 9px;
                     border-radius: 6px;
                     background: #f8fafc;
                 }
                 .card h3 {
-                    margin: 0 0 3px 0;
-                    font-size: 8.5px;
-                    font-weight: 800;
+                    margin: 0 0 4px 0;
+                    font-size: 10px;
+                    font-weight: 900;
                     text-transform: uppercase;
-                    color: #4f46e5;
+                    color: #1e1b4b;
                     letter-spacing: 0.04em;
+                    border-bottom: 1px solid #e2e8f0;
+                    padding-bottom: 2px;
                 }
                 .card p {
-                    margin: 1.5px 0;
-                    font-size: 9px;
+                    margin: 2px 0;
+                    font-size: 10px;
                     font-weight: 600;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: baseline;
+                    gap: 6px;
+                }
+                .card .lbl {
+                    color: #475569;
+                    font-weight: 700;
+                    font-size: 9.5px;
                     white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
+                    flex-shrink: 0;
                 }
-                .card span {
-                    color: #64748b;
-                    font-weight: normal;
+                .card .val {
+                    color: #0f172a;
+                    font-weight: 800;
+                    text-align: right;
+                    font-size: 10px;
+                    word-break: break-word;
                 }
-                table {
+                .card .viatura-val {
+                    color: #0f172a;
+                    font-weight: 900;
+                }
+                .guia-table {
                     width: 100%;
                     border-collapse: collapse;
-                    margin-bottom: 4px;
+                    margin-bottom: 5px;
+                    border: 1.5px solid #94a3b8;
+                    border-radius: 4px;
+                    overflow: hidden;
                 }
-                th {
-                    background: #f1f5f9;
-                    padding: 4px 6px;
+                .guia-table th {
+                    background: #e2e8f0;
+                    padding: 5px 8px;
                     text-align: left;
-                    font-size: 8px;
+                    font-size: 10px;
                     text-transform: uppercase;
-                    font-weight: 800;
-                    color: #475569;
-                    border-bottom: 1.5px solid #cbd5e1;
+                    font-weight: 900;
+                    color: #0f172a;
+                    border-bottom: 2px solid #94a3b8;
+                    border-right: 1px solid #cbd5e1;
                 }
-                td {
-                    padding: 4px 6px;
+                .guia-table th:last-child {
+                    border-right: none;
+                }
+                .guia-table td {
+                    padding: 6px 8px;
+                    font-size: 10.5px;
+                    border-bottom: 1px solid #cbd5e1;
+                    border-right: 1px solid #e2e8f0;
+                    color: #0f172a;
+                    vertical-align: middle;
+                }
+                .guia-table td:last-child {
+                    border-right: none;
+                }
+                .td-desc strong {
+                    font-weight: 800;
+                    color: #0f172a;
+                    font-size: 10.5px;
+                }
+                .orders-desc {
                     font-size: 9px;
-                    border-bottom: 1px solid #e2e8f0;
+                    color: #334155;
+                    font-weight: 600;
+                    margin-top: 1px;
+                }
+                .td-num {
+                    text-align: center;
+                    font-size: 11px;
+                    font-weight: 800;
+                    color: #0f172a;
+                }
+                .td-action {
+                    text-align: center;
+                    padding: 4px 6px !important;
+                }
+                .write-line {
+                    display: inline-block;
+                    min-width: 65px;
+                    border-bottom: 2px dashed #0f172a;
+                    height: 16px;
+                    vertical-align: bottom;
+                    margin-right: 3px;
+                }
+                .vol-unit {
+                    font-size: 9.5px;
+                    color: #1e293b;
+                    font-weight: 800;
                 }
                 .totals-row {
+                    background: #f1f5f9;
+                    border-top: 2px solid #94a3b8;
+                }
+                .totals-row td {
+                    border-bottom: none;
+                    padding: 5px 8px;
+                }
+                .td-manual {
+                    text-align: center;
+                    font-size: 8.5px;
+                    color: #475569;
+                    font-weight: 700;
+                    font-style: italic;
+                }
+                .note-box {
+                    font-size: 9.5px;
+                    color: #1e293b;
+                    font-weight: 600;
+                    border-left: 3.5px solid #4f46e5;
+                    padding: 4px 10px;
+                    line-height: 1.35;
+                    margin: 3px 0 5px 0;
                     background: #f8fafc;
-                    border-top: 1.5px solid #cbd5e1;
-                    font-weight: bold;
+                    border-radius: 0 4px 4px 0;
+                }
+                .note-box strong {
+                    font-weight: 900;
+                    color: #0f172a;
                 }
                 .signatures {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
-                    gap: 24px;
+                    gap: 32px;
                     margin-top: 4px;
                 }
                 .sig-box {
-                    border-top: 1px dashed #cbd5e1;
+                    border-top: 1.5px solid #475569;
                     padding-top: 3px;
                     text-align: center;
                 }
                 .sig-box p {
                     margin: 1px 0 0 0;
-                    font-size: 9px;
-                    font-weight: bold;
-                    color: #1e293b;
+                    font-size: 10.5px;
+                    font-weight: 900;
+                    color: #0f172a;
                 }
                 .sig-box span {
-                    font-size: 7.5px;
-                    color: #64748b;
+                    font-size: 9px;
+                    font-weight: 700;
+                    color: #334155;
                 }
                 .cut-separator {
-                    height: 2.5%;
+                    height: 18px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    gap: 6px;
-                    color: #64748b;
-                    font-size: 7.5px;
-                    font-weight: 700;
-                    letter-spacing: 0.05em;
+                    gap: 8px;
+                    color: #475569;
+                    font-size: 8.5px;
+                    font-weight: 900;
+                    letter-spacing: 0.06em;
                     text-transform: uppercase;
                     user-select: none;
-                    margin: 1px 0;
+                    margin: 2px 0;
                 }
                 .cut-line {
                     flex: 1;
-                    border-top: 1px dashed #94a3b8;
+                    border-top: 1.5px dashed #64748b;
                 }
                 .cut-scissors {
-                    font-size: 11px;
+                    font-size: 13px;
+                    color: #334155;
                 }
                 @media print {
                     .btn-print-bar { display: none !important; }
@@ -9983,15 +10283,21 @@ export function printDeliveryNote() {
                         width: 100% !important;
                         height: 100vh !important;
                         max-height: 100vh !important;
+                        box-shadow: none !important;
+                        page-break-after: avoid !important;
+                        page-break-inside: avoid !important;
+                    }
+                    .guia-half {
+                        page-break-inside: avoid !important;
                     }
                 }
             </style>
         </head>
         <body>
             <div class="btn-print-bar">
-                <span style="font-size: 12px; font-weight: 700;">Guia Dupla Oficial (Folha Única A4 — 1ª Via Armazém / 2ª Via Portaria)</span>
+                <span style="font-size: 13px; font-weight: 800; letter-spacing: 0.02em;">Guia Dupla Oficial (Folha Única A4 — 1ª Via Armazém / 2ª Via Portaria)</span>
                 <button class="btn-print" onclick="window.print()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
                     Imprimir Guia Dupla
                 </button>
             </div>

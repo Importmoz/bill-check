@@ -511,10 +511,36 @@ router.post('/sheet/update', async (req, res) => {
 
     const auth = await getGoogleAuth();
     const sheets = google.sheets({ version: 'v4', auth });
-    const response = await sheets.spreadsheets.values.update({
-      spreadsheetId, range: range || 'A1', valueInputOption: 'USER_ENTERED', resource: { values }
-    });
-    res.json(response.data);
+    try {
+      const response = await sheets.spreadsheets.values.update({
+        spreadsheetId, range: range || 'A1', valueInputOption: 'USER_ENTERED', resource: { values }
+      });
+      return res.json(response.data);
+    } catch (updateErr) {
+      if (updateErr.message && updateErr.message.includes('Unable to parse range')) {
+        console.warn('[BACKEND] Erro de range no update único. Tentando resolver sheetTitle real...', updateErr.message);
+        try {
+          const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties(title))' });
+          const actualSheetTitle = meta.data.sheets?.[0]?.properties?.title;
+          if (actualSheetTitle) {
+            const parts = (range || 'A1').split('!');
+            const cellRef = parts.length > 1 ? parts[1] : parts[0];
+            const safeTitle = (actualSheetTitle.includes(' ') || actualSheetTitle.includes('-') || /\W/.test(actualSheetTitle))
+              ? `'${actualSheetTitle.replace(/'/g, "''")}'`
+              : actualSheetTitle;
+            const fixedRange = `${safeTitle}!${cellRef}`;
+            const retryRes = await sheets.spreadsheets.values.update({
+              spreadsheetId, range: fixedRange, valueInputOption: 'USER_ENTERED', resource: { values }
+            });
+            console.log('[BACKEND] Update único recuperado com sucesso com sheetTitle real!');
+            return res.json(retryRes.data);
+          }
+        } catch (retryErr) {
+          console.error('[BACKEND] Falha na recuperação de sheetTitle:', retryErr.message);
+        }
+      }
+      throw updateErr;
+    }
   } catch (error) {
     console.error('SERVER ERROR (Sheet Update):', error.message);
     if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
@@ -535,14 +561,51 @@ router.post('/sheet/batch-update', async (req, res) => {
     const sheets = google.sheets({ version: 'v4', auth });
     
     console.log(`[BACKEND] Executando batchUpdate de planilhas. Total de ranges: ${data.length}`);
-    const response = await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId,
-      resource: {
-        valueInputOption: 'USER_ENTERED',
-        data: data
+    try {
+      const response = await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        resource: {
+          valueInputOption: 'USER_ENTERED',
+          data: data
+        }
+      });
+      return res.json(response.data);
+    } catch (batchErr) {
+      if (batchErr.message && batchErr.message.includes('Unable to parse range')) {
+        console.warn('[BACKEND] Erro de range no batchUpdate. Tentando resolver sheetTitle real...', batchErr.message);
+        try {
+          const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties(title))' });
+          const actualSheetTitle = meta.data.sheets?.[0]?.properties?.title;
+          if (actualSheetTitle) {
+            console.log(`[BACKEND] Substituindo sheetTitle pelo título real '${actualSheetTitle}' e reenviando batch...`);
+            const fixedData = data.map(item => {
+              if (!item || !item.range) return item;
+              const parts = item.range.split('!');
+              const cellRef = parts.length > 1 ? parts[1] : parts[0];
+              const safeTitle = (actualSheetTitle.includes(' ') || actualSheetTitle.includes('-') || /\W/.test(actualSheetTitle))
+                ? `'${actualSheetTitle.replace(/'/g, "''")}'`
+                : actualSheetTitle;
+              return {
+                ...item,
+                range: `${safeTitle}!${cellRef}`
+              };
+            });
+            const retryRes = await sheets.spreadsheets.values.batchUpdate({
+              spreadsheetId,
+              resource: {
+                valueInputOption: 'USER_ENTERED',
+                data: fixedData
+              }
+            });
+            console.log('[BACKEND] BatchUpdate recuperado com sucesso com sheetTitle real!');
+            return res.json(retryRes.data);
+          }
+        } catch (retryErr) {
+          console.error('[BACKEND] Falha na recuperação de sheetTitle:', retryErr.message);
+        }
       }
-    });
-    res.json(response.data);
+      throw batchErr;
+    }
   } catch (error) {
     console.error('SERVER ERROR (Sheet Batch Update):', error.message);
     if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);

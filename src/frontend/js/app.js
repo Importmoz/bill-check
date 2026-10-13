@@ -2538,11 +2538,18 @@ async function saveConfirmToSheet() {
             }
         }
 
-        let rawSheetName = 'Folha1';
-        if (api.state.confirm.range && api.state.confirm.range.includes('!')) {
+        let rawSheetName = api.state.confirm?.sheetTitle || 'Sheet1';
+        if (api.state.confirm?.range && api.state.confirm.range.includes('!')) {
             rawSheetName = api.state.confirm.range.split('!')[0];
         }
-        const cleanSheetName = rawSheetName.replace(/^'+|'+$/g, '').trim();
+        let cleanSheetName = rawSheetName.replace(/^'+|'+$/g, '').trim();
+        if (!cleanSheetName || cleanSheetName.toUpperCase() === 'FOLHA1') {
+            if (api.state.confirm?.sheetTitle && api.state.confirm.sheetTitle.toUpperCase() !== 'FOLHA1') {
+                cleanSheetName = api.state.confirm.sheetTitle;
+            } else {
+                cleanSheetName = 'Sheet1';
+            }
+        }
         const prefixClean = cleanSheetName ? `'${cleanSheetName.replace(/'/g, "''")}'!` : '';
         const targetRowIndex = currentConfirmRow.index;
         const rowNum = targetRowIndex + 1;

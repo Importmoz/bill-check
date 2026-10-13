@@ -5586,3 +5586,108 @@ STDOUT: [
 STDERR: DEBUG: Banco Detetado: BIM
 DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
 
+2026-10-13T07:58:02.674Z - INFO: Arquivo extraído bank_797d76cc-958b-406d-adad-b54140b1e9bb_Movimentos_de_Conta_-_1086059371008.xlsx
+STDOUT: [
+  {
+    "date": "2026-10-12 00:00:00",
+    "bank": "STB",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "1086059371008",
+    "description": "Trf. Recebida Internet Banking   Internet Banking",
+    "reference": "FT26285Y5YQD\\S13",
+    "amount": 1100.0,
+    "balance": 2207739.1,
+    "signature": "cbb42d136d0de14ba52eb6bc6e7ca29595c9c4f90fc9d7dda22167027047ac68",
+    "order_id": "A",
+    "reconciled": false
+  },
+  {
+    "date": "2026-10-12 00:00:00",
+    "ba...
+STDERR: C:\Users\Henriques Arrone\AppData\Local\hermes\hermes-agent\venv\Lib\site-packages\openpyxl\styles\stylesheet.py:237: UserWarning: Workbook contains no default style, apply openpyxl's default
+  warn("Workbook contains no default style, apply openpyxl's default")
+DEBUG: Banco Detetado: STB
+DEBUG: Colunas Mapeadas -> Data: DATA, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: REFERENCIA
+
+2026-10-13T07:58:14.163Z - INFO: Arquivo extraído bank_6e849896-fafc-40e3-aa23-eff6500b721f_Extrato_75470366_12-10-26_13-10-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-10-12 00:00:00",
+    "bank": "BIM",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "75470366",
+    "description": "IZI TRANSFER P/ 382228889Ref. 261012173518779C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1100.0,
+    "balance": 1100.35,
+    "signature": "865b7702d3d1f2e462b00b536f11eade262401fbc008ea449db0ee08446f9a1c",
+    "order_id": "",
+    "reconciled": false...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-10-13T07:58:25.568Z - INFO: Arquivo extraído bank_fedaaefc-048b-468d-82e1-b9b51d784f49_Extrato_330788916_12-10-26_13-10-26.xlsx
+STDOUT: [
+  {
+    "date": "2026-10-13 00:00:00",
+    "bank": "BIM",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "330788916",
+    "description": "IZI TRANSFER P/ 1234421128Ref. 261013084001338C\u00f3digo do Canal SCI SZNome do Canal SCI SMARTIZIC\u00f3digo Transac\u00e7\u00e3o SCI NP",
+    "reference": "",
+    "amount": 1100.0,
+    "balance": 166339.55,
+    "signature": "ff7a4e9deba950c3040fb07b30827d896bea31063699d0e712dbe7b65e060833",
+    "order_id": "",
+    "reconci...
+STDERR: DEBUG: Banco Detetado: BIM
+DEBUG: Colunas Mapeadas -> Data: DATA DA TRANSACAO, Desc: DESCRICAO, Valor: None, Saldo: SALDO, Ref: None
+
+2026-10-13T07:58:52.253Z - INFO: Arquivo extraído bank_d097e509-11a6-4f4b-93ca-ed6a661816b2_85da903f-dd74-4103-8e13-cb22c2f8eaf0.xls
+STDOUT: [
+  {
+    "date": "2026-10-09 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FILIPE CHITOFO",
+    "account_number": "18909451710002",
+    "description": "P24-Transf.Rec. 0847586166",
+    "reference": "447777381",
+    "amount": 46158.0,
+    "balance": 114039.04,
+    "signature": "9caad38f0b5382a34ccf20b9541f56565e98bda40af0dffe39e9478131f68a19",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-10-09 00:00:00",
+    "bank": "BCI",
+    "account_owner": "FI...
+STDERR: DEBUG: Diagn�stico de bank_d097e509-11a6-4f4b-93ca-ed6a661816b2_85da903f-dd74-4103-8e13-cb22c2f8eaf0.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
+2026-10-13T07:59:02.429Z - INFO: Arquivo extraído bank_885216e4-51fb-4437-80a0-24d19036f18e_6171a920-0add-4ffd-8e3b-81f71390dd93.xls
+STDOUT: [
+  {
+    "date": "2026-10-09 00:00:00",
+    "bank": "BCI",
+    "account_owner": "JUPITER LOGISTICS LDA",
+    "account_number": "15466194210001",
+    "description": "P24-Transf.Rec. 0876088419",
+    "reference": "447050372",
+    "amount": 1100.0,
+    "balance": 1671664.06,
+    "signature": "b2b25e500b1354d395b05339acc5f020f63b1520d3a5aa3fa1000f5ab2a6b9b9",
+    "order_id": "",
+    "reconciled": false
+  },
+  {
+    "date": "2026-10-09 00:00:00",
+    "bank": "BCI",
+    "account_owne...
+STDERR: DEBUG: Diagn�stico de bank_885216e4-51fb-4437-80a0-24d19036f18e_6171a920-0add-4ffd-8e3b-81f71390dd93.xls (Primeiras 5 linhas):
+DEBUG: Banco detetado via conte�do global: BCI
+DEBUG: Banco Detetado: BCI
+DEBUG: Colunas Mapeadas -> Data: DATA MOV., Desc: DESCRICAO, Valor: VALOR, Saldo: SALDO, Ref: NUMERO DE DOCUMENTO
+
