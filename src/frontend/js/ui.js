@@ -9111,19 +9111,29 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             Reabrir
                         </button>
                         <button onclick="ui.printDeliveryNote()" 
-                            class="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia Dupla (Armazém e Portaria)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Emitir Guia Dupla
+                            class="flex-1 py-2 px-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia Dupla (Pré-visualização Oficial)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                            Guia Dupla
+                        </button>
+                        <button onclick="ui.directPrintDeliveryNote()" 
+                            class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                            ⚡ Direto
                         </button>
                     </div>
                 `;
             } else {
                 buttonsHtml = `
-                    <div class="${btnSpan}">
+                    <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
                         <button onclick="ui.printDeliveryNote()" 
-                            class="w-full py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia Dupla (Armazém e Portaria)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Emitir Guia Dupla
+                            class="flex-1 py-2 px-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia Dupla (Pré-visualização Oficial)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                            Guia Dupla
+                        </button>
+                        <button onclick="ui.directPrintDeliveryNote()" 
+                            class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                            ⚡ Direto
                         </button>
                     </div>
                 `;
@@ -9138,10 +9148,17 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             Gravar
                         </button>
                         <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: A entrega não está autorizada.\', \'warning\')'}" 
-                            class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Armazém e Portaria)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Emitir Guia Dupla
+                            class="flex-1 py-2 px-2.5 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Pré-visualização Oficial)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                            Guia Dupla
                         </button>
+                        ${canEmitGuia ? `
+                        <button onclick="ui.directPrintDeliveryNote()" 
+                            class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                            ⚡ Direto
+                        </button>
+                        ` : ''}
                     </div>
                 `;
             } else {
@@ -9159,10 +9176,17 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             Entregue
                         </button>
                         <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: A entrega não está autorizada.\', \'warning\')'}" 
-                            class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Armazém e Portaria)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Emitir Guia Dupla
+                            class="flex-1 py-2 px-2.5 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Pré-visualização Oficial)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                            Guia Dupla
                         </button>
+                        ${canEmitGuia ? `
+                        <button onclick="ui.directPrintDeliveryNote()" 
+                            class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                            ⚡ Direto
+                        </button>
+                        ` : ''}
                     </div>
                 `;
             }
@@ -9736,10 +9760,12 @@ export function toggleIsencaoFields(checkbox) {
 }
 
 /**
- * Abre o ecrã de impressão para emissão de Guia de Entrega
+ * Abre o ecrã de impressão para emissão de Guia de Entrega (ou imprime silenciosamente se silentDirect = true)
+ * @param {Object} [clientParam] - Cliente ativo
+ * @param {boolean} [silentDirect=false] - Se true, imprime direto no computador partilhado sem popup
  */
-export function printDeliveryNote() {
-    const client = window.currentActiveClient;
+export async function printDeliveryNote(clientParam = null, silentDirect = false) {
+    const client = clientParam || window.currentActiveClient;
     if (!client) return;
 
     const projectName = document.getElementById('confirm-project-active-name')?.textContent || 'PROJETO';
@@ -10067,6 +10093,112 @@ export function printDeliveryNote() {
             </div>
         `;
     };
+
+    if (silentDirect) {
+        // Modo Impressão Silenciosa Direta no Computador Partilhado (192.168.88.10)
+        const tempContainer = document.createElement('div');
+        tempContainer.style.position = 'fixed';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.top = '0';
+        tempContainer.style.width = '210mm';
+        tempContainer.style.background = '#ffffff';
+        tempContainer.style.zIndex = '-9999';
+        tempContainer.style.overflow = 'hidden';
+
+        const styleEl = document.createElement('style');
+        styleEl.textContent = `
+            @page { size: A4 portrait; margin: 4mm 6mm; }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: #000000; line-height: 1.35; background: #ffffff; }
+            .page-wrapper { width: 210mm; max-width: 210mm; height: 288mm; max-height: 288mm; margin: 0 auto; background: white; padding: 4mm 6mm; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; }
+            .guia-half { position: relative; height: 48.5%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 1.5px solid #000000; border-radius: 6px; padding: 8px 12px; background: #ffffff; }
+            .watermark-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 330px; height: 330px; opacity: 0.11; pointer-events: none; z-index: 0; display: flex; align-items: center; justify-content: center; }
+            .watermark-bg img { width: 100%; height: 100%; object-fit: contain; }
+            .header, .details-grid, .guia-table, .note-box, .signatures { position: relative; z-index: 1; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000000; padding-bottom: 5px; margin-bottom: 5px; }
+            .logo-section { display: flex; align-items: center; gap: 10px; }
+            .header-logo { width: 48px; height: 48px; object-fit: contain; }
+            .company-title { margin: 0; color: #000000; font-size: 20px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.1; }
+            .company-sub { font-size: 10px; color: #111827; font-weight: 700; line-height: 1.35; margin-top: 2px; }
+            .doc-info { text-align: right; }
+            .doc-info h2 { margin: 0; color: #000000; font-size: 18px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.1; }
+            .via-badge { display: inline-block; font-size: 11px; font-weight: 900; padding: 3px 10px; border-radius: 4px; letter-spacing: 0.03em; text-transform: uppercase; margin-top: 2px; }
+            .guia-no { font-size: 13px; font-weight: 800; color: #000000; margin: 2px 0 0 0; }
+            .guia-meta { font-size: 10.5px; color: #111827; margin: 1px 0 0 0; font-weight: 700; }
+            .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 5px; }
+            .card { border: 1.5px solid #1e293b; padding: 6px 10px; border-radius: 6px; background: #ffffff; }
+            .card h3 { margin: 0 0 4px 0; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #000000; letter-spacing: 0.04em; border-bottom: 1.5px solid #64748b; padding-bottom: 2px; }
+            .card p { margin: 2.5px 0; font-size: 11.5px; font-weight: 700; color: #000000; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+            .card .lbl { color: #1e293b; font-weight: 800; font-size: 11px; white-space: nowrap; flex-shrink: 0; }
+            .card .val { color: #000000; font-weight: 900; text-align: right; font-size: 12px; word-break: break-word; }
+            .card .viatura-val { color: #000000; font-weight: 900; font-size: 12px; }
+            .guia-table { width: 100%; border-collapse: collapse; margin-bottom: 5px; border: 2px solid #000000; border-radius: 4px; overflow: hidden; }
+            .guia-table th { background: #e2e8f0; padding: 5px 8px; text-align: left; font-size: 11px; text-transform: uppercase; font-weight: 900; color: #000000; border-bottom: 2px solid #000000; border-right: 1px solid #475569; }
+            .guia-table th:last-child { border-right: none; }
+            .guia-table td { padding: 5px 8px; font-size: 12px; font-weight: 800; border-bottom: 1px solid #64748b; border-right: 1px solid #cbd5e1; color: #000000; vertical-align: middle; }
+            .guia-table td:last-child { border-right: none; }
+            .td-desc strong { font-weight: 900; color: #000000; font-size: 12.5px; }
+            .orders-desc { font-size: 11px; color: #000000; font-weight: 700; margin-top: 1px; }
+            .td-num { text-align: center; font-size: 13.5px; font-weight: 900; color: #000000; }
+            .td-action { text-align: center; padding: 4px 6px !important; }
+            .write-line { display: inline-block; min-width: 75px; border-bottom: 2px dashed #000000; height: 18px; vertical-align: bottom; margin-right: 3px; }
+            .vol-unit { font-size: 11px; color: #000000; font-weight: 900; }
+            .totals-row { background: #f1f5f9; border-top: 2px solid #000000; }
+            .totals-row td { border-bottom: none; padding: 5px 8px; font-size: 12.5px; }
+            .td-manual { text-align: center; font-size: 10.5px; color: #1e293b; font-weight: 800; font-style: italic; }
+            .note-box { font-size: 11px; color: #000000; font-weight: 700; border: 1px solid #cbd5e1; border-left-width: 4.5px; padding: 5px 12px; line-height: 1.4; margin: 3px 0 5px 0; background: #f8fafc; border-radius: 0 4px 4px 0; }
+            .note-box strong { font-weight: 900; color: #000000; }
+            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 4px; }
+            .sig-box { border-top: 2px solid #000000; padding-top: 4px; text-align: center; }
+            .sig-box p { margin: 0; font-size: 12px; font-weight: 900; color: #000000; }
+            .sig-box span { font-size: 10.5px; font-weight: 700; color: #1e293b; }
+            .cut-separator { height: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #000000; font-size: 10px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; user-select: none; margin: 2px 0; }
+            .cut-line { flex: 1; border-top: 1.5px dashed #475569; }
+            .cut-scissors { font-size: 14px; color: #000000; }
+        `;
+        tempContainer.appendChild(styleEl);
+
+        const wrapperDiv = document.createElement('div');
+        wrapperDiv.id = 'guia-page-wrapper';
+        wrapperDiv.className = 'page-wrapper';
+        wrapperDiv.innerHTML = `
+            ${generateViaHtml('ARMAZEM')}
+            <div class="cut-separator">
+                <span class="cut-scissors">✂</span>
+                <div class="cut-line"></div>
+                <span>DESTAQUE AQUI — 1ª VIA RETIDA NO ARMAZÉM / 2ª VIA RETIDA NA PORTARIA</span>
+                <div class="cut-line"></div>
+                <span class="cut-scissors">✂</span>
+            </div>
+            ${generateViaHtml('PORTARIA')}
+        `;
+        tempContainer.appendChild(wrapperDiv);
+        document.body.appendChild(tempContainer);
+
+        try {
+            toast('⚡ A renderizar PDF de alta resolução da Guia Dupla...', 'info');
+            const fileBase64 = await printService.elementToPdfBase64(wrapperDiv, window);
+            const targetPrinter = printService.getSelectedPrinter() || 'Armazem print';
+            toast(`⚡ A enviar para a impressora [${targetPrinter}] no computador partilhado...`, 'info');
+
+            const res = await printService.printDocument({
+                nome: `Guia_Dupla_${guiaNumber}.pdf`,
+                arquivoBase64: fileBase64,
+                impressora: targetPrinter
+            });
+
+            toast(`✅ Guia Dupla (${guiaNumber}) impressa com sucesso no Armazém [${res.impressora || targetPrinter}]!`, 'success');
+        } catch (err) {
+            console.error('[ERRO DIRECT PRINT]', err);
+            toast(`Erro na impressão direta: ${err.message}. A abrir visualização...`, 'error');
+            printDeliveryNote(client, false);
+        } finally {
+            if (tempContainer.parentNode) {
+                tempContainer.parentNode.removeChild(tempContainer);
+            }
+        }
+        return;
+    }
 
     const printWindow = window.open('', '_blank', 'width=940,height=980');
     if (!printWindow) {
@@ -10791,6 +10923,26 @@ export function printDeliveryNote() {
                     const serverUrl = getServerUrl();
                     const token = getApiToken();
 
+                    // 1. Tentar diretamente no computador partilhado (192.168.88.10:5000)
+                    try {
+                        const controller = new AbortController();
+                        const to = setTimeout(() => controller.abort(), 2500);
+                        const h = {};
+                        if (token) h['Authorization'] = 'Bearer ' + token;
+                        const directRes = await fetch(serverUrl + '/api/status', { method: 'GET', headers: h, signal: to });
+                        clearTimeout(to);
+                        if (directRes.ok) {
+                            const data = await directRes.json();
+                            badge.className = 'server-badge badge-online';
+                            text.textContent = 'Online (' + (data.total_impressoras || 'Rede') + ' imp.)';
+                            badge.title = 'Conectado diretamente ao computador partilhado: ' + serverUrl;
+                            return true;
+                        }
+                    } catch (e) {
+                        // Prossegue para o proxy se o navegador restringir directo
+                    }
+
+                    // 2. Fallback via proxy backend do servidor web
                     try {
                         const params = new URLSearchParams({ serverUrl });
                         if (token) params.set('token', token);
@@ -10799,7 +10951,7 @@ export function printDeliveryNote() {
                         if (data.ok) {
                             badge.className = 'server-badge badge-online';
                             text.textContent = 'Online (' + (data.total_impressoras || 'Rede') + ' imp.)';
-                            badge.title = 'Servidor activo: ' + serverUrl;
+                            badge.title = 'Servidor activo via proxy: ' + serverUrl;
                             return true;
                         } else {
                             badge.className = 'server-badge badge-offline';
@@ -10822,33 +10974,56 @@ export function printDeliveryNote() {
                     const serverUrl = getServerUrl();
                     const token = getApiToken();
 
+                    let printers = null;
+                    let padrao = null;
+
+                    // 1. Tentar diretamente no computador partilhado
                     try {
-                        const params = new URLSearchParams({ serverUrl });
-                        if (token) params.set('token', token);
-                        const res = await fetch('/api/print/impressoras?' + params.toString());
-                        const data = await res.json();
-
-                        if (data.ok && data.impressoras && data.impressoras.length > 0) {
-                            select.innerHTML = '';
-                            const saved = getSelectedPrinter();
-                            const defaultTarget = saved || data.padrao || data.impressoras[0];
-
-                            data.impressoras.forEach(p => {
-                                const opt = document.createElement('option');
-                                opt.value = p;
-                                opt.textContent = p + (p === data.padrao ? ' ★ (Predefinida)' : '');
-                                if (p === defaultTarget) opt.selected = true;
-                                select.appendChild(opt);
-                            });
-                            localStorage.setItem(PRINTER_STORAGE_KEY, select.value);
-                            if (window.opener?.printService) {
-                                window.opener.printService.setSelectedPrinter(select.value);
-                            }
-                        } else {
-                            select.innerHTML = '<option value="">Nenhuma impressora disponível</option>';
+                        const controller = new AbortController();
+                        const to = setTimeout(() => controller.abort(), 3500);
+                        const h = {};
+                        if (token) h['Authorization'] = 'Bearer ' + token;
+                        const directRes = await fetch(serverUrl + '/api/impressoras', { method: 'GET', headers: h, signal: to });
+                        clearTimeout(to);
+                        if (directRes.ok) {
+                            const data = await directRes.json();
+                            printers = data.impressoras;
+                            padrao = data.padrao;
                         }
-                    } catch (e) {
-                        select.innerHTML = '<option value="">Servidor offline</option>';
+                    } catch (e) {}
+
+                    // 2. Fallback via proxy backend
+                    if (!printers) {
+                        try {
+                            const params = new URLSearchParams({ serverUrl });
+                            if (token) params.set('token', token);
+                            const res = await fetch('/api/print/impressoras?' + params.toString());
+                            const data = await res.json();
+                            if (data.ok && data.impressoras) {
+                                printers = data.impressoras;
+                                padrao = data.padrao;
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (printers && printers.length > 0) {
+                        select.innerHTML = '';
+                        const saved = getSelectedPrinter();
+                        const defaultTarget = saved || padrao || printers[0];
+
+                        printers.forEach(p => {
+                            const opt = document.createElement('option');
+                            opt.value = p;
+                            opt.textContent = p + (p === padrao ? ' ★ (Predefinida)' : '');
+                            if (p === defaultTarget) opt.selected = true;
+                            select.appendChild(opt);
+                        });
+                        localStorage.setItem(PRINTER_STORAGE_KEY, select.value);
+                        if (window.opener?.printService) {
+                            window.opener.printService.setSelectedPrinter(select.value);
+                        }
+                    } else {
+                        select.innerHTML = '<option value="">Nenhuma impressora disponível</option>';
                     }
                 }
 
@@ -10891,7 +11066,7 @@ export function printDeliveryNote() {
                             windowWidth: 1200
                         });
 
-                        btn.innerHTML = '<span>⚡ A enviar para impressora...</span>';
+                        btn.innerHTML = '<span>⚡ A enviar para o computador partilhado...</span>';
 
                         let fileBase64 = '';
                         let fileName = 'Guia_Dupla_${guiaNumber}.pdf';
@@ -10909,32 +11084,68 @@ export function printDeliveryNote() {
                             pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
                             fileBase64 = pdf.output('datauristring').split(',')[1];
                         } else {
-                            // Fallback como imagem PNG de alta resolução
                             fileBase64 = canvas.toDataURL('image/png').split(',')[1];
                             fileName = 'Guia_Dupla_${guiaNumber}.png';
                         }
 
-                        // 3. Enviar para a API de impressão
-                        const payload = {
-                            serverUrl,
-                            impressora: selectedPrinter,
-                            nome: fileName,
-                            arquivo: fileBase64,
-                            token
-                        };
+                        let printSuccess = false;
+                        let printerUsed = selectedPrinter;
 
-                        const res = await fetch('/api/print/imprimir', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
+                        // 3. Tentar envio direto ao computador partilhado (192.168.88.10:5000)
+                        try {
+                            const controller = new AbortController();
+                            const to = setTimeout(() => controller.abort(), 35000);
+                            const h = { 'Content-Type': 'application/json' };
+                            if (token) h['Authorization'] = 'Bearer ' + token;
 
-                        const respData = await res.json();
-                        if (!res.ok || !respData.sucesso) {
-                            throw new Error(respData.erro || 'Falha ao processar a impressão no servidor.');
+                            const directRes = await fetch(serverUrl + '/api/imprimir', {
+                                method: 'POST',
+                                headers: h,
+                                body: JSON.stringify({
+                                    nome: fileName,
+                                    arquivo: fileBase64,
+                                    impressora: selectedPrinter
+                                }),
+                                signal: controller.signal
+                            });
+                            clearTimeout(to);
+
+                            if (directRes.ok) {
+                                const directData = await directRes.json();
+                                if (directData.sucesso) {
+                                    printSuccess = true;
+                                    printerUsed = directData.impressora || selectedPrinter;
+                                }
+                            }
+                        } catch (directErr) {
+                            console.warn('[PrintWindow] Envio direto falhou, usando proxy backend...', directErr.message);
                         }
 
-                        showNotice('✅ Impresso com sucesso na impressora: ' + (respData.impressora || selectedPrinter), 'success');
+                        // 4. Se falhou direto, enviar via proxy backend do servidor web
+                        if (!printSuccess) {
+                            const payload = {
+                                serverUrl,
+                                impressora: selectedPrinter,
+                                nome: fileName,
+                                arquivo: fileBase64,
+                                token
+                            };
+
+                            const res = await fetch('/api/print/imprimir', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+
+                            const respData = await res.json();
+                            if (!res.ok || !respData.sucesso) {
+                                throw new Error(respData.erro || 'Falha ao processar a impressão no servidor.');
+                            }
+                            printSuccess = true;
+                            printerUsed = respData.impressora || selectedPrinter;
+                        }
+
+                        showNotice('✅ Impresso com sucesso na impressora: ' + printerUsed + ' (' + serverUrl + ')', 'success');
                     } catch (err) {
                         console.error('[ERRO IMPRESSÃO]', err);
                         showNotice('❌ ' + err.message, 'error');
@@ -10959,19 +11170,42 @@ export function printDeliveryNote() {
                     const token = document.getElementById('cfg-server-token').value.trim();
                     showNotice('A testar conexão com ' + url + '...', 'info');
 
-                    const params = new URLSearchParams({ serverUrl: url });
-                    if (token) params.set('token', token);
+                    let connected = false;
+                    let padrao = null;
 
+                    // 1. Tentar direto no computador partilhado
                     try {
-                        const res = await fetch('/api/print/status?' + params.toString());
-                        const data = await res.json();
-                        if (data.ok) {
-                            showNotice('✅ Conexão bem-sucedida! Impressora: ' + (data.impressora_padrao || 'Predefinida'), 'success');
-                        } else {
-                            showNotice('❌ Falha: ' + (data.error || 'Servidor inacessível'), 'error');
+                        const controller = new AbortController();
+                        const to = setTimeout(() => controller.abort(), 2500);
+                        const h = {};
+                        if (token) h['Authorization'] = 'Bearer ' + token;
+                        const directRes = await fetch(url + '/api/status', { method: 'GET', headers: h, signal: to });
+                        clearTimeout(to);
+                        if (directRes.ok) {
+                            const data = await directRes.json();
+                            connected = true;
+                            padrao = data.impressora_padrao;
                         }
-                    } catch (e) {
-                        showNotice('❌ Erro: ' + e.message, 'error');
+                    } catch (e) {}
+
+                    // 2. Fallback proxy backend
+                    if (!connected) {
+                        try {
+                            const params = new URLSearchParams({ serverUrl: url });
+                            if (token) params.set('token', token);
+                            const res = await fetch('/api/print/status?' + params.toString());
+                            const data = await res.json();
+                            if (data.ok) {
+                                connected = true;
+                                padrao = data.impressora_padrao;
+                            }
+                        } catch (e) {}
+                    }
+
+                    if (connected) {
+                        showNotice('✅ Conexão bem-sucedida! Impressora padrão: ' + (padrao || 'Predefinida'), 'success');
+                    } else {
+                        showNotice('❌ Falha: Computador partilhado inacessível em ' + url, 'error');
                     }
                 }
 
@@ -11007,7 +11241,7 @@ export function printDeliveryNote() {
 }
 
 /**
- * Imprime a Guia Dupla diretamente na impressora de rede sem abrir janela de pré-visualização
+ * Imprime a Guia Dupla diretamente no computador partilhado de impressão (192.168.88.10) sem abrir popup
  * @param {Object} [client] - Cliente ativo (opcional, padrão window.currentActiveClient)
  */
 export async function directPrintDeliveryNote(client = null) {
@@ -11018,34 +11252,17 @@ export async function directPrintDeliveryNote(client = null) {
     }
 
     try {
-        toast('⚡ A preparar Guia Dupla e a enviar para a impressora de rede...', 'info');
-        
-        // Criar elemento temporário fora do ecrã para renderização idêntica
-        const tempContainer = document.createElement('div');
-        tempContainer.style.position = 'fixed';
-        tempContainer.style.left = '-9999px';
-        tempContainer.style.top = '0';
-        tempContainer.style.width = '210mm';
-        tempContainer.style.background = '#ffffff';
-        tempContainer.style.zIndex = '-1';
-        document.body.appendChild(tempContainer);
-
-        // Usar a mesma lógica para gerar o conteúdo
-        // Disparar o printDeliveryNote normalmente se o utilizador desejar preview,
-        // mas aqui vamos gerar a base64 diretamente via printService
-        toast('A carregar impressora predefinida...', 'info');
+        toast('⚡ A contactar computador de impressão (192.168.88.10)...', 'info');
         const status = await printService.checkStatus();
         if (!status.ok) {
-            document.body.removeChild(tempContainer);
-            toast('Servidor de impressão offline. A abrir pré-visualização da Guia...', 'warning');
-            printDeliveryNote();
+            toast('Computador de impressão offline. A abrir pré-visualização da Guia...', 'warning');
+            await printDeliveryNote(targetClient, false);
             return;
         }
 
-        // Abrir pré-visualização para o utilizador acompanhar e ter total controlo
-        printDeliveryNote();
+        await printDeliveryNote(targetClient, true);
     } catch (e) {
-        console.error(e);
+        console.error('[directPrintDeliveryNote]', e);
         toast(`Erro na impressão direta: ${e.message}`, 'error');
     }
 }

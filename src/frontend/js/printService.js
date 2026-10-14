@@ -76,11 +76,33 @@ export const printService = {
 
     /**
      * Verifica o estado do servidor de impressão
-     * Usa o proxy do backend para evitar problemas de CORS/Mixed Content
+     * Tenta conexão direta ao computador partilhado e faz fallback para o proxy backend
      */
     async checkStatus(customUrl = null) {
         const serverUrl = customUrl || this.getServerUrl();
         const token = this.getApiToken();
+
+        // 1. Tentar diretamente para o computador partilhado na rede
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 3500);
+            const headers = {};
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            const directRes = await fetch(`${serverUrl}/api/status`, {
+                method: 'GET',
+                headers,
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+            if (directRes.ok) {
+                const data = await directRes.json();
+                return { ok: true, serverUrl, isDirect: true, ...data };
+            }
+        } catch (directErr) {
+            // Falha direta (ex: mixed content ou timeout), prosseguir para proxy backend
+        }
+
+        // 2. Fallback via proxy Express (/api/print/status)
         const params = new URLSearchParams({ serverUrl });
         if (token) params.set('token', token);
 
@@ -109,11 +131,37 @@ export const printService = {
     },
 
     /**
-     * Lista as impressoras disponíveis no servidor
+     * Lista as impressoras disponíveis no servidor (direto ou proxy)
      */
     async getPrinters(customUrl = null) {
         const serverUrl = customUrl || this.getServerUrl();
         const token = this.getApiToken();
+
+        // 1. Tentar direto
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000);
+            const headers = {};
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            const directRes = await fetch(`${serverUrl}/api/impressoras`, {
+                method: 'GET',
+                headers,
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+            if (directRes.ok) {
+                const data = await directRes.json();
+                return {
+                    ok: true,
+                    impressoras: data.impressoras || [],
+                    padrao: data.padrao || null,
+                    serverUrl,
+                    isDirect: true
+                };
+            }
+        } catch (directErr) {}
+
+        // 2. Fallback via proxy
         const params = new URLSearchParams({ serverUrl });
         if (token) params.set('token', token);
 
@@ -143,10 +191,10 @@ export const printService = {
     /**
      * Envia documento para imprimir diretamente na impressora de rede
      * @param {Object} options
-     * @param {string} options.nome - Nome do ficheiro com extensão (ex: 'guia_dupla.pdf' ou 'guia.png')
-     * @param {string} options.arquivoBase64 - String base64 limpa (sem o prefixo data:...;base64,)
-     * @param {string} [options.impressora] - Nome da impressora (opcional)
-     * @param {string} [options.serverUrl] - URL do servidor (opcional)
+     * @param {string} options.nome - Nome do ficheiro com extensão
+     * @param {string} options.arquivoBase64 - String base64
+     * @param {string} [options.impressora] - Nome da impressora
+     * @param {string} [options.serverUrl] - URL do servidor
      */
     async printDocument({ nome, arquivoBase64, impressora = null, serverUrl = null }) {
         const targetServer = serverUrl || this.getServerUrl();
@@ -157,6 +205,36 @@ export const printService = {
             throw new Error('Conteúdo do documento em base64 não fornecido');
         }
 
+        const directPayload = {
+            nome: nome || 'documento.pdf',
+            arquivo: arquivoBase64,
+            impressora: targetPrinter || undefined
+        };
+
+        // 1. Tentar direto para o computador partilhado
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 35000);
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+
+            const directRes = await fetch(`${targetServer}/api/imprimir`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(directPayload),
+                signal: controller.signal
+            });
+            clearTimeout(timeout);
+
+            if (directRes.ok) {
+                const data = await directRes.json();
+                if (data.sucesso) return { ...data, isDirect: true };
+            }
+        } catch (directErr) {
+            console.warn('[PRINT] Envio direto falhou, a tentar via proxy backend...', directErr.message);
+        }
+
+        // 2. Fallback via backend proxy
         const payload = {
             serverUrl: targetServer,
             nome: nome || 'documento.pdf',

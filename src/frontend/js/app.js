@@ -13,6 +13,8 @@ const { state, pb } = api;
 window.ui = ui;
 window.api = api;
 window.printService = printService;
+window.printDeliveryNote = ui.printDeliveryNote;
+window.directPrintDeliveryNote = ui.directPrintDeliveryNote;
 window.handleLogin = handleLogin;
 
 // Inicialização da aplicação (Sendo um módulo, o código corre apenas uma vez e após o parse do DOM)
