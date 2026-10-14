@@ -37,6 +37,71 @@
         </div>
     </div>
 
+    <!-- Card de Configuração de Impressão em Rede -->
+    <div class="mt-8 bg-white rounded-3xl border-2 border-gray-200 overflow-hidden shadow-sm p-8">
+        <div class="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b-2 border-gray-100 gap-4">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center font-black">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"></path><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><path d="M6 14h12v8H6z"></path></svg>
+                </div>
+                <div>
+                    <h2 class="text-xl font-black text-gray-900 uppercase tracking-tight">Servidor de Impressão em Rede</h2>
+                    <p class="text-gray-500 text-xs font-bold uppercase tracking-widest mt-0.5">Impressão Silenciosa e Direta da Guia Dupla e Documentos</p>
+                </div>
+            </div>
+            <div id="settings-printer-status-badge" class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-gray-100 text-gray-500 border border-gray-200 self-start md:self-auto">
+                <span class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
+                <span id="settings-printer-status-text">A verificar servidor...</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6">
+            <div>
+                <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">URL / IP do Servidor de Impressão</label>
+                <div class="flex gap-2">
+                    <input type="text" id="settings-printer-url" placeholder="http://192.168.88.23:5000" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all">
+                </div>
+                <p class="text-[10px] text-gray-400 mt-1 font-semibold">Exemplo: http://192.168.88.23:5000 ou http://localhost:5000</p>
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Impressora Padrão</label>
+                <div class="flex gap-2">
+                    <select id="settings-printer-select" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all bg-white">
+                        <option value="">A carregar impressoras...</option>
+                    </select>
+                    <button type="button" onclick="ui.refreshSettingsPrinters()" class="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-all cursor-pointer" title="Atualizar Lista">
+                        🔄
+                    </button>
+                </div>
+                <p class="text-[10px] text-gray-400 mt-1 font-semibold">Impressora usada para envio silencioso da Guia Dupla</p>
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Token de Segurança (Opcional)</label>
+                <input type="password" id="settings-printer-token" placeholder="Deixar vazio se não configurado" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all">
+                <p class="text-[10px] text-gray-400 mt-1 font-semibold">Corresponde a IMPRESSAO_API_TOKEN no servidor</p>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-4 pt-6 mt-6 border-t border-gray-100">
+            <div class="text-xs text-gray-500 font-semibold flex items-center gap-2">
+                <span>💡 Formatos suportados: <strong>PDF silencioso (renderizado a 300 DPI)</strong>, Imagens (PNG/JPG) e TXT.</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <button type="button" onclick="ui.testPrinterConnection()" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 cursor-pointer">
+                    Testar Conexão
+                </button>
+                <button type="button" onclick="ui.printTestDoc()" class="px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 cursor-pointer">
+                    🖨️ Imprimir Página Teste
+                </button>
+                <button type="button" onclick="ui.savePrinterSettings()" class="px-6 py-2.5 bg-black hover:bg-gray-800 text-white font-bold text-xs uppercase tracking-widest rounded-xl shadow-lg transition-all flex items-center gap-2 cursor-pointer">
+                    Guardar Definições
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modal Adicionar/Editar Utilizador -->
     <div id="modal-user" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4 opacity-0 transition-opacity duration-300">
         <div class="bg-white w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden transform scale-95 transition-transform duration-300">

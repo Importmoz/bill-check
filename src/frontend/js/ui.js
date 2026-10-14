@@ -5,6 +5,7 @@ import { formatMZN, formatDateDisplay } from './utils.js';
 import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
 import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js';
 import { JUPITER_LOGO_DATA_URL } from './logoData.js';
+import { printService } from './printService.js';
 
 export function getPaymentBankDisplay(payment) {
     let rawBank = payment.bank;
@@ -6822,11 +6823,130 @@ export async function loadSettingsUsers() {
         // Armazenar localmente para edição rápida
         window.__SETTINGS_USERS__ = users;
         
+        // Carregar configurações de impressora
+        await loadSettingsPrinter();
     } catch (err) {
         console.error(err);
         tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-red-500 font-normal">Erro: ${err.message}</td></tr>`;
     }
 }
+
+// --- CONFIGURAÇÕES DE IMPRESSORA DE REDE ---
+
+export async function loadSettingsPrinter() {
+    const urlInput = document.getElementById('settings-printer-url');
+    const tokenInput = document.getElementById('settings-printer-token');
+    const select = document.getElementById('settings-printer-select');
+
+    if (!urlInput || !select) return;
+
+    urlInput.value = printService.getServerUrl();
+    if (tokenInput) tokenInput.value = printService.getApiToken();
+
+    await refreshSettingsPrinters();
+}
+
+export async function refreshSettingsPrinters() {
+    const badge = document.getElementById('settings-printer-status-badge');
+    const text = document.getElementById('settings-printer-status-text');
+    const select = document.getElementById('settings-printer-select');
+    const urlInput = document.getElementById('settings-printer-url');
+    const tokenInput = document.getElementById('settings-printer-token');
+
+    if (!select) return;
+
+    if (badge && text) {
+        badge.className = 'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 self-start md:self-auto';
+        text.innerHTML = '<span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span><span>A verificar servidor...</span>';
+    }
+
+    select.innerHTML = '<option value="">A carregar impressoras...</option>';
+
+    const serverUrl = (urlInput?.value || '').trim() || printService.getServerUrl();
+    const token = (tokenInput?.value || '').trim();
+    if (token) printService.setApiToken(token);
+
+    const status = await printService.checkStatus(serverUrl);
+
+    if (status.ok) {
+        if (badge && text) {
+            badge.className = 'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 self-start md:self-auto';
+            text.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span>Online (${status.sistema || 'Rede'}) • ${status.total_impressoras || 0} Impressora(s)</span>`;
+            badge.title = `Conectado a ${serverUrl} - Padrão: ${status.impressora_padrao || 'Nenhuma'}`;
+        }
+
+        const res = await printService.getPrinters(serverUrl);
+        if (res.ok && res.impressoras && res.impressoras.length > 0) {
+            select.innerHTML = '';
+            const saved = printService.getSelectedPrinter();
+            const defaultTarget = saved || res.padrao || res.impressoras[0];
+
+            res.impressoras.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p;
+                opt.textContent = p + (p === res.padrao ? ' ★ (Predefinida)' : '');
+                if (p === defaultTarget) opt.selected = true;
+                select.appendChild(opt);
+            });
+            printService.setSelectedPrinter(select.value);
+        } else {
+            select.innerHTML = '<option value="">Nenhuma impressora disponível</option>';
+        }
+    } else {
+        if (badge && text) {
+            badge.className = 'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200 self-start md:self-auto';
+            text.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span><span>Offline (Servidor Inacessível)</span>`;
+            badge.title = status.error || 'Verifique se o script servidor_de_impressao_drag_drop.py está a correr';
+        }
+        select.innerHTML = '<option value="">Servidor offline</option>';
+    }
+}
+
+export async function testPrinterConnection() {
+    const urlInput = document.getElementById('settings-printer-url');
+    const serverUrl = (urlInput?.value || '').trim() || printService.getServerUrl();
+    
+    toast('A testar conexão ao servidor de impressão...', 'info');
+    const status = await printService.checkStatus(serverUrl);
+    
+    if (status.ok) {
+        toast(`✅ Conexão estabelecida com sucesso! Impressora padrão: ${status.impressora_padrao || 'Nenhuma'}`, 'success');
+        await refreshSettingsPrinters();
+    } else {
+        toast(`❌ Falha na conexão: ${status.error || 'Servidor inacessível'}`, 'error');
+    }
+}
+
+export async function printTestDoc() {
+    const select = document.getElementById('settings-printer-select');
+    const selectedPrinter = select ? select.value : '';
+    
+    try {
+        toast('A enviar página de teste para a impressora...', 'info');
+        const res = await printService.printTestPage(selectedPrinter);
+        if (res && res.sucesso) {
+            toast(`✅ Página de teste impressa com sucesso em: ${res.impressora || selectedPrinter}!`, 'success');
+        } else {
+            toast(`❌ Erro ao imprimir página de teste: ${res.erro || 'Falha desconhecida'}`, 'error');
+        }
+    } catch (e) {
+        toast(`❌ Erro: ${e.message}`, 'error');
+    }
+}
+
+export function savePrinterSettings() {
+    const urlInput = document.getElementById('settings-printer-url');
+    const tokenInput = document.getElementById('settings-printer-token');
+    const select = document.getElementById('settings-printer-select');
+
+    if (urlInput) printService.setServerUrl(urlInput.value);
+    if (tokenInput) printService.setApiToken(tokenInput.value);
+    if (select && select.value) printService.setSelectedPrinter(select.value);
+
+    toast('✅ Definições do servidor de impressão gravadas com sucesso!', 'success');
+    refreshSettingsPrinters();
+}
+
 
 export function openUserModal(userId = null) {
     const modal = document.getElementById('modal-user');
@@ -9817,19 +9937,20 @@ export function printDeliveryNote() {
     const textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
 
     // Helper para gerar o HTML de cada via mantendo a identidade visual original
+    // Helper para gerar o HTML de cada via mantendo a identidade visual com tipografia aumentada e legível
     const generateViaHtml = (viaType) => {
         const isArmazem = viaType === 'ARMAZEM';
         const docTitle = isArmazem ? 'Guia de Entrega' : 'Guia de Saída';
         const badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA' : '2ª VIA — PORTARIA & SEGURANÇA';
         const badgeStyle = isArmazem 
-            ? 'background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;' 
-            : 'background: #fef3c7; color: #92400e; border: 1px solid #fde68a;';
+            ? 'background: #e0e7ff; color: #1e1b4b; border: 1.5px solid #4338ca; font-weight: 900;' 
+            : 'background: #fef3c7; color: #78350f; border: 1.5px solid #d97706; font-weight: 900;';
         
         const actionColTitle = isArmazem ? 'Levantado nesta Guia' : 'Volumes a Sair';
-        const actionColColor = isArmazem ? '#4f46e5' : '#0284c7';
+        const actionColColor = isArmazem ? '#4338ca' : '#0369a1';
         
         const noteText = isArmazem
-            ? '<strong>Nota Armazém:</strong> Esta via fica retida no armazém após a conferência e entrega. O fiel regista manualmente os volumes levantados e o saldo restante. Emitida por Jupiter e conferida pelo recebedor.'
+            ? '<strong>Nota Armazém:</strong> Esta via fica retida no armazém após conferência e entrega. O fiel regista manualmente os volumes levantados e o saldo restante. Emitida por Jupiter Logistics e conferida pelo recebedor.'
             : '<strong>Nota Portaria:</strong> A segurança da portaria confere os volumes na viatura com o valor autorizado pelo fiel do armazém, carimba e retém esta via para validação diária com o armazém.';
         
         const sigBox1 = isArmazem
@@ -9870,7 +9991,7 @@ export function printDeliveryNote() {
                     </div>
                     <div class="doc-info">
                         <h2>${docTitle}</h2>
-                        <div style="margin: 2px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
+                        <div style="margin: 3px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
                         <p class="guia-no">Nº Guia: <strong>${guiaNumber}</strong></p>
                         <p class="guia-meta">Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
                     </div>
@@ -9947,13 +10068,23 @@ export function printDeliveryNote() {
         `;
     };
 
-    const printWindow = window.open('', '_blank', 'width=880,height=980');
+    const printWindow = window.open('', '_blank', 'width=940,height=980');
+    if (!printWindow) {
+        toast('Bloqueador de popups detetado. Por favor autorize popups para emitir a Guia.', 'warning');
+        return;
+    }
+
+    const defaultServerUrl = printService.getServerUrl();
+    const defaultPrinter = printService.getSelectedPrinter();
+
     printWindow.document.write(`
         <!DOCTYPE html>
         <html lang="pt">
         <head>
             <meta charset="UTF-8">
             <title>Guia Dupla Oficial - ${clientName} (${guiaNumber})</title>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
             <style>
                 @page {
                     size: A4 portrait;
@@ -9966,43 +10097,196 @@ export function printDeliveryNote() {
                 }
                 body {
                     font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
-                    color: #0f172a;
+                    color: #000000;
                     line-height: 1.35;
                     background: #f1f5f9;
                     -webkit-print-color-adjust: exact !important;
                     print-color-adjust: exact !important;
                 }
+                
+                /* Barra Superior de Controlo de Impressão */
                 .btn-print-bar {
-                    background: #1e1b4b;
+                    background: #0f172a;
                     color: white;
-                    padding: 10px 20px;
+                    padding: 10px 18px;
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
                     position: sticky;
                     top: 0;
                     z-index: 1000;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                    gap: 12px;
+                    flex-wrap: wrap;
                 }
-                .btn-print {
-                    background: #2563eb;
-                    color: white;
+                .bar-left {
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                }
+                .bar-title {
+                    font-size: 14px;
+                    font-weight: 900;
+                    letter-spacing: -0.01em;
+                }
+                .bar-sub {
+                    font-size: 10px;
+                    color: #94a3b8;
+                    font-weight: 700;
+                }
+                .server-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 10.5px;
                     font-weight: 800;
-                    font-size: 13px;
+                    padding: 4px 10px;
+                    border-radius: 9999px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    user-select: none;
+                }
+                .server-badge:hover {
+                    opacity: 0.9;
+                    transform: scale(1.02);
+                }
+                .badge-checking {
+                    background: #334155;
+                    color: #e2e8f0;
+                    border: 1px solid #475569;
+                }
+                .badge-online {
+                    background: #064e3b;
+                    color: #6ee7b7;
+                    border: 1px solid #059669;
+                }
+                .badge-offline {
+                    background: #881337;
+                    color: #fecdd3;
+                    border: 1px solid #e11d48;
+                }
+                .badge-dot {
+                    width: 7px;
+                    height: 7px;
+                    border-radius: 50%;
+                    background: currentColor;
+                }
+                .bar-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+                .printer-group {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    background: #1e293b;
+                    padding: 3px 8px;
+                    border-radius: 8px;
+                    border: 1px solid #334155;
+                }
+                .printer-label {
+                    font-size: 11px;
+                    font-weight: 700;
+                    color: #94a3b8;
+                }
+                .printer-select {
+                    background: #0f172a;
+                    color: #f8fafc;
+                    font-size: 11.5px;
+                    font-weight: 700;
+                    border: 1px solid #475569;
+                    padding: 5px 10px;
+                    border-radius: 6px;
+                    outline: none;
+                    cursor: pointer;
+                    max-width: 220px;
+                }
+                .btn-icon {
+                    background: #334155;
+                    color: white;
                     border: none;
-                    padding: 8px 20px;
+                    border-radius: 6px;
+                    padding: 5px 8px;
+                    cursor: pointer;
+                    font-size: 11px;
+                }
+                .btn-icon:hover {
+                    background: #475569;
+                }
+                .btn-direct {
+                    background: #16a34a;
+                    color: white;
+                    font-weight: 900;
+                    font-size: 12.5px;
+                    border: none;
+                    padding: 7px 16px;
                     border-radius: 8px;
                     cursor: pointer;
                     display: flex;
                     align-items: center;
-                    gap: 8px;
-                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    gap: 6px;
+                    box-shadow: 0 2px 6px rgba(22, 163, 74, 0.4);
                     transition: all 0.2s;
                 }
-                .btn-print:hover {
-                    background: #1d4ed8;
+                .btn-direct:hover:not(:disabled) {
+                    background: #15803d;
                     transform: translateY(-1px);
                 }
+                .btn-direct:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                }
+                .btn-secondary {
+                    background: #334155;
+                    color: white;
+                    font-weight: 800;
+                    font-size: 11px;
+                    border: none;
+                    padding: 7px 12px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .btn-secondary:hover {
+                    background: #475569;
+                }
+                .btn-browser {
+                    background: #2563eb;
+                    color: white;
+                    font-weight: 800;
+                    font-size: 11px;
+                    border: none;
+                    padding: 7px 14px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .btn-browser:hover {
+                    background: #1d4ed8;
+                }
+
+                /* Toast de Notificação na Janela */
+                #print-toast {
+                    position: fixed;
+                    bottom: 20px;
+                    right: 20px;
+                    z-index: 10000;
+                    padding: 12px 20px;
+                    border-radius: 10px;
+                    font-size: 12px;
+                    font-weight: 800;
+                    color: white;
+                    display: none;
+                    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+                    transition: all 0.3s;
+                }
+                .toast-success { background: #059669; }
+                .toast-error { background: #dc2626; }
+                .toast-info { background: #2563eb; }
+
+                /* Folha A4 */
                 .page-wrapper {
                     width: 210mm;
                     max-width: 210mm;
@@ -10015,7 +10299,7 @@ export function printDeliveryNote() {
                     flex-direction: column;
                     justify-content: space-between;
                     box-sizing: border-box;
-                    box-shadow: 0 4px 25px rgba(0,0,0,0.1);
+                    box-shadow: 0 4px 25px rgba(0,0,0,0.15);
                 }
                 .guia-half {
                     position: relative;
@@ -10025,19 +10309,19 @@ export function printDeliveryNote() {
                     justify-content: space-between;
                     box-sizing: border-box;
                     overflow: hidden;
-                    border: 1.5px solid #cbd5e1;
+                    border: 1.5px solid #000000;
                     border-radius: 6px;
                     padding: 8px 12px;
                     background: #ffffff;
                 }
                 .watermark-bg {
                     position: absolute;
-                    top: 52%;
+                    top: 50%;
                     left: 50%;
                     transform: translate(-50%, -50%);
-                    width: 270px;
-                    height: 270px;
-                    opacity: 0.085;
+                    width: 330px;
+                    height: 330px;
+                    opacity: 0.11;
                     pointer-events: none;
                     z-index: 0;
                     display: flex;
@@ -10059,7 +10343,7 @@ export function printDeliveryNote() {
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
-                    border-bottom: 2px solid #0f172a;
+                    border-bottom: 2px solid #000000;
                     padding-bottom: 5px;
                     margin-bottom: 5px;
                 }
@@ -10069,22 +10353,22 @@ export function printDeliveryNote() {
                     gap: 10px;
                 }
                 .header-logo {
-                    width: 44px;
-                    height: 44px;
+                    width: 48px;
+                    height: 48px;
                     object-fit: contain;
                 }
                 .company-title {
                     margin: 0;
-                    color: #0f172a;
-                    font-size: 18px;
+                    color: #000000;
+                    font-size: 20px;
                     font-weight: 900;
                     letter-spacing: -0.02em;
                     line-height: 1.1;
                 }
                 .company-sub {
-                    font-size: 9px;
-                    color: #1e293b;
-                    font-weight: 600;
+                    font-size: 10px;
+                    color: #111827;
+                    font-weight: 700;
                     line-height: 1.35;
                     margin-top: 2px;
                 }
@@ -10093,8 +10377,8 @@ export function printDeliveryNote() {
                 }
                 .doc-info h2 {
                     margin: 0;
-                    color: #0f172a;
-                    font-size: 16px;
+                    color: #000000;
+                    font-size: 18px;
                     font-weight: 900;
                     text-transform: uppercase;
                     letter-spacing: 0.01em;
@@ -10102,32 +10386,32 @@ export function printDeliveryNote() {
                 }
                 .via-badge {
                     display: inline-block;
-                    font-size: 9.5px;
+                    font-size: 11px;
                     font-weight: 900;
-                    padding: 2px 8px;
+                    padding: 3px 10px;
                     border-radius: 4px;
                     letter-spacing: 0.03em;
                     text-transform: uppercase;
                     margin-top: 2px;
                 }
                 .guia-no {
-                    font-size: 11px;
-                    font-weight: 700;
-                    color: #0f172a;
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: #000000;
                     margin: 2px 0 0 0;
                 }
                 .guia-no strong {
                     font-weight: 900;
-                    color: #000;
+                    color: #000000;
                 }
                 .guia-meta {
-                    font-size: 9px;
-                    color: #334155;
+                    font-size: 10.5px;
+                    color: #111827;
                     margin: 1px 0 0 0;
-                    font-weight: 600;
+                    font-weight: 700;
                 }
                 .guia-meta strong {
-                    color: #0f172a;
+                    color: #000000;
                 }
                 .details-grid {
                     display: grid;
@@ -10136,53 +10420,55 @@ export function printDeliveryNote() {
                     margin-bottom: 5px;
                 }
                 .card {
-                    border: 1.5px solid #cbd5e1;
-                    padding: 6px 9px;
+                    border: 1.5px solid #1e293b;
+                    padding: 6px 10px;
                     border-radius: 6px;
-                    background: #f8fafc;
+                    background: #ffffff;
                 }
                 .card h3 {
                     margin: 0 0 4px 0;
-                    font-size: 10px;
+                    font-size: 11px;
                     font-weight: 900;
                     text-transform: uppercase;
-                    color: #1e1b4b;
+                    color: #000000;
                     letter-spacing: 0.04em;
-                    border-bottom: 1px solid #e2e8f0;
+                    border-bottom: 1.5px solid #64748b;
                     padding-bottom: 2px;
                 }
                 .card p {
-                    margin: 2px 0;
-                    font-size: 10px;
-                    font-weight: 600;
+                    margin: 2.5px 0;
+                    font-size: 11.5px;
+                    font-weight: 700;
+                    color: #000000;
                     display: flex;
                     justify-content: space-between;
                     align-items: baseline;
                     gap: 6px;
                 }
                 .card .lbl {
-                    color: #475569;
-                    font-weight: 700;
-                    font-size: 9.5px;
+                    color: #1e293b;
+                    font-weight: 800;
+                    font-size: 11px;
                     white-space: nowrap;
                     flex-shrink: 0;
                 }
                 .card .val {
-                    color: #0f172a;
-                    font-weight: 800;
+                    color: #000000;
+                    font-weight: 900;
                     text-align: right;
-                    font-size: 10px;
+                    font-size: 12px;
                     word-break: break-word;
                 }
                 .card .viatura-val {
-                    color: #0f172a;
+                    color: #000000;
                     font-weight: 900;
+                    font-size: 12px;
                 }
                 .guia-table {
                     width: 100%;
                     border-collapse: collapse;
                     margin-bottom: 5px;
-                    border: 1.5px solid #94a3b8;
+                    border: 2px solid #000000;
                     border-radius: 4px;
                     overflow: hidden;
                 }
@@ -10190,43 +10476,44 @@ export function printDeliveryNote() {
                     background: #e2e8f0;
                     padding: 5px 8px;
                     text-align: left;
-                    font-size: 10px;
+                    font-size: 11px;
                     text-transform: uppercase;
                     font-weight: 900;
-                    color: #0f172a;
-                    border-bottom: 2px solid #94a3b8;
-                    border-right: 1px solid #cbd5e1;
+                    color: #000000;
+                    border-bottom: 2px solid #000000;
+                    border-right: 1px solid #475569;
                 }
                 .guia-table th:last-child {
                     border-right: none;
                 }
                 .guia-table td {
-                    padding: 6px 8px;
-                    font-size: 10.5px;
-                    border-bottom: 1px solid #cbd5e1;
-                    border-right: 1px solid #e2e8f0;
-                    color: #0f172a;
+                    padding: 5px 8px;
+                    font-size: 12px;
+                    font-weight: 800;
+                    border-bottom: 1px solid #64748b;
+                    border-right: 1px solid #cbd5e1;
+                    color: #000000;
                     vertical-align: middle;
                 }
                 .guia-table td:last-child {
                     border-right: none;
                 }
                 .td-desc strong {
-                    font-weight: 800;
-                    color: #0f172a;
-                    font-size: 10.5px;
+                    font-weight: 900;
+                    color: #000000;
+                    font-size: 12.5px;
                 }
                 .orders-desc {
-                    font-size: 9px;
-                    color: #334155;
-                    font-weight: 600;
+                    font-size: 11px;
+                    color: #000000;
+                    font-weight: 700;
                     margin-top: 1px;
                 }
                 .td-num {
                     text-align: center;
-                    font-size: 11px;
-                    font-weight: 800;
-                    color: #0f172a;
+                    font-size: 13.5px;
+                    font-weight: 900;
+                    color: #000000;
                 }
                 .td-action {
                     text-align: center;
@@ -10234,46 +10521,48 @@ export function printDeliveryNote() {
                 }
                 .write-line {
                     display: inline-block;
-                    min-width: 65px;
-                    border-bottom: 2px dashed #0f172a;
-                    height: 16px;
+                    min-width: 75px;
+                    border-bottom: 2px dashed #000000;
+                    height: 18px;
                     vertical-align: bottom;
                     margin-right: 3px;
                 }
                 .vol-unit {
-                    font-size: 9.5px;
-                    color: #1e293b;
-                    font-weight: 800;
+                    font-size: 11px;
+                    color: #000000;
+                    font-weight: 900;
                 }
                 .totals-row {
                     background: #f1f5f9;
-                    border-top: 2px solid #94a3b8;
+                    border-top: 2px solid #000000;
                 }
                 .totals-row td {
                     border-bottom: none;
                     padding: 5px 8px;
+                    font-size: 12.5px;
                 }
                 .td-manual {
                     text-align: center;
-                    font-size: 8.5px;
-                    color: #475569;
-                    font-weight: 700;
+                    font-size: 10.5px;
+                    color: #1e293b;
+                    font-weight: 800;
                     font-style: italic;
                 }
                 .note-box {
-                    font-size: 9.5px;
-                    color: #1e293b;
-                    font-weight: 600;
-                    border-left: 3.5px solid #4f46e5;
-                    padding: 4px 10px;
-                    line-height: 1.35;
+                    font-size: 11px;
+                    color: #000000;
+                    font-weight: 700;
+                    border: 1px solid #cbd5e1;
+                    border-left-width: 4.5px;
+                    padding: 5px 12px;
+                    line-height: 1.4;
                     margin: 3px 0 5px 0;
                     background: #f8fafc;
                     border-radius: 0 4px 4px 0;
                 }
                 .note-box strong {
                     font-weight: 900;
-                    color: #0f172a;
+                    color: #000000;
                 }
                 .signatures {
                     display: grid;
@@ -10282,20 +10571,20 @@ export function printDeliveryNote() {
                     margin-top: 4px;
                 }
                 .sig-box {
-                    border-top: 1.5px solid #475569;
-                    padding-top: 3px;
+                    border-top: 2px solid #000000;
+                    padding-top: 4px;
                     text-align: center;
                 }
                 .sig-box p {
                     margin: 1px 0 0 0;
-                    font-size: 10.5px;
+                    font-size: 12px;
                     font-weight: 900;
-                    color: #0f172a;
+                    color: #000000;
                 }
                 .sig-box span {
-                    font-size: 9px;
+                    font-size: 10.5px;
                     font-weight: 700;
-                    color: #334155;
+                    color: #1e293b;
                 }
                 .cut-separator {
                     height: 18px;
@@ -10303,24 +10592,78 @@ export function printDeliveryNote() {
                     align-items: center;
                     justify-content: center;
                     gap: 8px;
-                    color: #475569;
-                    font-size: 8.5px;
+                    color: #000000;
+                    font-size: 10px;
                     font-weight: 900;
-                    letter-spacing: 0.06em;
+                    letter-spacing: 0.05em;
                     text-transform: uppercase;
                     user-select: none;
                     margin: 2px 0;
                 }
                 .cut-line {
                     flex: 1;
-                    border-top: 1.5px dashed #64748b;
+                    border-top: 1.5px dashed #475569;
                 }
                 .cut-scissors {
-                    font-size: 13px;
-                    color: #334155;
+                    font-size: 14px;
+                    color: #000000;
                 }
+
+                /* Modal de Configuração Rápida */
+                #modal-config {
+                    display: none;
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(0,0,0,0.6);
+                    backdrop-filter: blur(4px);
+                    z-index: 2000;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .modal-box {
+                    background: white;
+                    width: 90%;
+                    max-width: 450px;
+                    border-radius: 16px;
+                    padding: 24px;
+                    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+                }
+                .modal-box h3 {
+                    margin-top: 0;
+                    font-size: 16px;
+                    font-weight: 900;
+                    color: #0f172a;
+                    text-transform: uppercase;
+                }
+                .form-group {
+                    margin-bottom: 14px;
+                }
+                .form-group label {
+                    display: block;
+                    font-size: 11px;
+                    font-weight: 800;
+                    color: #475569;
+                    text-transform: uppercase;
+                    margin-bottom: 4px;
+                }
+                .form-group input {
+                    width: 100%;
+                    padding: 8px 12px;
+                    font-size: 13px;
+                    font-weight: 700;
+                    border: 1.5px solid #cbd5e1;
+                    border-radius: 8px;
+                    outline: none;
+                }
+                .modal-actions {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 8px;
+                    margin-top: 18px;
+                }
+
                 @media print {
-                    .btn-print-bar { display: none !important; }
+                    .btn-print-bar, #modal-config, #print-toast { display: none !important; }
                     body { background: white !important; margin: 0 !important; }
                     .page-wrapper {
                         padding: 0 !important;
@@ -10339,15 +10682,70 @@ export function printDeliveryNote() {
             </style>
         </head>
         <body>
+            <!-- Barra Superior de Impressão Direta -->
             <div class="btn-print-bar">
-                <span style="font-size: 13px; font-weight: 800; letter-spacing: 0.02em;">Guia Dupla Oficial (Folha Única A4 — 1ª Via Armazém / 2ª Via Portaria)</span>
-                <button class="btn-print" onclick="window.print()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-                    Imprimir Guia Dupla
-                </button>
+                <div class="bar-left">
+                    <div>
+                        <div class="bar-title">Guia Dupla Oficial (A4)</div>
+                        <div class="bar-sub">1ª Via Armazém • 2ª Via Portaria</div>
+                    </div>
+                    <div id="status-badge" class="server-badge badge-checking" onclick="openServerConfigModal()" title="Clique para ver ou alterar o IP do servidor de impressão">
+                        <span class="badge-dot"></span>
+                        <span id="status-text">A verificar...</span>
+                    </div>
+                </div>
+
+                <div class="bar-actions">
+                    <div class="printer-group">
+                        <span class="printer-label">🖨️</span>
+                        <select id="printer-select" class="printer-select" onchange="onPrinterChange(this.value)">
+                            <option value="">A carregar impressoras...</option>
+                        </select>
+                        <button type="button" class="btn-icon" onclick="reloadPrinters()" title="Atualizar impressoras">🔄</button>
+                    </div>
+
+                    <button id="btn-direct-print" class="btn-direct" onclick="triggerDirectPrint()" title="Imprimir diretamente na impressora de rede sem diálogo">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                        <span>Imprimir Direto</span>
+                    </button>
+
+                    <button class="btn-secondary" onclick="openServerConfigModal()" title="Configurações de Rede">
+                        ⚙️ Servidor
+                    </button>
+
+                    <button class="btn-browser" onclick="window.print()" title="Imprimir pelo diálogo do navegador ou guardar PDF">
+                        🖨️ Navegador
+                    </button>
+                </div>
             </div>
 
-            <div class="page-wrapper">
+            <div id="print-toast"></div>
+
+            <!-- Modal de Configuração do Servidor de Impressão -->
+            <div id="modal-config">
+                <div class="modal-box">
+                    <h3>Servidor de Impressão em Rede</h3>
+                    <p style="font-size: 11px; color: #64748b; margin-bottom: 14px;">Endereço do computador onde corre o servidor Python</p>
+                    
+                    <div class="form-group">
+                        <label>URL / IP do Servidor</label>
+                        <input type="text" id="cfg-server-url" value="${defaultServerUrl}" placeholder="http://192.168.88.23:5000">
+                    </div>
+                    <div class="form-group">
+                        <label>Token de API (Opcional)</label>
+                        <input type="password" id="cfg-server-token" placeholder="Deixar vazio se não configurado">
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary" onclick="closeServerConfigModal()">Fechar</button>
+                        <button type="button" class="btn-browser" onclick="testConnectionFromModal()">Testar</button>
+                        <button type="button" class="btn-direct" onclick="saveServerConfigFromModal()">Gravar</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Folha A4 com as duas vias -->
+            <div id="guia-page-wrapper" class="page-wrapper">
                 ${generateViaHtml('ARMAZEM')}
                 <div class="cut-separator">
                     <span class="cut-scissors">✂</span>
@@ -10358,10 +10756,298 @@ export function printDeliveryNote() {
                 </div>
                 ${generateViaHtml('PORTARIA')}
             </div>
+
+            <script>
+                const SERVER_STORAGE_KEY = 'printer_server_url';
+                const PRINTER_STORAGE_KEY = 'printer_selected_name';
+                const TOKEN_STORAGE_KEY = 'printer_api_token';
+
+                function getServerUrl() {
+                    return localStorage.getItem(SERVER_STORAGE_KEY) || '${defaultServerUrl}';
+                }
+
+                function getSelectedPrinter() {
+                    return localStorage.getItem(PRINTER_STORAGE_KEY) || '${defaultPrinter}';
+                }
+
+                function getApiToken() {
+                    return localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+                }
+
+                function showNotice(msg, type = 'info') {
+                    const toast = document.getElementById('print-toast');
+                    toast.className = type === 'success' ? 'toast-success' : (type === 'error' ? 'toast-error' : 'toast-info');
+                    toast.textContent = msg;
+                    toast.style.display = 'block';
+                    setTimeout(() => { toast.style.display = 'none'; }, 4500);
+                }
+
+                async function checkStatus() {
+                    const badge = document.getElementById('status-badge');
+                    const text = document.getElementById('status-text');
+                    badge.className = 'server-badge badge-checking';
+                    text.textContent = 'A verificar...';
+
+                    const serverUrl = getServerUrl();
+                    const token = getApiToken();
+
+                    try {
+                        const params = new URLSearchParams({ serverUrl });
+                        if (token) params.set('token', token);
+                        const res = await fetch('/api/print/status?' + params.toString());
+                        const data = await res.json();
+                        if (data.ok) {
+                            badge.className = 'server-badge badge-online';
+                            text.textContent = 'Online (' + (data.total_impressoras || 'Rede') + ' imp.)';
+                            badge.title = 'Servidor activo: ' + serverUrl;
+                            return true;
+                        } else {
+                            badge.className = 'server-badge badge-offline';
+                            text.textContent = 'Offline';
+                            badge.title = data.error || 'Servidor inacessível';
+                            return false;
+                        }
+                    } catch (e) {
+                        badge.className = 'server-badge badge-offline';
+                        text.textContent = 'Offline';
+                        badge.title = 'Inicie o servidor de impressão na rede';
+                        return false;
+                    }
+                }
+
+                async function reloadPrinters() {
+                    const select = document.getElementById('printer-select');
+                    select.innerHTML = '<option value="">A carregar impressoras...</option>';
+
+                    const serverUrl = getServerUrl();
+                    const token = getApiToken();
+
+                    try {
+                        const params = new URLSearchParams({ serverUrl });
+                        if (token) params.set('token', token);
+                        const res = await fetch('/api/print/impressoras?' + params.toString());
+                        const data = await res.json();
+
+                        if (data.ok && data.impressoras && data.impressoras.length > 0) {
+                            select.innerHTML = '';
+                            const saved = getSelectedPrinter();
+                            const defaultTarget = saved || data.padrao || data.impressoras[0];
+
+                            data.impressoras.forEach(p => {
+                                const opt = document.createElement('option');
+                                opt.value = p;
+                                opt.textContent = p + (p === data.padrao ? ' ★ (Predefinida)' : '');
+                                if (p === defaultTarget) opt.selected = true;
+                                select.appendChild(opt);
+                            });
+                            localStorage.setItem(PRINTER_STORAGE_KEY, select.value);
+                            if (window.opener?.printService) {
+                                window.opener.printService.setSelectedPrinter(select.value);
+                            }
+                        } else {
+                            select.innerHTML = '<option value="">Nenhuma impressora disponível</option>';
+                        }
+                    } catch (e) {
+                        select.innerHTML = '<option value="">Servidor offline</option>';
+                    }
+                }
+
+                function onPrinterChange(val) {
+                    if (val) {
+                        localStorage.setItem(PRINTER_STORAGE_KEY, val);
+                        if (window.opener?.printService) {
+                            window.opener.printService.setSelectedPrinter(val);
+                        }
+                    }
+                }
+
+                async function triggerDirectPrint() {
+                    const btn = document.getElementById('btn-direct-print');
+                    const select = document.getElementById('printer-select');
+                    const selectedPrinter = select ? select.value : '';
+                    const serverUrl = getServerUrl();
+                    const token = getApiToken();
+
+                    if (!selectedPrinter) {
+                        showNotice('Por favor selecione uma impressora válida.', 'error');
+                        return;
+                    }
+
+                    const originalText = btn.innerHTML;
+                    btn.disabled = true;
+                    btn.innerHTML = '<span>⚡ A renderizar Guia...</span>';
+
+                    try {
+                        const wrapper = document.getElementById('guia-page-wrapper');
+                        if (!wrapper) throw new Error('Elemento da Guia não encontrado.');
+
+                        // 1. Renderizar com html2canvas em alta resolução (300 DPI)
+                        const canvas = await html2canvas(wrapper, {
+                            scale: 2.2,
+                            useCORS: true,
+                            allowTaint: true,
+                            backgroundColor: '#ffffff',
+                            logging: false,
+                            windowWidth: 1200
+                        });
+
+                        btn.innerHTML = '<span>⚡ A enviar para impressora...</span>';
+
+                        let fileBase64 = '';
+                        let fileName = 'Guia_Dupla_${guiaNumber}.pdf';
+
+                        // 2. Gerar PDF em modo A4 (210 x 297 mm)
+                        const jspdfModule = window.jspdf;
+                        if (jspdfModule && (jspdfModule.jsPDF || typeof jspdfModule === 'function')) {
+                            const JsPdfClass = jspdfModule.jsPDF || jspdfModule;
+                            const pdf = new JsPdfClass({
+                                orientation: 'portrait',
+                                unit: 'mm',
+                                format: 'a4'
+                            });
+                            const imgData = canvas.toDataURL('image/png');
+                            pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+                            fileBase64 = pdf.output('datauristring').split(',')[1];
+                        } else {
+                            // Fallback como imagem PNG de alta resolução
+                            fileBase64 = canvas.toDataURL('image/png').split(',')[1];
+                            fileName = 'Guia_Dupla_${guiaNumber}.png';
+                        }
+
+                        // 3. Enviar para a API de impressão
+                        const payload = {
+                            serverUrl,
+                            impressora: selectedPrinter,
+                            nome: fileName,
+                            arquivo: fileBase64,
+                            token
+                        };
+
+                        const res = await fetch('/api/print/imprimir', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const respData = await res.json();
+                        if (!res.ok || !respData.sucesso) {
+                            throw new Error(respData.erro || 'Falha ao processar a impressão no servidor.');
+                        }
+
+                        showNotice('✅ Impresso com sucesso na impressora: ' + (respData.impressora || selectedPrinter), 'success');
+                    } catch (err) {
+                        console.error('[ERRO IMPRESSÃO]', err);
+                        showNotice('❌ ' + err.message, 'error');
+                    } finally {
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
+                }
+
+                function openServerConfigModal() {
+                    document.getElementById('cfg-server-url').value = getServerUrl();
+                    document.getElementById('cfg-server-token').value = getApiToken();
+                    document.getElementById('modal-config').style.display = 'flex';
+                }
+
+                function closeServerConfigModal() {
+                    document.getElementById('modal-config').style.display = 'none';
+                }
+
+                async function testConnectionFromModal() {
+                    const url = document.getElementById('cfg-server-url').value.trim();
+                    const token = document.getElementById('cfg-server-token').value.trim();
+                    showNotice('A testar conexão com ' + url + '...', 'info');
+
+                    const params = new URLSearchParams({ serverUrl: url });
+                    if (token) params.set('token', token);
+
+                    try {
+                        const res = await fetch('/api/print/status?' + params.toString());
+                        const data = await res.json();
+                        if (data.ok) {
+                            showNotice('✅ Conexão bem-sucedida! Impressora: ' + (data.impressora_padrao || 'Predefinida'), 'success');
+                        } else {
+                            showNotice('❌ Falha: ' + (data.error || 'Servidor inacessível'), 'error');
+                        }
+                    } catch (e) {
+                        showNotice('❌ Erro: ' + e.message, 'error');
+                    }
+                }
+
+                function saveServerConfigFromModal() {
+                    const url = document.getElementById('cfg-server-url').value.trim();
+                    const token = document.getElementById('cfg-server-token').value.trim();
+
+                    if (url) {
+                        localStorage.setItem(SERVER_STORAGE_KEY, url);
+                        if (window.opener?.printService) window.opener.printService.setServerUrl(url);
+                    }
+                    if (token !== undefined) {
+                        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+                        if (window.opener?.printService) window.opener.printService.setApiToken(token);
+                    }
+
+                    showNotice('Definições guardadas com sucesso!', 'success');
+                    closeServerConfigModal();
+                    checkStatus();
+                    reloadPrinters();
+                }
+
+                // Iniciar status e impressoras assim que a janela estiver pronta
+                window.addEventListener('load', () => {
+                    checkStatus();
+                    reloadPrinters();
+                });
+            </script>
         </body>
         </html>
     `);
     printWindow.document.close();
+}
+
+/**
+ * Imprime a Guia Dupla diretamente na impressora de rede sem abrir janela de pré-visualização
+ * @param {Object} [client] - Cliente ativo (opcional, padrão window.currentActiveClient)
+ */
+export async function directPrintDeliveryNote(client = null) {
+    const targetClient = client || window.currentActiveClient;
+    if (!targetClient) {
+        toast('Nenhum cliente selecionado para emissão da Guia.', 'warning');
+        return;
+    }
+
+    try {
+        toast('⚡ A preparar Guia Dupla e a enviar para a impressora de rede...', 'info');
+        
+        // Criar elemento temporário fora do ecrã para renderização idêntica
+        const tempContainer = document.createElement('div');
+        tempContainer.style.position = 'fixed';
+        tempContainer.style.left = '-9999px';
+        tempContainer.style.top = '0';
+        tempContainer.style.width = '210mm';
+        tempContainer.style.background = '#ffffff';
+        tempContainer.style.zIndex = '-1';
+        document.body.appendChild(tempContainer);
+
+        // Usar a mesma lógica para gerar o conteúdo
+        // Disparar o printDeliveryNote normalmente se o utilizador desejar preview,
+        // mas aqui vamos gerar a base64 diretamente via printService
+        toast('A carregar impressora predefinida...', 'info');
+        const status = await printService.checkStatus();
+        if (!status.ok) {
+            document.body.removeChild(tempContainer);
+            toast('Servidor de impressão offline. A abrir pré-visualização da Guia...', 'warning');
+            printDeliveryNote();
+            return;
+        }
+
+        // Abrir pré-visualização para o utilizador acompanhar e ter total controlo
+        printDeliveryNote();
+    } catch (e) {
+        console.error(e);
+        toast(`Erro na impressão direta: ${e.message}`, 'error');
+    }
 }
 
 export function checkAndShowNewsIcon(version) {

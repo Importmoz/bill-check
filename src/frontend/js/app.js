@@ -5,12 +5,14 @@ import { initializeApp } from './init.js';
 import * as api from './api.js';
 import * as ui from './ui.js';
 import * as utils from './utils.js';
+import { printService } from './printService.js';
 
 const { state, pb } = api;
 
 // --- EXPOSIÇÃO GLOBAL (Compatibilidade com onclick no HTML) ---
 window.ui = ui;
 window.api = api;
+window.printService = printService;
 window.handleLogin = handleLogin;
 
 // Inicialização da aplicação (Sendo um módulo, o código corre apenas uma vez e após o parse do DOM)
@@ -145,6 +147,7 @@ async function showSettings() {
     }
     ui.showView('view-settings');
     await ui.loadSettingsUsers();
+    await ui.loadSettingsPrinter();
 }
 window.showSettings = showSettings;
 

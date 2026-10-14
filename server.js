@@ -11,6 +11,7 @@ const pautaRoutes = require('./src/backend/routes/pautaRoutes');
 const financeRoutes = require('./src/backend/routes/financeRoutes');
 const billRoutes = require('./src/backend/routes/billRoutes');
 const confirmRoutes = require('./src/backend/routes/confirmRoutes');
+const printRoutes = require('./src/backend/routes/printRoutes');
 // Force reload: 2026-05-12 14:20
 
 const app = express();
@@ -129,6 +130,7 @@ app.use('/api/pauta', pautaRoutes);
 app.use('/api/finance', financeRoutes);
 app.use('/api/bill', billRoutes);
 app.use('/api/confirm', confirmRoutes);
+app.use('/api/print', printRoutes);
 
 // Rota base para SPA
 app.get(/.*/, (req, res) => {
