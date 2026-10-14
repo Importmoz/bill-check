@@ -571,11 +571,35 @@ router.post('/sheet/batch-update', async (req, res) => {
       });
       return res.json(response.data);
     } catch (batchErr) {
-      if (batchErr.message && batchErr.message.includes('Unable to parse range')) {
-        console.warn('[BACKEND] Erro de range no batchUpdate. Tentando resolver sheetTitle real...', batchErr.message);
+      if (batchErr.message && (batchErr.message.includes('Unable to parse range') || batchErr.message.includes('exceeds grid limits'))) {
+        console.warn('[BACKEND] Erro de range/grid limits no batchUpdate:', batchErr.message);
         try {
-          const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties(title))' });
-          const actualSheetTitle = meta.data.sheets?.[0]?.properties?.title;
+          const meta = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties(sheetId,title,gridProperties))' });
+          const firstSheet = meta.data.sheets?.[0];
+          const actualSheetTitle = firstSheet?.properties?.title;
+          const targetSheetId = firstSheet?.properties?.sheetId;
+          const currentCols = firstSheet?.properties?.gridProperties?.columnCount || 34;
+
+          // Se o erro for de grid limits, expandir colunas automaticamente
+          if (batchErr.message.includes('exceeds grid limits')) {
+            console.log(`[BACKEND] Expandindo colunas da folha '${actualSheetTitle}' (ID: ${targetSheetId}) de ${currentCols} colunas para +15 colunas...`);
+            await sheets.spreadsheets.batchUpdate({
+              spreadsheetId,
+              resource: {
+                requests: [
+                  {
+                    appendDimension: {
+                      sheetId: targetSheetId,
+                      dimension: 'COLUMNS',
+                      length: 15
+                    }
+                  }
+                ]
+              }
+            });
+            console.log('[BACKEND] Colunas expandidas com sucesso!');
+          }
+
           if (actualSheetTitle) {
             console.log(`[BACKEND] Substituindo sheetTitle pelo título real '${actualSheetTitle}' e reenviando batch...`);
             const fixedData = data.map(item => {
@@ -601,7 +625,7 @@ router.post('/sheet/batch-update', async (req, res) => {
             return res.json(retryRes.data);
           }
         } catch (retryErr) {
-          console.error('[BACKEND] Falha na recuperação de sheetTitle:', retryErr.message);
+          console.error('[BACKEND] Falha na recuperação de sheetTitle/grid:', retryErr.message);
         }
       }
       throw batchErr;

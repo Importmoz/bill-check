@@ -876,6 +876,24 @@ export async function syncPendingChangesToGSheet() {
         sheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
     }
 
+    // 1. Tentar ler dados actuais do GSheet para comparar e enviar APENAS as diferenças reais
+    let liveRows = [];
+    try {
+        const liveRes = await fetch('/api/google/sheet/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId: state.confirm.sheetId, range: state.confirm.range || `${sheetName}!A1:AZ1000` })
+        });
+        if (liveRes.ok) {
+            const liveData = await liveRes.json();
+            liveRows = liveData.values || [];
+        }
+    } catch (e) {
+        console.warn("[SYNC-DIFF] Não foi possível ler liveRows do GSheet, enviando lote completo de segurança:", e.message);
+    }
+
+    const cleanStr = (val) => String(val !== undefined && val !== null ? val : '').trim().toUpperCase();
+
     const batch = [];
     const headers = valuesToSync[0] || [];
     const protectedCols = new Set();
@@ -898,33 +916,59 @@ export async function syncPendingChangesToGSheet() {
         const c0 = String(row[0] || '').toUpperCase().trim();
         if (c0 === 'TOTAL' || c0 === 'TOTAIS' || c0.startsWith('TOTAL ')) continue;
 
+        const liveRow = liveRows[r] || [];
         const rowNum = r + 1;
         for (let c = 0; c < row.length; c++) {
             if (protectedCols.has(c)) continue;
             const val = row[c];
-            if (val !== undefined && val !== null && String(val) !== '') {
-                const colLetter = getColLetterFromIdx(c);
-                batch.push({
-                    range: `${sheetName}!${colLetter}${rowNum}`,
-                    values: [[val]]
-                });
+            if (val === undefined || val === null) continue;
+
+            // Se temos liveRows, só envia se houver diferença real!
+            if (liveRows.length > 0) {
+                const liveVal = liveRow[c];
+                if (cleanStr(val) === cleanStr(liveVal)) continue;
+            } else if (String(val) === '') {
+                continue;
             }
+
+            const colLetter = getColLetterFromIdx(c);
+            batch.push({
+                range: `${sheetName}!${colLetter}${rowNum}`,
+                values: [[val]]
+            });
         }
     }
 
     if (batch.length === 0) {
-        return { success: true, message: "Nenhuma alteração para enviar." };
+        console.log("[SYNC] GSheet e PocketBase já estão 100% sincronizados. Limpando flag de pendência.");
+        state.confirm.hasPendingSync = false;
+        state.confirm.isOfflineMode = false;
+        if (state.confirm.projectId) {
+            await pb.collection('confirm_projects').update(state.confirm.projectId, {
+                has_pending_sync: false,
+                last_sync: new Date().toISOString()
+            }).catch(() => {});
+        }
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: false, pendingSync: false } }));
+        return { success: true, count: 0, message: "Já sincronizado." };
     }
 
-    const res = await fetch('/api/google/sheet/batch-update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ spreadsheetId: state.confirm.sheetId, data: batch })
-    });
+    console.log(`[SYNC] Enviando ${batch.length} diferenças cirúrgicas para o Google Sheets em lotes...`);
 
-    if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.error || "Falha ao enviar alterações para o Google Sheets");
+    // Enviar em blocos de até 100 itens para evitar exceder limites de quota/payload do Google Sheets
+    const CHUNK_SIZE = 100;
+    for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+        const chunk = batch.slice(i, i + CHUNK_SIZE);
+        const res = await fetch('/api/google/sheet/batch-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId: state.confirm.sheetId, data: chunk })
+        });
+
+        if (!res.ok) {
+            const errJson = await res.json().catch(() => ({}));
+            throw new Error(errJson.error || "Falha ao enviar lote de alterações para o Google Sheets");
+        }
     }
 
     state.confirm.hasPendingSync = false;
