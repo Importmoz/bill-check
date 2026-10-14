@@ -3,7 +3,7 @@ const router = express.Router();
 const fetch = globalThis.fetch || require('node-fetch');
 
 // IP / URL padrão do servidor de impressão
-const DEFAULT_PRINT_SERVER = process.env.PRINT_SERVER_URL || 'http://127.0.0.1:5000';
+const DEFAULT_PRINT_SERVER = process.env.PRINT_SERVER_URL || 'http://192.168.88.10:5000';
 
 function getTargetServer(req) {
   const queryServer = req.query.serverUrl || req.body?.serverUrl;

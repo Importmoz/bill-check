@@ -4,7 +4,7 @@
  * quer diretamente, quer através do proxy Express (/api/print/*)
  */
 
-export const DEFAULT_PRINT_SERVER_URL = 'http://192.168.88.23:5000';
+export const DEFAULT_PRINT_SERVER_URL = 'http://192.168.88.10:5000';
 
 export const printService = {
     /**
@@ -14,6 +14,11 @@ export const printService = {
         const saved = localStorage.getItem('printer_server_url');
         if (saved && saved.trim()) {
             let url = saved.trim().replace(/\/+$/, '');
+            // Migrar automaticamente se ainda estava com o IP antigo .23
+            if (url === 'http://192.168.88.23:5000') {
+                url = DEFAULT_PRINT_SERVER_URL;
+                localStorage.setItem('printer_server_url', url);
+            }
             if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
             return url;
         }

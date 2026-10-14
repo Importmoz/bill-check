@@ -10729,7 +10729,7 @@ export function printDeliveryNote() {
                     
                     <div class="form-group">
                         <label>URL / IP do Servidor</label>
-                        <input type="text" id="cfg-server-url" value="${defaultServerUrl}" placeholder="http://192.168.88.23:5000">
+                        <input type="text" id="cfg-server-url" value="${defaultServerUrl}" placeholder="http://192.168.88.10:5000">
                     </div>
                     <div class="form-group">
                         <label>Token de API (Opcional)</label>
