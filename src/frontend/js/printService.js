@@ -7,6 +7,31 @@
 export const DEFAULT_PRINT_SERVER_URL = 'http://192.168.88.10:5000';
 
 export const printService = {
+    _cachedConfig: null,
+
+    /**
+     * Inicializa a configuração a partir do backend
+     */
+    async initConfig() {
+        try {
+            const res = await fetch('/api/print/config');
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.ok) {
+                    this._cachedConfig = data;
+                    if (data.impressora && !localStorage.getItem('printer_selected_name')) {
+                        localStorage.setItem('printer_selected_name', data.impressora);
+                    }
+                    if (data.serverUrl && !localStorage.getItem('printer_server_url')) {
+                        localStorage.setItem('printer_server_url', data.serverUrl);
+                    }
+                }
+            }
+        } catch (e) {
+            // Silencioso se backend ainda não respondeu
+        }
+    },
+
     /**
      * Devolve a URL configurada do servidor de impressão
      */
@@ -22,6 +47,9 @@ export const printService = {
             if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
             return url;
         }
+        if (this._cachedConfig && this._cachedConfig.serverUrl) {
+            return this._cachedConfig.serverUrl;
+        }
         return DEFAULT_PRINT_SERVER_URL;
     },
 
@@ -35,6 +63,12 @@ export const printService = {
             let clean = url.trim().replace(/\/+$/, '');
             if (!/^https?:\/\//i.test(clean)) clean = 'http://' + clean;
             localStorage.setItem('printer_server_url', clean);
+            if (this._cachedConfig) this._cachedConfig.serverUrl = clean;
+            fetch('/api/print/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ serverUrl: clean })
+            }).catch(() => {});
         }
     },
 
@@ -42,17 +76,40 @@ export const printService = {
      * Devolve o nome da impressora selecionada pelo utilizador
      */
     getSelectedPrinter() {
-        return localStorage.getItem('printer_selected_name') || '';
+        const saved = localStorage.getItem('printer_selected_name');
+        if (saved && saved.trim()) {
+            const clean = saved.trim();
+            // Se foi gravado o nome antigo da impressora offline "Armazem print", migrar para "Armazem"
+            if (clean === 'Armazem print') {
+                const target = this._cachedConfig?.impressora || 'Armazem';
+                localStorage.setItem('printer_selected_name', target);
+                return target;
+            }
+            return clean;
+        }
+        if (this._cachedConfig && this._cachedConfig.impressora) {
+            return this._cachedConfig.impressora;
+        }
+        return 'Armazem';
     },
 
     /**
-     * Guarda a impressora selecionada
+     * Guarda a impressora selecionada e sincroniza com o servidor
      */
     setSelectedPrinter(name) {
-        if (!name) {
+        const clean = (name || '').trim();
+        if (!clean) {
             localStorage.removeItem('printer_selected_name');
         } else {
-            localStorage.setItem('printer_selected_name', name.trim());
+            // Prevenir gravação acidental da fila offline "Armazem print"
+            const finalName = clean === 'Armazem print' ? 'Armazem' : clean;
+            localStorage.setItem('printer_selected_name', finalName);
+            if (this._cachedConfig) this._cachedConfig.impressora = finalName;
+            fetch('/api/print/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ impressora: finalName })
+            }).catch(() => {});
         }
     },
 
@@ -60,7 +117,9 @@ export const printService = {
      * Devolve o token de autenticação (se existir)
      */
     getApiToken() {
-        return localStorage.getItem('printer_api_token') || '';
+        const local = localStorage.getItem('printer_api_token');
+        if (local && local.trim()) return local.trim();
+        return this._cachedConfig?.token || '';
     },
 
     /**
@@ -70,7 +129,14 @@ export const printService = {
         if (!token) {
             localStorage.removeItem('printer_api_token');
         } else {
-            localStorage.setItem('printer_api_token', token.trim());
+            const clean = token.trim();
+            localStorage.setItem('printer_api_token', clean);
+            if (this._cachedConfig) this._cachedConfig.token = clean;
+            fetch('/api/print/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: clean })
+            }).catch(() => {});
         }
     },
 
@@ -176,6 +242,7 @@ export const printService = {
                 ok: true,
                 impressoras: data.impressoras || [],
                 padrao: data.padrao || null,
+                impressora_configurada: data.impressora_configurada || null,
                 serverUrl
             };
         } catch (e) {

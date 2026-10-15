@@ -1,13 +1,47 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
 const fetch = globalThis.fetch || require('node-fetch');
 
 // IP / URL padrão do servidor de impressão
 const DEFAULT_PRINT_SERVER = process.env.PRINT_SERVER_URL || 'http://192.168.88.10:5000';
+const CONFIG_FILE = path.join(__dirname, '..', '..', '..', 'data', 'print_config.json');
+
+function loadPrintConfig() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('[PRINT CONFIG LOAD ERROR]', e.message);
+  }
+  return {
+    serverUrl: DEFAULT_PRINT_SERVER,
+    impressora: 'Armazem',
+    token: ''
+  };
+}
+
+function savePrintConfig(updates) {
+  try {
+    const current = loadPrintConfig();
+    const merged = { ...current, ...updates };
+    const dir = path.dirname(CONFIG_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf8');
+    return merged;
+  } catch (e) {
+    console.error('[PRINT CONFIG SAVE ERROR]', e.message);
+    return null;
+  }
+}
 
 function getTargetServer(req) {
   const queryServer = req.query.serverUrl || req.body?.serverUrl;
-  let target = (queryServer && String(queryServer).trim()) || DEFAULT_PRINT_SERVER;
+  const cfg = loadPrintConfig();
+  let target = (queryServer && String(queryServer).trim()) || cfg.serverUrl || DEFAULT_PRINT_SERVER;
   target = target.replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(target)) {
     target = 'http://' + target;
@@ -16,7 +50,8 @@ function getTargetServer(req) {
 }
 
 function getAuthHeaders(req) {
-  const token = req.query.token || req.body?.token || process.env.IMPRESSAO_API_TOKEN;
+  const cfg = loadPrintConfig();
+  const token = req.query.token || req.body?.token || cfg.token || process.env.IMPRESSAO_API_TOKEN;
   const headers = {};
   if (token && String(token).trim()) {
     headers['Authorization'] = `Bearer ${String(token).trim()}`;
@@ -26,12 +61,40 @@ function getAuthHeaders(req) {
 }
 
 /**
+ * GET /api/print/config
+ * Retorna as configurações ativas do servidor de impressão
+ */
+router.get('/config', (req, res) => {
+  const cfg = loadPrintConfig();
+  res.json({ ok: true, ...cfg });
+});
+
+/**
+ * POST /api/print/config
+ * Grava e atualiza as configurações globais de impressão
+ */
+router.post('/config', (req, res) => {
+  const { serverUrl, impressora, token } = req.body || {};
+  const updates = {};
+  if (serverUrl !== undefined) updates.serverUrl = String(serverUrl).trim();
+  if (impressora !== undefined) updates.impressora = String(impressora).trim();
+  if (token !== undefined) updates.token = String(token).trim();
+
+  const saved = savePrintConfig(updates);
+  if (!saved) {
+    return res.status(500).json({ ok: false, error: 'Erro ao gravar configurações de impressão' });
+  }
+  res.json({ ok: true, ...saved });
+});
+
+/**
  * GET /api/print/status
  * Verifica conectividade com o servidor de impressão e devolve status e impressora padrão
  */
 router.get('/status', async (req, res) => {
   const serverUrl = getTargetServer(req);
   const authHeaders = getAuthHeaders(req);
+  const cfg = loadPrintConfig();
 
   try {
     const controller = new AbortController();
@@ -58,6 +121,7 @@ router.get('/status', async (req, res) => {
     return res.json({
       ok: true,
       serverUrl,
+      impressora_configurada: cfg.impressora || null,
       ...data
     });
   } catch (err) {
@@ -78,6 +142,7 @@ router.get('/status', async (req, res) => {
 router.get('/impressoras', async (req, res) => {
   const serverUrl = getTargetServer(req);
   const authHeaders = getAuthHeaders(req);
+  const cfg = loadPrintConfig();
 
   try {
     const controller = new AbortController();
@@ -104,7 +169,8 @@ router.get('/impressoras', async (req, res) => {
       ok: true,
       serverUrl,
       impressoras: data.impressoras || [],
-      padrao: data.padrao || null
+      padrao: data.padrao || null,
+      impressora_configurada: cfg.impressora || null
     });
   } catch (err) {
     return res.status(503).json({
@@ -138,13 +204,15 @@ router.post('/imprimir', async (req, res) => {
     nome: nome || 'documento.pdf',
     arquivo: fileData
   };
-  if (impressora && String(impressora).trim()) {
-    payload.impressora = String(impressora).trim();
+  const cfg = loadPrintConfig();
+  const targetPrinter = (impressora && String(impressora).trim()) || cfg.impressora || undefined;
+  if (targetPrinter) {
+    payload.impressora = targetPrinter;
   }
 
   try {
     const controller = new AbortController();
-    // 30 segundos de timeout para impressões grandes / rasterização 300DPI
+    // 35 segundos de timeout para impressões grandes / rasterização 300DPI
     const timeout = setTimeout(() => controller.abort(), 35000);
 
     const response = await fetch(`${serverUrl}/api/imprimir`, {
@@ -183,12 +251,14 @@ router.post('/teste', async (req, res) => {
   const serverUrl = getTargetServer(req);
   const authHeaders = getAuthHeaders(req);
   const { impressora } = req.body || {};
+  const cfg = loadPrintConfig();
+  const targetPrinter = (impressora && String(impressora).trim()) || cfg.impressora || undefined;
 
   const testContent = `=====================================================
          JUPITER LOGISTICS LDA - TESTE DE IMPRESSAO
 =====================================================
 Data / Hora : ${new Date().toLocaleString('pt-PT')}
-Impressora  : ${impressora || 'Predefinida do Servidor'}
+Impressora  : ${targetPrinter || 'Predefinida do Servidor'}
 Servidor    : ${serverUrl}
 Status      : COMUNICACAO OK - IMPRESSAO DIRECTA ACTIVA
 =====================================================
@@ -197,7 +267,7 @@ Status      : COMUNICACAO OK - IMPRESSAO DIRECTA ACTIVA
   const payload = {
     nome: 'teste_impressao.txt',
     arquivo: Buffer.from(testContent, 'utf-8').toString('base64'),
-    impressora: impressora || undefined
+    impressora: targetPrinter
   };
 
   try {

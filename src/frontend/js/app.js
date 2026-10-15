@@ -15,6 +15,8 @@ window.api = api;
 window.printService = printService;
 window.printDeliveryNote = ui.printDeliveryNote;
 window.directPrintDeliveryNote = ui.directPrintDeliveryNote;
+window.openQuickPrinterModal = ui.openQuickPrinterModal;
+window.closeQuickPrinterModal = ui.closeQuickPrinterModal;
 window.handleLogin = handleLogin;
 
 // Inicialização da aplicação (Sendo um módulo, o código corre apenas uma vez e após o parse do DOM)
@@ -25,6 +27,7 @@ window.handleLogin = handleLogin;
     ui.setLoader(true);
     try {
         await initializeApp();
+        printService.initConfig();
         
         // Iniciar verificador de actualizações da versão do sistema
         startSystemVersionChecker();

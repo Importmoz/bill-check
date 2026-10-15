@@ -67,7 +67,7 @@
             <div>
                 <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Impressora Padrão</label>
                 <div class="flex gap-2">
-                    <select id="settings-printer-select" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all bg-white">
+                    <select id="settings-printer-select" onchange="ui.onSettingsPrinterChange(this.value)" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm outline-none focus:border-black focus:ring-4 focus:ring-gray-100 transition-all bg-white">
                         <option value="">A carregar impressoras...</option>
                     </select>
                     <button type="button" onclick="ui.refreshSettingsPrinters()" class="p-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-all cursor-pointer" title="Atualizar Lista">

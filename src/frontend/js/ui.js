@@ -6846,6 +6846,12 @@ export async function loadSettingsPrinter() {
     await refreshSettingsPrinters();
 }
 
+export function onSettingsPrinterChange(val) {
+    if (!val) return;
+    printService.setSelectedPrinter(val);
+    toast(`🖨️ Impressora ativa selecionada: [${val}]`, 'info');
+}
+
 export async function refreshSettingsPrinters() {
     const badge = document.getElementById('settings-printer-status-badge');
     const text = document.getElementById('settings-printer-status-text');
@@ -6854,6 +6860,9 @@ export async function refreshSettingsPrinters() {
     const tokenInput = document.getElementById('settings-printer-token');
 
     if (!select) return;
+
+    // Preservar a impressora que o utilizador selecionou no momento
+    const currentlySelected = select.value && !select.value.includes('carregar') ? select.value : '';
 
     if (badge && text) {
         badge.className = 'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 self-start md:self-auto';
@@ -6872,23 +6881,46 @@ export async function refreshSettingsPrinters() {
         if (badge && text) {
             badge.className = 'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 self-start md:self-auto';
             text.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span>Online (${status.sistema || 'Rede'}) • ${status.total_impressoras || 0} Impressora(s)</span>`;
-            badge.title = `Conectado a ${serverUrl} - Padrão: ${status.impressora_padrao || 'Nenhuma'}`;
+            badge.title = `Conectado a ${serverUrl} - Padrão SO: ${status.impressora_padrao || 'Nenhuma'}`;
         }
 
         const res = await printService.getPrinters(serverUrl);
         if (res.ok && res.impressoras && res.impressoras.length > 0) {
             select.innerHTML = '';
-            const saved = printService.getSelectedPrinter();
-            const defaultTarget = saved || res.padrao || res.impressoras[0];
+            
+            // Prioridade de seleção da impressora:
+            // 1. O que o utilizador acabou de selecionar
+            // 2. O que está gravado no printService (se válido e diferente da offline "Armazem print")
+            // 3. A configurada no backend
+            // 4. "Armazem" (se existir)
+            // 5. A padrão do SO (apenas se for diferente de "Armazem print")
+            // 6. A primeira da lista
+            const saved = currentlySelected || printService.getSelectedPrinter() || res.impressora_configurada;
+            let defaultTarget = '';
+            if (saved && res.impressoras.includes(saved) && saved !== 'Armazem print') {
+                defaultTarget = saved;
+            } else if (res.impressoras.includes('Armazem')) {
+                defaultTarget = 'Armazem';
+            } else if (res.padrao && res.impressoras.includes(res.padrao) && res.padrao !== 'Armazem print') {
+                defaultTarget = res.padrao;
+            } else {
+                defaultTarget = res.impressoras[0];
+            }
 
             res.impressoras.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p;
-                opt.textContent = p + (p === res.padrao ? ' ★ (Predefinida)' : '');
+                let label = p;
+                if (p === defaultTarget) label += ' ★ (Selecionada)';
+                else if (p === res.padrao) label += ' (Padrão Windows)';
+                opt.textContent = label;
                 if (p === defaultTarget) opt.selected = true;
                 select.appendChild(opt);
             });
-            printService.setSelectedPrinter(select.value);
+
+            if (select.value) {
+                printService.setSelectedPrinter(select.value);
+            }
         } else {
             select.innerHTML = '<option value="">Nenhuma impressora disponível</option>';
         }
@@ -6945,6 +6977,172 @@ export function savePrinterSettings() {
 
     toast('✅ Definições do servidor de impressão gravadas com sucesso!', 'success');
     refreshSettingsPrinters();
+}
+
+/**
+ * MODAL RÁPIDO DE IMPRESSÃO (Aba Armazenagem)
+ * Permite a qualquer operador verificar e trocar a impressora ativa sem aceder a Definições
+ */
+export async function openQuickPrinterModal() {
+    let modal = document.getElementById('modal-quick-printer');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-quick-printer';
+        modal.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 transition-all duration-200';
+        modal.innerHTML = `
+            <div class="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-gray-100 flex flex-col gap-5">
+                <div class="flex items-center justify-between pb-3 border-b border-gray-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-black">
+                            🖨️
+                        </div>
+                        <div>
+                            <h3 class="font-black text-gray-900 text-base uppercase tracking-tight">Impressora do Armazém</h3>
+                            <p class="text-xs text-gray-400 font-bold uppercase tracking-wider">Configuração de Envio Silencioso</p>
+                        </div>
+                    </div>
+                    <button type="button" onclick="ui.closeQuickPrinterModal()" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 font-black flex items-center justify-center text-sm cursor-pointer">✕</button>
+                </div>
+
+                <div id="quick-printer-status" class="flex items-center gap-2 p-3 rounded-xl text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span>A verificar servidor de impressão...</span>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-black text-gray-500 uppercase tracking-widest mb-1.5">Impressora Ativa para Guias</label>
+                    <select id="quick-printer-select" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold text-sm bg-white outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100 transition-all">
+                        <option value="">A carregar impressoras...</option>
+                    </select>
+                    <p class="text-[10px] text-gray-400 mt-1 font-semibold">Os botões "⚡ Direto" e a Guia Dupla enviarão para esta impressora.</p>
+                </div>
+
+                <div>
+                    <label class="block text-[11px] font-black text-gray-500 uppercase tracking-widest mb-1.5">Servidor / IP</label>
+                    <input type="text" id="quick-printer-url" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl font-bold text-xs bg-gray-50 outline-none focus:border-blue-600 transition-all" placeholder="http://192.168.88.10:5000">
+                </div>
+
+                <div class="flex items-center justify-between pt-2 border-t border-gray-100 gap-2 flex-wrap">
+                    <div class="flex gap-2">
+                        <button type="button" onclick="ui.testQuickPrinterConnection()" class="px-3.5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-all cursor-pointer">
+                            Testar
+                        </button>
+                        <button type="button" onclick="ui.printQuickTestPage()" class="px-3.5 py-2.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-xl transition-all cursor-pointer">
+                            Página Teste
+                        </button>
+                    </div>
+                    <button type="button" onclick="ui.saveQuickPrinterConfig()" class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer">
+                        Gravar
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    } else {
+        modal.style.display = 'flex';
+    }
+
+    const urlInput = document.getElementById('quick-printer-url');
+    if (urlInput) urlInput.value = printService.getServerUrl();
+
+    await refreshQuickPrinterModal();
+}
+
+export function closeQuickPrinterModal() {
+    const modal = document.getElementById('modal-quick-printer');
+    if (modal) modal.style.display = 'none';
+}
+
+export async function refreshQuickPrinterModal() {
+    const statusBox = document.getElementById('quick-printer-status');
+    const select = document.getElementById('quick-printer-select');
+    const urlInput = document.getElementById('quick-printer-url');
+    if (!statusBox || !select) return;
+
+    const serverUrl = (urlInput?.value || '').trim() || printService.getServerUrl();
+    const status = await printService.checkStatus(serverUrl);
+
+    if (status.ok) {
+        statusBox.className = 'flex items-center gap-2 p-3 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200';
+        statusBox.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span><span>Online (${serverUrl.replace(/^https?:\/\//, '')}) • ${status.total_impressoras || 0} Impressora(s)</span>`;
+
+        const res = await printService.getPrinters(serverUrl);
+        if (res.ok && res.impressoras && res.impressoras.length > 0) {
+            select.innerHTML = '';
+            const currentSaved = printService.getSelectedPrinter() || res.impressora_configurada;
+            let target = '';
+            if (currentSaved && res.impressoras.includes(currentSaved) && currentSaved !== 'Armazem print') {
+                target = currentSaved;
+            } else if (res.impressoras.includes('Armazem')) {
+                target = 'Armazem';
+            } else if (res.padrao && res.padrao !== 'Armazem print') {
+                target = res.padrao;
+            } else {
+                target = res.impressoras[0];
+            }
+
+            res.impressoras.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p;
+                let lbl = p;
+                if (p === target) lbl += ' ★ (Selecionada)';
+                else if (p === res.padrao) lbl += ' (Padrão Windows)';
+                opt.textContent = lbl;
+                if (p === target) opt.selected = true;
+                select.appendChild(opt);
+            });
+        } else {
+            select.innerHTML = '<option value="">Nenhuma impressora disponível</option>';
+        }
+    } else {
+        statusBox.className = 'flex items-center gap-2 p-3 rounded-xl text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200';
+        statusBox.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span><span>Offline (${status.error || 'Servidor inacessível'})</span>`;
+        select.innerHTML = '<option value="">Servidor offline</option>';
+    }
+}
+
+export async function testQuickPrinterConnection() {
+    const urlInput = document.getElementById('quick-printer-url');
+    const sUrl = (urlInput?.value || '').trim() || printService.getServerUrl();
+    toast('A testar conexão...', 'info');
+    const st = await printService.checkStatus(sUrl);
+    if (st.ok) {
+        toast(`✅ Conexão bem-sucedida! Impressora padrão: ${st.impressora_padrao || 'Nenhuma'}`, 'success');
+        await refreshQuickPrinterModal();
+    } else {
+        toast(`❌ Falha: ${st.error || 'Inacessível'}`, 'error');
+    }
+}
+
+export async function printQuickTestPage() {
+    const select = document.getElementById('quick-printer-select');
+    const printer = select ? select.value : '';
+    if (!printer) {
+        toast('Selecione uma impressora primeiro.', 'warning');
+        return;
+    }
+    try {
+        toast(`⚡ A imprimir página de teste em [${printer}]...`, 'info');
+        const res = await printService.printTestPage(printer);
+        if (res && res.sucesso) {
+            toast(`✅ Teste impresso em [${res.impressora || printer}]!`, 'success');
+        } else {
+            toast(`❌ Erro: ${res.erro || 'Falha'}`, 'error');
+        }
+    } catch (e) {
+        toast(`❌ Erro: ${e.message}`, 'error');
+    }
+}
+
+export function saveQuickPrinterConfig() {
+    const select = document.getElementById('quick-printer-select');
+    const urlInput = document.getElementById('quick-printer-url');
+    if (urlInput && urlInput.value) printService.setServerUrl(urlInput.value);
+    if (select && select.value) {
+        printService.setSelectedPrinter(select.value);
+        toast(`✅ Impressora ativa definida para: [${select.value}]`, 'success');
+    }
+    closeQuickPrinterModal();
 }
 
 
@@ -9120,6 +9318,10 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                             ⚡ Direto
                         </button>
+                        <button onclick="ui.openQuickPrinterModal()" 
+                            class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                        </button>
                     </div>
                 `;
             } else {
@@ -9134,6 +9336,10 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                             ⚡ Direto
+                        </button>
+                        <button onclick="ui.openQuickPrinterModal()" 
+                            class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         </button>
                     </div>
                 `;
@@ -9157,6 +9363,10 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                             ⚡ Direto
+                        </button>
+                        <button onclick="ui.openQuickPrinterModal()" 
+                            class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         </button>
                         ` : ''}
                     </div>
@@ -9185,6 +9395,10 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                             ⚡ Direto
+                        </button>
+                        <button onclick="ui.openQuickPrinterModal()" 
+                            class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         </button>
                         ` : ''}
                     </div>
@@ -10403,17 +10617,25 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             const fileBase64 = await printService.elementToPdfBase64(tempContainer, window);
             // Resolver impressora selecionada ou predefinida do servidor
             let targetPrinter = printService.getSelectedPrinter();
-            if (!targetPrinter) {
+            if (!targetPrinter || targetPrinter === 'Armazem print') {
                 const pRes = await printService.getPrinters();
                 if (pRes && pRes.ok && pRes.impressoras && pRes.impressoras.length > 0) {
-                    targetPrinter = pRes.padrao || pRes.impressoras[0];
+                    if (pRes.impressora_configurada && pRes.impressoras.includes(pRes.impressora_configurada) && pRes.impressora_configurada !== 'Armazem print') {
+                        targetPrinter = pRes.impressora_configurada;
+                    } else if (pRes.impressoras.includes('Armazem')) {
+                        targetPrinter = 'Armazem';
+                    } else if (pRes.padrao && pRes.padrao !== 'Armazem print') {
+                        targetPrinter = pRes.padrao;
+                    } else {
+                        targetPrinter = pRes.impressoras[0];
+                    }
                     printService.setSelectedPrinter(targetPrinter);
                 }
             }
-            if (!targetPrinter) targetPrinter = 'Armazem print';
+            if (!targetPrinter || targetPrinter === 'Armazem print') targetPrinter = 'Armazem';
 
             const serverUrl = printService.getServerUrl();
-            toast(`⚡ A enviar para a impressora [${targetPrinter}] (${serverUrl})...`, 'info');
+            toast(`⚡ A enviar para a impressora [${targetPrinter}] (${serverUrl.replace(/^https?:\/\//, '')})...`, 'info');
 
             const res = await printService.printDocument({
                 nome: `Guia_Dupla_${guiaNumber}.pdf`,
@@ -11288,12 +11510,16 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 function getSelectedPrinter() {
                     try {
                         const val = localStorage.getItem(PRINTER_STORAGE_KEY);
-                        if (val && val.trim()) return val.trim();
+                        if (val && val.trim() && val.trim() !== 'Armazem print') return val.trim();
                     } catch (e) {}
                     if (window.opener && window.opener.printService) {
-                        try { return window.opener.printService.getSelectedPrinter(); } catch (e) {}
+                        try {
+                            const op = window.opener.printService.getSelectedPrinter();
+                            if (op && op.trim() && op.trim() !== 'Armazem print') return op.trim();
+                        } catch (e) {}
                     }
-                    return '${defaultPrinter}';
+                    const def = '${defaultPrinter}';
+                    return (def && def !== 'Armazem print') ? def : 'Armazem';
                 }
 
                 function getApiToken() {
@@ -11445,14 +11671,27 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     }
 
                     if (printers && printers.length > 0) {
+                        const previousVal = select.value && !select.value.includes('carregar') ? select.value : '';
                         select.innerHTML = '';
-                        const saved = getSelectedPrinter();
-                        const defaultTarget = saved || padrao || printers[0];
+                        const saved = previousVal || getSelectedPrinter();
+                        let defaultTarget = '';
+                        if (saved && printers.includes(saved) && saved !== 'Armazem print') {
+                            defaultTarget = saved;
+                        } else if (printers.includes('Armazem')) {
+                            defaultTarget = 'Armazem';
+                        } else if (padrao && printers.includes(padrao) && padrao !== 'Armazem print') {
+                            defaultTarget = padrao;
+                        } else {
+                            defaultTarget = printers[0];
+                        }
 
                         printers.forEach(p => {
                             const opt = document.createElement('option');
                             opt.value = p;
-                            opt.textContent = p + (p === padrao ? ' ★ (Predefinida)' : '');
+                            let lbl = p;
+                            if (p === defaultTarget) lbl += ' ★ (Selecionada)';
+                            else if (p === padrao) lbl += ' (Padrão Windows)';
+                            opt.textContent = lbl;
                             if (p === defaultTarget) opt.selected = true;
                             select.appendChild(opt);
                         });
@@ -11471,6 +11710,12 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         if (window.opener?.printService) {
                             try { window.opener.printService.setSelectedPrinter(val); } catch(e){}
                         }
+                        fetch(APP_ORIGIN + '/api/print/config', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ impressora: val })
+                        }).catch(() => {});
+                        showNotice('Impressora ativa: ' + val, 'info');
                     }
                 }
 
