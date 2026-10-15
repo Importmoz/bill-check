@@ -288,7 +288,7 @@ export const printService = {
 
     /**
      * Converte um elemento HTML em PDF Base64 pronto para enviar ao servidor
-     * @param {HTMLElement} element - O contentor a imprimir (.page-wrapper)
+     * @param {HTMLElement} element - O contentor a imprimir (pode conter múltiplos .page-wrapper ou ser ele próprio um .page-wrapper)
      * @param {Object} [windowContext] - Opcionalmente a window onde o elemento reside
      */
     async elementToPdfBase64(element, windowContext = window) {
@@ -299,17 +299,14 @@ export const printService = {
             throw new Error('Biblioteca html2canvas não encontrada.');
         }
 
-        // Renderiza com escala 2.5 para 300 DPI nítido
-        const canvas = await html2canvas(element, {
-            scale: 2.2,
-            useCORS: true,
-            allowTaint: true,
-            backgroundColor: '#ffffff',
-            logging: false,
-            windowWidth: 1200
-        });
-
-        const imgData = canvas.toDataURL('image/png');
+        // Se o elemento contiver páginas filhas .page-wrapper, iteramos cada página
+        let pages = [];
+        if (element.classList && element.classList.contains('page-wrapper')) {
+            pages = [element];
+        } else {
+            const found = element.querySelectorAll ? element.querySelectorAll('.page-wrapper') : [];
+            pages = found.length > 0 ? Array.from(found) : [element];
+        }
 
         if (jspdf && (jspdf.jsPDF || typeof jspdf === 'function')) {
             const JsPdfConstructor = jspdf.jsPDF || jspdf;
@@ -320,12 +317,36 @@ export const printService = {
                 format: 'a4'
             });
 
-            pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+            for (let i = 0; i < pages.length; i++) {
+                if (i > 0) {
+                    pdf.addPage();
+                }
+                const pageEl = pages[i];
+                const canvas = await html2canvas(pageEl, {
+                    scale: 2.2,
+                    useCORS: true,
+                    allowTaint: true,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                    windowWidth: 1200
+                });
+                const imgData = canvas.toDataURL('image/png');
+                pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+            }
+
             const dataUri = pdf.output('datauristring');
             return dataUri.split(',')[1];
         } else {
-            // Fallback direto como imagem PNG (suportada nativamente pelo servidor Python)
-            return imgData.split(',')[1];
+            // Fallback direto como imagem PNG (renderiza a primeira página ou todo o elemento)
+            const canvas = await html2canvas(pages[0] || element, {
+                scale: 2.2,
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                windowWidth: 1200
+            });
+            return canvas.toDataURL('image/png').split(',')[1];
         }
     }
 };

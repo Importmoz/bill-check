@@ -9963,12 +9963,16 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
     const textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
 
-    // Helper para gerar o HTML de cada via mantendo a identidade visual original
-    // Helper para gerar o HTML de cada via mantendo a identidade visual com tipografia aumentada e legível
-    const generateViaHtml = (viaType) => {
+    // Detetar se o cliente tem muitas ordens (mais de 2 ordens) para emitir em 2 folhas A4 separadas (Armazém e Portaria)
+    const isMultiPage = (client.rows && client.rows.length > 2);
+
+    // Helper para gerar o HTML de cada via mantendo a identidade visual com tipografia nítida e legível
+    const generateViaHtml = (viaType, isFullPage = false) => {
         const isArmazem = viaType === 'ARMAZEM';
         const docTitle = isArmazem ? 'Guia de Entrega' : 'Guia de Saída';
-        const badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA' : '2ª VIA — PORTARIA & SEGURANÇA';
+        const badgeLabel = isFullPage
+            ? (isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA (FOLHA 1 DE 2)' : '2ª VIA — PORTARIA & SEGURANÇA (FOLHA 2 DE 2)')
+            : (isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA' : '2ª VIA — PORTARIA & SEGURANÇA');
         const badgeStyle = isArmazem 
             ? 'background: #e0e7ff; color: #1e1b4b; border: 1.5px solid #4338ca; font-weight: 900;' 
             : 'background: #fef3c7; color: #78350f; border: 1.5px solid #d97706; font-weight: 900;';
@@ -10001,8 +10005,9 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                </div>`;
 
         let tableRowsHtml = '';
-        if (client.rows && client.rows.length <= 4) {
-            tableRowsHtml = client.rows.map((r, idx) => {
+        // Em modo Full Page (2 folhas) OU quando há poucas ordens (<= 2), lista individualmente cada linha com sua descrição
+        if (isFullPage || (client.rows && client.rows.length <= 2)) {
+            tableRowsHtml = (client.rows || []).map((r, idx) => {
                 const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
                 const desc = descIdx !== -1 ? String(r.originalRow[descIdx] || '').trim() : '';
                 const cleanOrder = (orderNum && orderNum !== '—') ? orderNum : '';
@@ -10063,9 +10068,17 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             `;
         }
 
+        const watermarkSize = isFullPage ? '460px' : '330px';
+        const pageFooterHtml = isFullPage ? `
+            <div class="guia-page-footer">
+                <span>Guia Nº <strong>${guiaNumber}</strong> • ${isArmazem ? 'Folha 1 de 2 (Armazém / Conferência)' : 'Folha 2 de 2 (Portaria & Segurança)'}</span>
+                <span>Jupiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
+            </div>
+        ` : '';
+
         return `
-            <div class="guia-half">
-                <div class="watermark-bg">
+            <div class="${isFullPage ? 'guia-full' : 'guia-half'}">
+                <div class="watermark-bg" style="width: ${watermarkSize}; height: ${watermarkSize};">
                     <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Watermark" />
                 </div>
                 <div class="header">
@@ -10141,6 +10154,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     ${sigBox1}
                     ${sigBox2}
                 </div>
+                ${pageFooterHtml}
             </div>
         `;
     };
@@ -10163,9 +10177,20 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: #000000; line-height: 1.35; background: #ffffff; }
             .page-wrapper { width: 210mm; max-width: 210mm; height: 288mm; max-height: 288mm; margin: 0 auto; background: white; padding: 4mm 6mm; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; }
             .guia-half { position: relative; height: 48.5%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 1.5px solid #000000; border-radius: 6px; padding: 8px 12px; background: #ffffff; }
-            .watermark-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 330px; height: 330px; opacity: 0.11; pointer-events: none; z-index: 0; display: flex; align-items: center; justify-content: center; }
+            .guia-full { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 2px solid #000000; border-radius: 6px; padding: 14px 18px; background: #ffffff; }
+            .guia-full .header { padding-bottom: 8px; margin-bottom: 8px; }
+            .guia-full .header-logo { width: 52px; height: 52px; }
+            .guia-full .company-title { font-size: 22px; }
+            .guia-full .doc-info h2 { font-size: 20px; }
+            .guia-full .guia-table { margin-bottom: 8px; }
+            .guia-full .guia-table th { padding: 6px 10px; font-size: 11.5px; }
+            .guia-full .guia-table td { padding: 6px 10px; font-size: 12px; }
+            .guia-full .signatures { margin-top: 10px; gap: 40px; }
+            .guia-full .sig-box { padding-top: 6px; }
+            .guia-page-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid #000000; padding-top: 5px; margin-top: 6px; font-size: 10px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.02em; }
+            .watermark-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.11; pointer-events: none; z-index: 0; display: flex; align-items: center; justify-content: center; }
             .watermark-bg img { width: 100%; height: 100%; object-fit: contain; }
-            .header, .details-grid, .guia-table, .note-box, .signatures { position: relative; z-index: 1; }
+            .header, .details-grid, .guia-table, .note-box, .signatures, .guia-page-footer { position: relative; z-index: 1; }
             .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000000; padding-bottom: 5px; margin-bottom: 5px; }
             .logo-section { display: flex; align-items: center; gap: 10px; }
             .header-logo { width: 48px; height: 48px; object-fit: contain; }
@@ -10209,26 +10234,41 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         `;
         tempContainer.appendChild(styleEl);
 
-        const wrapperDiv = document.createElement('div');
-        wrapperDiv.id = 'guia-page-wrapper';
-        wrapperDiv.className = 'page-wrapper';
-        wrapperDiv.innerHTML = `
-            ${generateViaHtml('ARMAZEM')}
-            <div class="cut-separator">
-                <span class="cut-scissors">✂</span>
-                <div class="cut-line"></div>
-                <span>DESTAQUE AQUI — 1ª VIA RETIDA NO ARMAZÉM / 2ª VIA RETIDA NA PORTARIA</span>
-                <div class="cut-line"></div>
-                <span class="cut-scissors">✂</span>
-            </div>
-            ${generateViaHtml('PORTARIA')}
-        `;
-        tempContainer.appendChild(wrapperDiv);
+        if (isMultiPage) {
+            // Emissão em 2 Folhas A4 completas
+            const page1 = document.createElement('div');
+            page1.className = 'page-wrapper';
+            page1.innerHTML = generateViaHtml('ARMAZEM', true);
+
+            const page2 = document.createElement('div');
+            page2.className = 'page-wrapper';
+            page2.innerHTML = generateViaHtml('PORTARIA', true);
+
+            tempContainer.appendChild(page1);
+            tempContainer.appendChild(page2);
+        } else {
+            // Emissão padrão em 1 folha única com 2 vias e destaque
+            const wrapperDiv = document.createElement('div');
+            wrapperDiv.id = 'guia-page-wrapper';
+            wrapperDiv.className = 'page-wrapper';
+            wrapperDiv.innerHTML = `
+                ${generateViaHtml('ARMAZEM', false)}
+                <div class="cut-separator">
+                    <span class="cut-scissors">✂</span>
+                    <div class="cut-line"></div>
+                    <span>DESTAQUE AQUI — 1ª VIA RETIDA NO ARMAZÉM / 2ª VIA RETIDA NA PORTARIA</span>
+                    <div class="cut-line"></div>
+                    <span class="cut-scissors">✂</span>
+                </div>
+                ${generateViaHtml('PORTARIA', false)}
+            `;
+            tempContainer.appendChild(wrapperDiv);
+        }
         document.body.appendChild(tempContainer);
 
         try {
-            toast('⚡ A renderizar PDF de alta resolução da Guia Dupla...', 'info');
-            const fileBase64 = await printService.elementToPdfBase64(wrapperDiv, window);
+            toast(isMultiPage ? '⚡ A renderizar PDF de 2 Folhas (Armazém & Portaria)...' : '⚡ A renderizar PDF de alta resolução da Guia Dupla...', 'info');
+            const fileBase64 = await printService.elementToPdfBase64(tempContainer, window);
             const targetPrinter = printService.getSelectedPrinter() || 'Armazem print';
             toast(`⚡ A enviar para a impressora [${targetPrinter}] no computador partilhado...`, 'info');
 
@@ -10238,7 +10278,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 impressora: targetPrinter
             });
 
-            toast(`✅ Guia Dupla (${guiaNumber}) impressa com sucesso no Armazém [${res.impressora || targetPrinter}]!`, 'success');
+            toast(`✅ Guia Dupla (${guiaNumber}${isMultiPage ? ' - 2 Folhas' : ''}) impressa com sucesso no Armazém [${res.impressora || targetPrinter}]!`, 'success');
         } catch (err) {
             console.error('[ERRO DIRECT PRINT]', err);
             toast(`Erro na impressão direta: ${err.message}. A abrir visualização...`, 'error');
@@ -10496,6 +10536,83 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     border-radius: 6px;
                     padding: 8px 12px;
                     background: #ffffff;
+                }
+                .guia-full {
+                    position: relative;
+                    height: 100%;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    box-sizing: border-box;
+                    overflow: hidden;
+                    border: 2px solid #000000;
+                    border-radius: 6px;
+                    padding: 14px 18px;
+                    background: #ffffff;
+                }
+                .guia-full .header {
+                    padding-bottom: 8px;
+                    margin-bottom: 8px;
+                }
+                .guia-full .header-logo {
+                    width: 52px;
+                    height: 52px;
+                }
+                .guia-full .company-title {
+                    font-size: 22px;
+                }
+                .guia-full .doc-info h2 {
+                    font-size: 20px;
+                }
+                .guia-full .guia-table {
+                    margin-bottom: 8px;
+                }
+                .guia-full .guia-table th {
+                    padding: 6px 10px;
+                    font-size: 11.5px;
+                }
+                .guia-full .guia-table td {
+                    padding: 6px 10px;
+                    font-size: 12px;
+                }
+                .guia-full .signatures {
+                    margin-top: 10px;
+                    gap: 40px;
+                }
+                .guia-full .sig-box {
+                    padding-top: 6px;
+                }
+                .guia-page-footer {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-top: 1.5px solid #000000;
+                    padding-top: 5px;
+                    margin-top: 6px;
+                    font-size: 10px;
+                    font-weight: 800;
+                    color: #1e293b;
+                    text-transform: uppercase;
+                    letter-spacing: 0.02em;
+                }
+                .page-divider-screen {
+                    width: 210mm;
+                    margin: 24px auto 14px auto;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #475569;
+                    font-size: 11px;
+                    font-weight: 900;
+                    text-transform: uppercase;
+                    letter-spacing: 0.1em;
+                    user-select: none;
+                }
+                .page-divider-screen::before, .page-divider-screen::after {
+                    content: '';
+                    flex: 1;
+                    border-top: 2px dashed #94a3b8;
+                    margin: 0 16px;
                 }
                 .watermark-bg {
                     position: absolute;
@@ -10846,19 +10963,24 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 }
 
                 @media print {
-                    .btn-print-bar, #modal-config, #print-toast { display: none !important; }
+                    .btn-print-bar, #modal-config, #print-toast, .page-divider-screen { display: none !important; }
                     body { background: white !important; margin: 0 !important; }
                     .page-wrapper {
-                        padding: 0 !important;
+                        padding: 4mm 6mm !important;
                         margin: 0 !important;
                         width: 100% !important;
-                        height: 100vh !important;
-                        max-height: 100vh !important;
+                        height: 288mm !important;
+                        max-height: 288mm !important;
                         box-shadow: none !important;
-                        page-break-after: avoid !important;
+                        page-break-after: always !important;
+                        break-after: page !important;
                         page-break-inside: avoid !important;
                     }
-                    .guia-half {
+                    .page-wrapper:last-child {
+                        page-break-after: avoid !important;
+                        break-after: avoid !important;
+                    }
+                    .guia-half, .guia-full {
                         page-break-inside: avoid !important;
                     }
                 }
@@ -10870,7 +10992,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 <div class="bar-left">
                     <div>
                         <div class="bar-title">Guia Dupla Oficial (A4)</div>
-                        <div class="bar-sub">1ª Via Armazém • 2ª Via Portaria</div>
+                        <div class="bar-sub">${isMultiPage ? '📄 2 Folhas (Folha 1: Armazém • Folha 2: Portaria)' : '📄 Folha Única Dupla (✂ Destaque Armazém & Portaria)'}</div>
                     </div>
                     <div id="status-badge" class="server-badge badge-checking" onclick="openServerConfigModal()" title="Clique para ver ou alterar o IP do servidor de impressão">
                         <span class="badge-dot"></span>
@@ -10927,18 +11049,33 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 </div>
             </div>
 
-            <!-- Folha A4 com as duas vias -->
-            <div id="guia-page-wrapper" class="page-wrapper">
-                ${generateViaHtml('ARMAZEM')}
-                <div class="cut-separator">
-                    <span class="cut-scissors">✂</span>
-                    <div class="cut-line"></div>
-                    <span>DESTAQUE AQUI — 1ª VIA RETIDA NO ARMAZÉM / 2ª VIA RETIDA NA PORTARIA</span>
-                    <div class="cut-line"></div>
-                    <span class="cut-scissors">✂</span>
+            <!-- Conteúdo da Guia: 2 Folhas (Multi-Page) ou 1 Folha Dupla com Destaque -->
+            ${isMultiPage ? `
+                <!-- Folha 1: Armazém e Conferência -->
+                <div id="guia-page-1" class="page-wrapper">
+                    ${generateViaHtml('ARMAZEM', true)}
                 </div>
-                ${generateViaHtml('PORTARIA')}
-            </div>
+                <div class="page-divider-screen">
+                    <span>FOLHA 2 — PORTARIA & SEGURANÇA</span>
+                </div>
+                <!-- Folha 2: Portaria e Segurança -->
+                <div id="guia-page-2" class="page-wrapper">
+                    ${generateViaHtml('PORTARIA', true)}
+                </div>
+            ` : `
+                <!-- Folha Única Dupla com Destaque -->
+                <div id="guia-page-wrapper" class="page-wrapper">
+                    ${generateViaHtml('ARMAZEM', false)}
+                    <div class="cut-separator">
+                        <span class="cut-scissors">✂</span>
+                        <div class="cut-line"></div>
+                        <span>DESTAQUE AQUI — 1ª VIA RETIDA NO ARMAZÉM / 2ª VIA RETIDA NA PORTARIA</span>
+                        <div class="cut-line"></div>
+                        <span class="cut-scissors">✂</span>
+                    </div>
+                    ${generateViaHtml('PORTARIA', false)}
+                </div>
+            `}
 
             <script>
                 const SERVER_STORAGE_KEY = 'printer_server_url';
@@ -11104,25 +11241,15 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     btn.innerHTML = '<span>⚡ A renderizar Guia...</span>';
 
                     try {
-                        const wrapper = document.getElementById('guia-page-wrapper');
-                        if (!wrapper) throw new Error('Elemento da Guia não encontrado.');
+                        const pages = Array.from(document.querySelectorAll('.page-wrapper'));
+                        if (pages.length === 0) throw new Error('Nenhuma folha da Guia encontrada para impressão.');
 
-                        // 1. Renderizar com html2canvas em alta resolução (300 DPI)
-                        const canvas = await html2canvas(wrapper, {
-                            scale: 2.2,
-                            useCORS: true,
-                            allowTaint: true,
-                            backgroundColor: '#ffffff',
-                            logging: false,
-                            windowWidth: 1200
-                        });
-
-                        btn.innerHTML = '<span>⚡ A enviar para o computador partilhado...</span>';
+                        btn.innerHTML = '<span>⚡ A renderizar Guia (' + pages.length + (pages.length > 1 ? ' folhas' : ' folha') + ')...</span>';
 
                         let fileBase64 = '';
-                        let fileName = 'Guia_Dupla_${guiaNumber}.pdf';
+                        let fileName = 'Guia_${guiaNumber}.pdf';
 
-                        // 2. Gerar PDF em modo A4 (210 x 297 mm)
+                        // Renderizar cada folha (.page-wrapper) em alta resolução e compilar no jsPDF
                         const jspdfModule = window.jspdf;
                         if (jspdfModule && (jspdfModule.jsPDF || typeof jspdfModule === 'function')) {
                             const JsPdfClass = jspdfModule.jsPDF || jspdfModule;
@@ -11131,13 +11258,37 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                                 unit: 'mm',
                                 format: 'a4'
                             });
-                            const imgData = canvas.toDataURL('image/png');
-                            pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+
+                            for (let i = 0; i < pages.length; i++) {
+                                if (i > 0) {
+                                    pdf.addPage();
+                                }
+                                const canvas = await html2canvas(pages[i], {
+                                    scale: 2.2,
+                                    useCORS: true,
+                                    allowTaint: true,
+                                    backgroundColor: '#ffffff',
+                                    logging: false,
+                                    windowWidth: 1200
+                                });
+                                const imgData = canvas.toDataURL('image/png');
+                                pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+                            }
                             fileBase64 = pdf.output('datauristring').split(',')[1];
                         } else {
+                            const canvas = await html2canvas(pages[0], {
+                                scale: 2.2,
+                                useCORS: true,
+                                allowTaint: true,
+                                backgroundColor: '#ffffff',
+                                logging: false,
+                                windowWidth: 1200
+                            });
                             fileBase64 = canvas.toDataURL('image/png').split(',')[1];
-                            fileName = 'Guia_Dupla_${guiaNumber}.png';
+                            fileName = 'Guia_${guiaNumber}.png';
                         }
+
+                        btn.innerHTML = '<span>⚡ A enviar para o computador partilhado...</span>';
 
                         let printSuccess = false;
                         let printerUsed = selectedPrinter;
