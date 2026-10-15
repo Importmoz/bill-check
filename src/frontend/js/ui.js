@@ -9963,22 +9963,22 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
     const textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
 
-    // Determinar modo de impressão baseado no número total de ordens:
-    // - <= 2 ordens: '1_FOLHA' (1 folha única A4 dividida ao meio com destaque ✂)
-    // - 3 a 8 ordens: '2_FOLHAS' (1 folha A4 para 1ª via + 1 folha A4 para 2ª via)
-    // - > 8 ordens: '4_FOLHAS' (2 folhas para 1ª via + 2 folhas para 2ª via)
+    // Determinar modo de impressão baseado no número total de ordens (Otimizado para poupança de papel):
+    // - 1 a 6 ordens: '1_FOLHA' (1 folha única A4 dividida ao meio com corte ✂ para poupar papel)
+    // - 7 a 14 ordens: '2_FOLHAS' (1 folha A4 completa para 1ª via + 1 folha A4 para 2ª via)
+    // - > 14 ordens: '4_FOLHAS' (2 folhas para 1ª via + 2 folhas para 2ª via)
     const totalOrdersCount = client.rows ? client.rows.length : 0;
     let printMode = '1_FOLHA';
-    if (totalOrdersCount > 8) {
+    if (totalOrdersCount > 14) {
         printMode = '4_FOLHAS';
-    } else if (totalOrdersCount > 2) {
+    } else if (totalOrdersCount > 6) {
         printMode = '2_FOLHAS';
     }
 
     // Para o modo 4 Folhas, dividir as ordens em duas partes (Parte 1 e Parte 2):
-    // A Parte 1 tem os 3 blocos/cards de cliente/recebimento/armazenagem, por isso comporta confortavelmente até 8 ordens.
+    // A Parte 1 tem os 3 blocos/cards de cliente/recebimento/armazenagem, por isso comporta confortavelmente até 10 ordens.
     // A Parte 2 tem cabeçalho compacto de continuação, comportando as restantes ordens com totais e assinaturas.
-    const splitIdx = Math.min(8, Math.ceil(totalOrdersCount / 2));
+    const splitIdx = Math.min(10, Math.ceil(totalOrdersCount / 2));
     const part1Rows = (client.rows || []).slice(0, splitIdx);
     const part2Rows = (client.rows || []).slice(splitIdx);
 
@@ -10256,7 +10256,38 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             * { box-sizing: border-box; margin: 0; padding: 0; }
             body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: #000000; line-height: 1.35; background: #ffffff; }
             .page-wrapper { width: 210mm; max-width: 210mm; height: 288mm; max-height: 288mm; margin: 0 auto; background: white; padding: 4mm 6mm; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; }
-            .guia-half { position: relative; height: 48.5%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 1.5px solid #000000; border-radius: 6px; padding: 6px 10px; background: #ffffff; }
+            .guia-half { position: relative; height: 48.5%; max-height: 48.5%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 1.5px solid #000000; border-radius: 6px; padding: 4px 8px; background: #ffffff; }
+            .guia-half .header { padding-bottom: 2px; margin-bottom: 2px; }
+            .guia-half .header-logo { width: 34px; height: 34px; }
+            .guia-half .company-title { font-size: 16px; line-height: 1.1; }
+            .guia-half .company-sub { font-size: 8px; line-height: 1.2; margin-top: 1px; }
+            .guia-half .doc-info h2 { font-size: 14.5px; line-height: 1.1; }
+            .guia-half .doc-info .via-badge { font-size: 8.5px; padding: 1.5px 6px; margin-top: 1px; }
+            .guia-half .doc-info .guia-no { font-size: 11px; }
+            .guia-half .doc-info .guia-meta { font-size: 8.5px; }
+            .guia-half .details-grid { gap: 4px; margin-bottom: 2px; }
+            .guia-half .card { padding: 2px 5px; }
+            .guia-half .card h3 { font-size: 8.5px; margin-bottom: 1px; padding-bottom: 1px; }
+            .guia-half .card p { margin: 1px 0; font-size: 9px; line-height: 1.15; }
+            .guia-half .card .lbl { font-size: 8px; }
+            .guia-half .card .val { font-size: 9px; }
+            .guia-half .card .viatura-val { font-size: 9px; }
+            .guia-half .guia-table { margin-bottom: 2px; }
+            .guia-half .guia-table th { padding: 2px 4px; font-size: 8.5px; }
+            .guia-half .guia-table td { padding: 2px 4px; font-size: 9.5px; }
+            .guia-half .row-order-title { gap: 0; }
+            .guia-half .order-tag { font-size: 9.5px; line-height: 1.1; }
+            .guia-half .order-desc-inline { font-size: 8px; line-height: 1.15; }
+            .guia-half .td-num { font-size: 10.5px; }
+            .guia-half .write-line { height: 12px; min-width: 45px; }
+            .guia-half .vol-unit { font-size: 8px; }
+            .guia-half .totals-row td { padding: 2px 4px; font-size: 9.5px; }
+            .guia-half .td-manual { font-size: 8.5px; }
+            .guia-half .note-box { font-size: 8px; padding: 2px 6px; margin: 1px 0 2px 0; line-height: 1.2; }
+            .guia-half .signatures { margin-top: 2px; gap: 14px; }
+            .guia-half .sig-box { padding-top: 2px; }
+            .guia-half .sig-box p { font-size: 9.5px; }
+            .guia-half .sig-box span { font-size: 8px; }
             .guia-full { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 2px solid #000000; border-radius: 6px; padding: 10px 14px; background: #ffffff; }
             .guia-full .header { padding-bottom: 5px; margin-bottom: 5px; }
             .guia-full .header-logo { width: 46px; height: 46px; }
@@ -10626,6 +10657,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .guia-half {
                     position: relative;
                     height: 48.5%;
+                    max-height: 48.5%;
                     display: flex;
                     flex-direction: column;
                     justify-content: space-between;
@@ -10633,9 +10665,40 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     overflow: hidden;
                     border: 1.5px solid #000000;
                     border-radius: 6px;
-                    padding: 6px 10px;
+                    padding: 4px 8px;
                     background: #ffffff;
                 }
+                .guia-half .header { padding-bottom: 2px; margin-bottom: 2px; }
+                .guia-half .header-logo { width: 34px; height: 34px; }
+                .guia-half .company-title { font-size: 16px; line-height: 1.1; }
+                .guia-half .company-sub { font-size: 8px; line-height: 1.2; margin-top: 1px; }
+                .guia-half .doc-info h2 { font-size: 14.5px; line-height: 1.1; }
+                .guia-half .doc-info .via-badge { font-size: 8.5px; padding: 1.5px 6px; margin-top: 1px; }
+                .guia-half .doc-info .guia-no { font-size: 11px; }
+                .guia-half .doc-info .guia-meta { font-size: 8.5px; }
+                .guia-half .details-grid { gap: 4px; margin-bottom: 2px; }
+                .guia-half .card { padding: 2px 5px; }
+                .guia-half .card h3 { font-size: 8.5px; margin-bottom: 1px; padding-bottom: 1px; }
+                .guia-half .card p { margin: 1px 0; font-size: 9px; line-height: 1.15; }
+                .guia-half .card .lbl { font-size: 8px; }
+                .guia-half .card .val { font-size: 9px; }
+                .guia-half .card .viatura-val { font-size: 9px; }
+                .guia-half .guia-table { margin-bottom: 2px; }
+                .guia-half .guia-table th { padding: 2px 4px; font-size: 8.5px; }
+                .guia-half .guia-table td { padding: 2px 4px; font-size: 9.5px; }
+                .guia-half .row-order-title { gap: 0; }
+                .guia-half .order-tag { font-size: 9.5px; line-height: 1.1; }
+                .guia-half .order-desc-inline { font-size: 8px; line-height: 1.15; }
+                .guia-half .td-num { font-size: 10.5px; }
+                .guia-half .write-line { height: 12px; min-width: 45px; }
+                .guia-half .vol-unit { font-size: 8px; }
+                .guia-half .totals-row td { padding: 2px 4px; font-size: 9.5px; }
+                .guia-half .td-manual { font-size: 8.5px; }
+                .guia-half .note-box { font-size: 8px; padding: 2px 6px; margin: 1px 0 2px 0; line-height: 1.2; }
+                .guia-half .signatures { margin-top: 2px; gap: 14px; }
+                .guia-half .sig-box { padding-top: 2px; }
+                .guia-half .sig-box p { font-size: 9.5px; }
+                .guia-half .sig-box span { font-size: 8px; }
                 .guia-full {
                     position: relative;
                     height: 100%;
@@ -11077,7 +11140,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 <div class="bar-left">
                     <div>
                         <div class="bar-title">Guia Dupla Oficial (A4)</div>
-                        <div class="bar-sub">${printMode === '4_FOLHAS' ? `📄 4 Folhas (${totalOrdersCount} Ordens • 2 Folhas Armazém + 2 Folhas Portaria)` : (printMode === '2_FOLHAS' ? `📄 2 Folhas (${totalOrdersCount} Ordens • Folha 1: Armazém • Folha 2: Portaria)` : '📄 Folha Única Dupla (✂ Destaque Armazém & Portaria)')}</div>
+                        <div class="bar-sub">${printMode === '4_FOLHAS' ? `📄 4 Folhas (${totalOrdersCount} Ordens • 2 Folhas Armazém + 2 Folhas Portaria)` : (printMode === '2_FOLHAS' ? `📄 2 Folhas (${totalOrdersCount} Ordens • Folha 1: Armazém • Folha 2: Portaria)` : `📄 Folha Única Dupla (${totalOrdersCount} ${totalOrdersCount === 1 ? 'Ordem' : 'Ordens'} • ✂ Destaque Armazém & Portaria)`)}</div>
                     </div>
                     <div id="status-badge" class="server-badge badge-checking" onclick="openServerConfigModal()" title="Clique para ver ou alterar o IP do servidor de impressão">
                         <span class="badge-dot"></span>
