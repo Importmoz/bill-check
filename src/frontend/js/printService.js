@@ -79,9 +79,9 @@ export const printService = {
         const saved = localStorage.getItem('printer_selected_name');
         if (saved && saved.trim()) {
             const clean = saved.trim();
-            // Se foi gravado o nome antigo da impressora offline "Armazem print", migrar para "Armazem"
-            if (clean === 'Armazem print') {
-                const target = this._cachedConfig?.impressora || 'Armazem';
+            // Se foi gravado o nome antigo da impressora offline, migrar para a HP LaserJet Pro
+            if (clean === 'Armazem print' || clean === 'Armazem') {
+                const target = this._cachedConfig?.impressora || 'Hewlett-Packard HP LaserJet Pro MFP M125nw';
                 localStorage.setItem('printer_selected_name', target);
                 return target;
             }
@@ -90,7 +90,7 @@ export const printService = {
         if (this._cachedConfig && this._cachedConfig.impressora) {
             return this._cachedConfig.impressora;
         }
-        return 'Armazem';
+        return 'Hewlett-Packard HP LaserJet Pro MFP M125nw';
     },
 
     /**
@@ -102,7 +102,7 @@ export const printService = {
             localStorage.removeItem('printer_selected_name');
         } else {
             // Prevenir gravação acidental da fila offline "Armazem print"
-            const finalName = clean === 'Armazem print' ? 'Armazem' : clean;
+            const finalName = clean === 'Armazem print' ? 'Hewlett-Packard HP LaserJet Pro MFP M125nw' : clean;
             localStorage.setItem('printer_selected_name', finalName);
             if (this._cachedConfig) this._cachedConfig.impressora = finalName;
             fetch('/api/print/config', {

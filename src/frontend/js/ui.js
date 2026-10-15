@@ -6899,6 +6899,8 @@ export async function refreshSettingsPrinters() {
             let defaultTarget = '';
             if (saved && res.impressoras.includes(saved) && saved !== 'Armazem print') {
                 defaultTarget = saved;
+            } else if (res.impressoras.includes('Hewlett-Packard HP LaserJet Pro MFP M125nw')) {
+                defaultTarget = 'Hewlett-Packard HP LaserJet Pro MFP M125nw';
             } else if (res.impressoras.includes('Armazem')) {
                 defaultTarget = 'Armazem';
             } else if (res.padrao && res.impressoras.includes(res.padrao) && res.padrao !== 'Armazem print') {
@@ -7073,6 +7075,8 @@ export async function refreshQuickPrinterModal() {
             let target = '';
             if (currentSaved && res.impressoras.includes(currentSaved) && currentSaved !== 'Armazem print') {
                 target = currentSaved;
+            } else if (res.impressoras.includes('Hewlett-Packard HP LaserJet Pro MFP M125nw')) {
+                target = 'Hewlett-Packard HP LaserJet Pro MFP M125nw';
             } else if (res.impressoras.includes('Armazem')) {
                 target = 'Armazem';
             } else if (res.padrao && res.padrao !== 'Armazem print') {
@@ -10622,6 +10626,8 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 if (pRes && pRes.ok && pRes.impressoras && pRes.impressoras.length > 0) {
                     if (pRes.impressora_configurada && pRes.impressoras.includes(pRes.impressora_configurada) && pRes.impressora_configurada !== 'Armazem print') {
                         targetPrinter = pRes.impressora_configurada;
+                    } else if (pRes.impressoras.includes('Hewlett-Packard HP LaserJet Pro MFP M125nw')) {
+                        targetPrinter = 'Hewlett-Packard HP LaserJet Pro MFP M125nw';
                     } else if (pRes.impressoras.includes('Armazem')) {
                         targetPrinter = 'Armazem';
                     } else if (pRes.padrao && pRes.padrao !== 'Armazem print') {
@@ -10632,7 +10638,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     printService.setSelectedPrinter(targetPrinter);
                 }
             }
-            if (!targetPrinter || targetPrinter === 'Armazem print') targetPrinter = 'Armazem';
+            if (!targetPrinter || targetPrinter === 'Armazem print') targetPrinter = 'Hewlett-Packard HP LaserJet Pro MFP M125nw';
 
             const serverUrl = printService.getServerUrl();
             toast(`⚡ A enviar para a impressora [${targetPrinter}] (${serverUrl.replace(/^https?:\/\//, '')})...`, 'info');
@@ -11675,11 +11681,11 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         select.innerHTML = '';
                         const saved = previousVal || getSelectedPrinter();
                         let defaultTarget = '';
-                        if (saved && printers.includes(saved) && saved !== 'Armazem print') {
+                        if (saved && printers.includes(saved) && saved !== 'Armazem print' && saved !== 'Armazem') {
                             defaultTarget = saved;
-                        } else if (printers.includes('Armazem')) {
-                            defaultTarget = 'Armazem';
-                        } else if (padrao && printers.includes(padrao) && padrao !== 'Armazem print') {
+                        } else if (printers.includes('Hewlett-Packard HP LaserJet Pro MFP M125nw')) {
+                            defaultTarget = 'Hewlett-Packard HP LaserJet Pro MFP M125nw';
+                        } else if (padrao && printers.includes(padrao) && padrao !== 'Armazem print' && padrao !== 'Armazem') {
                             defaultTarget = padrao;
                         } else {
                             defaultTarget = printers[0];

@@ -19,7 +19,7 @@ function loadPrintConfig() {
   }
   return {
     serverUrl: DEFAULT_PRINT_SERVER,
-    impressora: 'Armazem',
+    impressora: 'Hewlett-Packard HP LaserJet Pro MFP M125nw',
     token: ''
   };
 }
