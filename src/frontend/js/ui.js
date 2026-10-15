@@ -9809,45 +9809,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const pag2Idx = findCol(['PAG 2', 'PAG2']);
     const pag3Idx = findCol(['PAG 3', 'PAG3']);
     const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
-
-    // Detetar coluna específica de CTR / Contentor / Folha
-    const ctrColIdx = findCol(['CTR', 'FOLHA', 'CONTENTOR', 'CONTAINER', 'CNTR', 'Nº CTR', 'NO CTR', 'Nº FOLHA', 'NO FOLHA', 'Nº CONTENTOR', 'NO CONTENTOR', 'EQUIPAMENTO', 'EQUIPMENT']);
-    let rowCtr = '';
-    if (ctrColIdx !== -1 && client.rows) {
-        for (const r of client.rows) {
-            const val = String(r.originalRow[ctrColIdx] || '').trim();
-            if (val && val !== '—' && val !== '-' && val !== '?' && !val.toUpperCase().includes('TOTAL')) {
-                rowCtr = val;
-                break;
-            }
-        }
-    }
-
-    // Obter título da aba/folha ativa no Google Sheets ou PocketBase
-    let activeSheetTitle = (state.confirm?.sheetTitle || '').trim();
-    if (!activeSheetTitle && state.confirm?.range && state.confirm.range.includes('!')) {
-        activeSheetTitle = state.confirm.range.split('!')[0].trim();
-    }
-    activeSheetTitle = activeSheetTitle.replace(/^'+|'+$/g, '').trim();
-
-    // Resolver CTR / Número da Folha
-    const isGenericSheet = !activeSheetTitle || activeSheetTitle.toUpperCase() === 'SHEET1' || activeSheetTitle.toUpperCase() === 'FOLHA1';
-    const isGenericProject = !projectName || projectName.toUpperCase() === 'CONFIRM' || projectName.toUpperCase() === 'PROJETO';
-
-    let ctrDisplay = '—';
-    if (rowCtr) {
-        if (!isGenericSheet && !rowCtr.toUpperCase().includes(activeSheetTitle.toUpperCase())) {
-            ctrDisplay = `${activeSheetTitle} • ${rowCtr}`;
-        } else {
-            ctrDisplay = rowCtr;
-        }
-    } else if (!isGenericSheet) {
-        ctrDisplay = activeSheetTitle;
-    } else if (!isGenericProject) {
-        ctrDisplay = projectName;
-    } else if (activeSheetTitle) {
-        ctrDisplay = activeSheetTitle;
-    }
+    const descIdx = findCol(['DESCRIPTION', 'DESCRICAO', 'DESCRICÃO', 'DESC', 'MERCADORIA', 'CARGO', 'PRODUTO', 'ARTIGO', 'CONTEUDO', 'NATUREZA', 'GOODS', 'ITEM']);
 
     let totalOriginal = 0;
     const ordersList = [];
@@ -9925,7 +9887,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const spreadsheetId = state.confirm?.sheetId || '';
     logConfirmAudit(spreadsheetId, client.no, client.displayName, 'GUIA_EMITIDA', {
         numeroGuia: guiaNumber,
-        ctr: ctrDisplay,
         emitidoPor: issuerName,
         volumesEntregues: totalDelivered,
         recebedor: receiverName,
@@ -10039,6 +10000,69 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                    <span>Visto / Carimbo da Portaria (Hora Saída: ____:____)</span>
                </div>`;
 
+        let tableRowsHtml = '';
+        if (client.rows && client.rows.length <= 4) {
+            tableRowsHtml = client.rows.map((r, idx) => {
+                const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
+                const desc = descIdx !== -1 ? String(r.originalRow[descIdx] || '').trim() : '';
+                const cleanOrder = (orderNum && orderNum !== '—') ? orderNum : '';
+                const cleanDesc = (desc && desc !== '—') ? desc : '';
+                const pkgs = packagesIdx !== -1 ? (parseFloat(r.originalRow[packagesIdx]) || 0) : 0;
+                const discharged = dischargeIdx !== -1 ? (parseFloat(r.originalRow[dischargeIdx]) || 0) : 0;
+
+                let title = cleanOrder ? `Ordem: ${cleanOrder}` : (client.rows.length === 1 ? 'Mercadoria do Cliente' : `Item ${idx + 1}`);
+                let descLine = cleanDesc ? `<div class="orders-desc" style="font-size: 11px; color: #111827; font-weight: 700; margin-top: 1px;">${cleanDesc}</div>` : '';
+
+                return `
+                    <tr>
+                        <td class="td-desc">
+                            <strong>${title}</strong>
+                            ${descLine}
+                        </td>
+                        <td class="td-num">${pkgs}</td>
+                        <td class="td-num">${discharged}</td>
+                        <td class="td-action">
+                            <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
+                        </td>
+                        <td class="td-action">
+                            <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            const descItemsHtml = (client.rows || []).map(r => {
+                const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
+                const desc = descIdx !== -1 ? String(r.originalRow[descIdx] || '').trim() : '';
+                const cleanOrder = (orderNum && orderNum !== '—') ? orderNum : '';
+                const cleanDesc = (desc && desc !== '—') ? desc : '';
+                const pkgs = packagesIdx !== -1 ? (parseFloat(r.originalRow[packagesIdx]) || 0) : 0;
+                if (cleanOrder && cleanDesc) return `<div>• <strong>${cleanOrder}</strong>: ${cleanDesc} (${pkgs} vol)</div>`;
+                if (cleanOrder) return `<div>• <strong>${cleanOrder}</strong> (${pkgs} vol)</div>`;
+                if (cleanDesc) return `<div>• ${cleanDesc} (${pkgs} vol)</div>`;
+                return '';
+            }).filter(Boolean).join('');
+
+            tableRowsHtml = `
+                <tr>
+                    <td class="td-desc">
+                        <strong>Mercadoria do Cliente</strong>
+                        <div class="orders-desc" style="max-height: 85px; overflow-y: hidden;">
+                            ${descItemsHtml || `Ordens: ${ordersString}`}
+                        </div>
+                    </td>
+                    <td class="td-num">${totalOriginal}</td>
+                    <td class="td-num">${totalDischarged}</td>
+                    <td class="td-action">
+                        <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
+                    </td>
+                    <td class="td-action">
+                        <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
+                    </td>
+                </tr>
+            `;
+        }
+
         return `
             <div class="guia-half">
                 <div class="watermark-bg">
@@ -10059,7 +10083,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         <h2>${docTitle}</h2>
                         <div style="margin: 3px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
                         <p class="guia-no">Nº Guia: <strong>${guiaNumber}</strong></p>
-                        <p class="guia-meta">CTR / Folha: <strong>${ctrDisplay}</strong> | Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
+                        <p class="guia-meta">Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
                     </div>
                 </div>
 
@@ -10069,7 +10093,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         <p><span class="lbl">Cliente:</span> <strong class="val">${clientName}</strong></p>
                         <p><span class="lbl">ID Code:</span> <strong class="val">${clientCode}</strong></p>
                         <p><span class="lbl">Nº Cliente:</span> <strong class="val">${clientNo}</strong></p>
-                        <p><span class="lbl">CTR / Folha:</span> <strong class="val" style="color: #000000; font-weight: 900;">${ctrDisplay}</strong></p>
                         <p><span class="lbl">Projeto/Lista:</span> <strong class="val">${projectName}</strong></p>
                     </div>
                     <div class="card">
@@ -10099,20 +10122,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td class="td-desc">
-                                <strong>Mercadoria do Cliente</strong>
-                                <div class="orders-desc">Ordens: ${ordersString}</div>
-                            </td>
-                            <td class="td-num">${totalOriginal}</td>
-                            <td class="td-num">${totalDischarged}</td>
-                            <td class="td-action">
-                                <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
-                            </td>
-                            <td class="td-action">
-                                <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
-                            </td>
-                        </tr>
+                        ${tableRowsHtml}
                         <tr class="totals-row">
                             <td class="td-desc"><strong>TOTAL GERAL</strong></td>
                             <td class="td-num"><strong>${totalOriginal}</strong></td>
@@ -10223,7 +10233,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             toast(`⚡ A enviar para a impressora [${targetPrinter}] no computador partilhado...`, 'info');
 
             const res = await printService.printDocument({
-                nome: `Guia_Dupla_${ctrDisplay && ctrDisplay !== '—' ? ctrDisplay.replace(/[^a-zA-Z0-9_-]/g, '_') + '_' : ''}${guiaNumber}.pdf`,
+                nome: `Guia_Dupla_${guiaNumber}.pdf`,
                 arquivoBase64: fileBase64,
                 impressora: targetPrinter
             });
@@ -10255,7 +10265,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         <html lang="pt">
         <head>
             <meta charset="UTF-8">
-            <title>Guia Dupla Oficial - ${ctrDisplay && ctrDisplay !== '—' ? `${ctrDisplay} - ` : ''}${clientName} (${guiaNumber})</title>
+            <title>Guia Dupla Oficial - ${clientName} (${guiaNumber})</title>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
             <style>
