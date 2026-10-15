@@ -1778,6 +1778,7 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
     // Atualizar título da página
     const nameEl = document.getElementById('confirm-project-active-name');
     if (nameEl) nameEl.innerText = projectName;
+    if (state.confirm) state.confirm.projectName = projectName;
 
     try {
         const projectRecord = state.confirm?.projects?.find(x => x.sheetId === sheetId);

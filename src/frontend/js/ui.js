@@ -9810,6 +9810,45 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const pag3Idx = findCol(['PAG 3', 'PAG3']);
     const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
 
+    // Detetar coluna específica de CTR / Contentor / Folha
+    const ctrColIdx = findCol(['CTR', 'FOLHA', 'CONTENTOR', 'CONTAINER', 'CNTR', 'Nº CTR', 'NO CTR', 'Nº FOLHA', 'NO FOLHA', 'Nº CONTENTOR', 'NO CONTENTOR', 'EQUIPAMENTO', 'EQUIPMENT']);
+    let rowCtr = '';
+    if (ctrColIdx !== -1 && client.rows) {
+        for (const r of client.rows) {
+            const val = String(r.originalRow[ctrColIdx] || '').trim();
+            if (val && val !== '—' && val !== '-' && val !== '?' && !val.toUpperCase().includes('TOTAL')) {
+                rowCtr = val;
+                break;
+            }
+        }
+    }
+
+    // Obter título da aba/folha ativa no Google Sheets ou PocketBase
+    let activeSheetTitle = (state.confirm?.sheetTitle || '').trim();
+    if (!activeSheetTitle && state.confirm?.range && state.confirm.range.includes('!')) {
+        activeSheetTitle = state.confirm.range.split('!')[0].trim();
+    }
+    activeSheetTitle = activeSheetTitle.replace(/^'+|'+$/g, '').trim();
+
+    // Resolver CTR / Número da Folha
+    const isGenericSheet = !activeSheetTitle || activeSheetTitle.toUpperCase() === 'SHEET1' || activeSheetTitle.toUpperCase() === 'FOLHA1';
+    const isGenericProject = !projectName || projectName.toUpperCase() === 'CONFIRM' || projectName.toUpperCase() === 'PROJETO';
+
+    let ctrDisplay = '—';
+    if (rowCtr) {
+        if (!isGenericSheet && !rowCtr.toUpperCase().includes(activeSheetTitle.toUpperCase())) {
+            ctrDisplay = `${activeSheetTitle} • ${rowCtr}`;
+        } else {
+            ctrDisplay = rowCtr;
+        }
+    } else if (!isGenericSheet) {
+        ctrDisplay = activeSheetTitle;
+    } else if (!isGenericProject) {
+        ctrDisplay = projectName;
+    } else if (activeSheetTitle) {
+        ctrDisplay = activeSheetTitle;
+    }
+
     let totalOriginal = 0;
     const ordersList = [];
     client.rows.forEach(r => {
@@ -9886,6 +9925,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const spreadsheetId = state.confirm?.sheetId || '';
     logConfirmAudit(spreadsheetId, client.no, client.displayName, 'GUIA_EMITIDA', {
         numeroGuia: guiaNumber,
+        ctr: ctrDisplay,
         emitidoPor: issuerName,
         volumesEntregues: totalDelivered,
         recebedor: receiverName,
@@ -10019,7 +10059,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         <h2>${docTitle}</h2>
                         <div style="margin: 3px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
                         <p class="guia-no">Nº Guia: <strong>${guiaNumber}</strong></p>
-                        <p class="guia-meta">Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
+                        <p class="guia-meta">CTR / Folha: <strong>${ctrDisplay}</strong> | Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
                     </div>
                 </div>
 
@@ -10029,6 +10069,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         <p><span class="lbl">Cliente:</span> <strong class="val">${clientName}</strong></p>
                         <p><span class="lbl">ID Code:</span> <strong class="val">${clientCode}</strong></p>
                         <p><span class="lbl">Nº Cliente:</span> <strong class="val">${clientNo}</strong></p>
+                        <p><span class="lbl">CTR / Folha:</span> <strong class="val" style="color: #000000; font-weight: 900;">${ctrDisplay}</strong></p>
                         <p><span class="lbl">Projeto/Lista:</span> <strong class="val">${projectName}</strong></p>
                     </div>
                     <div class="card">
@@ -10125,10 +10166,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             .via-badge { display: inline-block; font-size: 11px; font-weight: 900; padding: 3px 10px; border-radius: 4px; letter-spacing: 0.03em; text-transform: uppercase; margin-top: 2px; }
             .guia-no { font-size: 13px; font-weight: 800; color: #000000; margin: 2px 0 0 0; }
             .guia-meta { font-size: 10.5px; color: #111827; margin: 1px 0 0 0; font-weight: 700; }
-            .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 5px; }
-            .card { border: 1.5px solid #1e293b; padding: 6px 10px; border-radius: 6px; background: #ffffff; }
-            .card h3 { margin: 0 0 4px 0; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #000000; letter-spacing: 0.04em; border-bottom: 1.5px solid #64748b; padding-bottom: 2px; }
-            .card p { margin: 2.5px 0; font-size: 11.5px; font-weight: 700; color: #000000; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+            .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+            .card { border: 1.5px solid #1e293b; padding: 5px 9px; border-radius: 6px; background: #ffffff; }
+            .card h3 { margin: 0 0 3px 0; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #000000; letter-spacing: 0.04em; border-bottom: 1.5px solid #64748b; padding-bottom: 2px; }
+            .card p { margin: 2px 0; font-size: 11.5px; font-weight: 700; color: #000000; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
             .card .lbl { color: #1e293b; font-weight: 800; font-size: 11px; white-space: nowrap; flex-shrink: 0; }
             .card .val { color: #000000; font-weight: 900; text-align: right; font-size: 12px; word-break: break-word; }
             .card .viatura-val { color: #000000; font-weight: 900; font-size: 12px; }
@@ -10182,7 +10223,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             toast(`⚡ A enviar para a impressora [${targetPrinter}] no computador partilhado...`, 'info');
 
             const res = await printService.printDocument({
-                nome: `Guia_Dupla_${guiaNumber}.pdf`,
+                nome: `Guia_Dupla_${ctrDisplay && ctrDisplay !== '—' ? ctrDisplay.replace(/[^a-zA-Z0-9_-]/g, '_') + '_' : ''}${guiaNumber}.pdf`,
                 arquivoBase64: fileBase64,
                 impressora: targetPrinter
             });
@@ -10214,7 +10255,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         <html lang="pt">
         <head>
             <meta charset="UTF-8">
-            <title>Guia Dupla Oficial - ${clientName} (${guiaNumber})</title>
+            <title>Guia Dupla Oficial - ${ctrDisplay && ctrDisplay !== '—' ? `${ctrDisplay} - ` : ''}${clientName} (${guiaNumber})</title>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
             <style>
@@ -10549,16 +10590,16 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     display: grid;
                     grid-template-columns: 1fr 1fr 1fr;
                     gap: 8px;
-                    margin-bottom: 5px;
+                    margin-bottom: 4px;
                 }
                 .card {
                     border: 1.5px solid #1e293b;
-                    padding: 6px 10px;
+                    padding: 5px 9px;
                     border-radius: 6px;
                     background: #ffffff;
                 }
                 .card h3 {
-                    margin: 0 0 4px 0;
+                    margin: 0 0 3px 0;
                     font-size: 11px;
                     font-weight: 900;
                     text-transform: uppercase;
@@ -10568,7 +10609,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     padding-bottom: 2px;
                 }
                 .card p {
-                    margin: 2.5px 0;
+                    margin: 2px 0;
                     font-size: 11.5px;
                     font-weight: 700;
                     color: #000000;
