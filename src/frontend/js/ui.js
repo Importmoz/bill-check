@@ -10240,13 +10240,15 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     };
 
     if (silentDirect) {
-        // Modo Impressão Silenciosa Direta no Computador Partilhado (192.168.88.10)
+        // Modo Impressão Silenciosa Direta no Computador Partilhado
         const tempContainer = document.createElement('div');
         tempContainer.style.position = 'fixed';
-        tempContainer.style.left = '-9999px';
+        tempContainer.style.left = '0';
         tempContainer.style.top = '0';
         tempContainer.style.width = '210mm';
         tempContainer.style.background = '#ffffff';
+        tempContainer.style.opacity = '0';
+        tempContainer.style.pointerEvents = 'none';
         tempContainer.style.zIndex = '-9999';
         tempContainer.style.overflow = 'hidden';
 
@@ -10399,13 +10401,25 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             const pagesWord = printMode === '4_FOLHAS' ? '4 Folhas' : (printMode === '2_FOLHAS' ? '2 Folhas' : 'Folha Única');
             toast(`⚡ A renderizar PDF de ${pagesWord} da Guia...`, 'info');
             const fileBase64 = await printService.elementToPdfBase64(tempContainer, window);
-            const targetPrinter = printService.getSelectedPrinter() || 'Armazem print';
-            toast(`⚡ A enviar para a impressora [${targetPrinter}] no computador partilhado...`, 'info');
+            // Resolver impressora selecionada ou predefinida do servidor
+            let targetPrinter = printService.getSelectedPrinter();
+            if (!targetPrinter) {
+                const pRes = await printService.getPrinters();
+                if (pRes && pRes.ok && pRes.impressoras && pRes.impressoras.length > 0) {
+                    targetPrinter = pRes.padrao || pRes.impressoras[0];
+                    printService.setSelectedPrinter(targetPrinter);
+                }
+            }
+            if (!targetPrinter) targetPrinter = 'Armazem print';
+
+            const serverUrl = printService.getServerUrl();
+            toast(`⚡ A enviar para a impressora [${targetPrinter}] (${serverUrl})...`, 'info');
 
             const res = await printService.printDocument({
                 nome: `Guia_Dupla_${guiaNumber}.pdf`,
                 arquivoBase64: fileBase64,
-                impressora: targetPrinter
+                impressora: targetPrinter,
+                serverUrl: serverUrl
             });
 
             toast(`✅ Guia Dupla (${guiaNumber} • ${pagesWord}) impressa com sucesso no Armazém [${res.impressora || targetPrinter}]!`, 'success');
@@ -10429,12 +10443,15 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
 
     const defaultServerUrl = printService.getServerUrl();
     const defaultPrinter = printService.getSelectedPrinter();
+    const defaultToken = printService.getApiToken();
+    const appOrigin = window.location.origin;
 
     printWindow.document.write(`
         <!DOCTYPE html>
         <html lang="pt">
         <head>
             <meta charset="UTF-8">
+            <base href="${appOrigin}/">
             <title>Guia Dupla Oficial - ${clientName} (${guiaNumber})</title>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -11252,24 +11269,47 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             `)}
 
             <script>
+                const APP_ORIGIN = '${appOrigin}';
                 const SERVER_STORAGE_KEY = 'printer_server_url';
                 const PRINTER_STORAGE_KEY = 'printer_selected_name';
                 const TOKEN_STORAGE_KEY = 'printer_api_token';
 
                 function getServerUrl() {
-                    return localStorage.getItem(SERVER_STORAGE_KEY) || '${defaultServerUrl}';
+                    try {
+                        const val = localStorage.getItem(SERVER_STORAGE_KEY);
+                        if (val && val.trim()) return val.trim();
+                    } catch (e) {}
+                    if (window.opener && window.opener.printService) {
+                        try { return window.opener.printService.getServerUrl(); } catch (e) {}
+                    }
+                    return '${defaultServerUrl}';
                 }
 
                 function getSelectedPrinter() {
-                    return localStorage.getItem(PRINTER_STORAGE_KEY) || '${defaultPrinter}';
+                    try {
+                        const val = localStorage.getItem(PRINTER_STORAGE_KEY);
+                        if (val && val.trim()) return val.trim();
+                    } catch (e) {}
+                    if (window.opener && window.opener.printService) {
+                        try { return window.opener.printService.getSelectedPrinter(); } catch (e) {}
+                    }
+                    return '${defaultPrinter}';
                 }
 
                 function getApiToken() {
-                    return localStorage.getItem(TOKEN_STORAGE_KEY) || '';
+                    try {
+                        const val = localStorage.getItem(TOKEN_STORAGE_KEY);
+                        if (val && val.trim()) return val.trim();
+                    } catch (e) {}
+                    if (window.opener && window.opener.printService) {
+                        try { return window.opener.printService.getApiToken(); } catch (e) {}
+                    }
+                    return '${defaultToken}';
                 }
 
                 function showNotice(msg, type = 'info') {
                     const toast = document.getElementById('print-toast');
+                    if (!toast) return;
                     toast.className = type === 'success' ? 'toast-success' : (type === 'error' ? 'toast-error' : 'toast-info');
                     toast.textContent = msg;
                     toast.style.display = 'block';
@@ -11285,7 +11325,24 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     const serverUrl = getServerUrl();
                     const token = getApiToken();
 
-                    // 1. Tentar diretamente no computador partilhado (192.168.88.10:5000)
+                    // Prioridade 1: Usar o printService da janela principal (contexto completo e autenticado)
+                    if (window.opener && window.opener.printService && typeof window.opener.printService.checkStatus === 'function') {
+                        try {
+                            const status = await window.opener.printService.checkStatus(serverUrl);
+                            if (status && status.ok) {
+                                badge.className = 'server-badge badge-online';
+                                text.textContent = 'Online (' + (status.total_impressoras || 'Rede') + ' imp.)';
+                                badge.title = 'Servidor ativo: ' + (status.serverUrl || serverUrl) + (status.isDirect ? ' (Direto)' : ' (Proxy)');
+                                const btnDirect = document.getElementById('btn-direct-print');
+                                if (btnDirect) btnDirect.disabled = false;
+                                return true;
+                            }
+                        } catch (errOpener) {
+                            console.warn('[printWindow] Falha ao verificar status via window.opener:', errOpener);
+                        }
+                    }
+
+                    // Prioridade 2: Tentar diretamente no computador partilhado (192.168.88.10:5000)
                     try {
                         const controller = new AbortController();
                         const to = setTimeout(() => controller.abort(), 2500);
@@ -11298,27 +11355,32 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                             badge.className = 'server-badge badge-online';
                             text.textContent = 'Online (' + (data.total_impressoras || 'Rede') + ' imp.)';
                             badge.title = 'Conectado diretamente ao computador partilhado: ' + serverUrl;
+                            const btnDirect = document.getElementById('btn-direct-print');
+                            if (btnDirect) btnDirect.disabled = false;
                             return true;
                         }
                     } catch (e) {
-                        // Prossegue para o proxy se o navegador restringir directo
+                        // Prossegue para o proxy se o navegador restringir direto
                     }
 
-                    // 2. Fallback via proxy backend do servidor web
+                    // Prioridade 3: Fallback via proxy Express do servidor web
                     try {
                         const params = new URLSearchParams({ serverUrl });
                         if (token) params.set('token', token);
-                        const res = await fetch('/api/print/status?' + params.toString());
+                        const proxyUrl = APP_ORIGIN + '/api/print/status?' + params.toString();
+                        const res = await fetch(proxyUrl);
                         const data = await res.json();
-                        if (data.ok) {
+                        if (data && data.ok) {
                             badge.className = 'server-badge badge-online';
                             text.textContent = 'Online (' + (data.total_impressoras || 'Rede') + ' imp.)';
-                            badge.title = 'Servidor activo via proxy: ' + serverUrl;
+                            badge.title = 'Servidor ativo via proxy: ' + serverUrl;
+                            const btnDirect = document.getElementById('btn-direct-print');
+                            if (btnDirect) btnDirect.disabled = false;
                             return true;
                         } else {
                             badge.className = 'server-badge badge-offline';
                             text.textContent = 'Offline';
-                            badge.title = data.error || 'Servidor inacessível';
+                            badge.title = (data && data.error) ? data.error : 'Servidor inacessível';
                             return false;
                         }
                     } catch (e) {
@@ -11339,29 +11401,43 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     let printers = null;
                     let padrao = null;
 
-                    // 1. Tentar diretamente no computador partilhado
-                    try {
-                        const controller = new AbortController();
-                        const to = setTimeout(() => controller.abort(), 3500);
-                        const h = {};
-                        if (token) h['Authorization'] = 'Bearer ' + token;
-                        const directRes = await fetch(serverUrl + '/api/impressoras', { method: 'GET', headers: h, signal: to });
-                        clearTimeout(to);
-                        if (directRes.ok) {
-                            const data = await directRes.json();
-                            printers = data.impressoras;
-                            padrao = data.padrao;
-                        }
-                    } catch (e) {}
+                    // Prioridade 1: Usar printService da janela principal
+                    if (window.opener && window.opener.printService && typeof window.opener.printService.getPrinters === 'function') {
+                        try {
+                            const resOp = await window.opener.printService.getPrinters(serverUrl);
+                            if (resOp && resOp.ok && resOp.impressoras) {
+                                printers = resOp.impressoras;
+                                padrao = resOp.padrao;
+                            }
+                        } catch (e) {}
+                    }
 
-                    // 2. Fallback via proxy backend
+                    // Prioridade 2: Tentar diretamente no computador partilhado
+                    if (!printers) {
+                        try {
+                            const controller = new AbortController();
+                            const to = setTimeout(() => controller.abort(), 3500);
+                            const h = {};
+                            if (token) h['Authorization'] = 'Bearer ' + token;
+                            const directRes = await fetch(serverUrl + '/api/impressoras', { method: 'GET', headers: h, signal: to });
+                            clearTimeout(to);
+                            if (directRes.ok) {
+                                const data = await directRes.json();
+                                printers = data.impressoras;
+                                padrao = data.padrao;
+                            }
+                        } catch (e) {}
+                    }
+
+                    // Prioridade 3: Fallback via proxy backend
                     if (!printers) {
                         try {
                             const params = new URLSearchParams({ serverUrl });
                             if (token) params.set('token', token);
-                            const res = await fetch('/api/print/impressoras?' + params.toString());
+                            const proxyUrl = APP_ORIGIN + '/api/print/impressoras?' + params.toString();
+                            const res = await fetch(proxyUrl);
                             const data = await res.json();
-                            if (data.ok && data.impressoras) {
+                            if (data && data.ok && data.impressoras) {
                                 printers = data.impressoras;
                                 padrao = data.padrao;
                             }
@@ -11380,9 +11456,9 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                             if (p === defaultTarget) opt.selected = true;
                             select.appendChild(opt);
                         });
-                        localStorage.setItem(PRINTER_STORAGE_KEY, select.value);
+                        try { localStorage.setItem(PRINTER_STORAGE_KEY, select.value); } catch(e){}
                         if (window.opener?.printService) {
-                            window.opener.printService.setSelectedPrinter(select.value);
+                            try { window.opener.printService.setSelectedPrinter(select.value); } catch(e){}
                         }
                     } else {
                         select.innerHTML = '<option value="">Nenhuma impressora disponível</option>';
@@ -11391,9 +11467,9 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
 
                 function onPrinterChange(val) {
                     if (val) {
-                        localStorage.setItem(PRINTER_STORAGE_KEY, val);
+                        try { localStorage.setItem(PRINTER_STORAGE_KEY, val); } catch(e){}
                         if (window.opener?.printService) {
-                            window.opener.printService.setSelectedPrinter(val);
+                            try { window.opener.printService.setSelectedPrinter(val); } catch(e){}
                         }
                     }
                 }
@@ -11467,37 +11543,57 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         let printSuccess = false;
                         let printerUsed = selectedPrinter;
 
-                        // 3. Tentar envio direto ao computador partilhado (192.168.88.10:5000)
-                        try {
-                            const controller = new AbortController();
-                            const to = setTimeout(() => controller.abort(), 35000);
-                            const h = { 'Content-Type': 'application/json' };
-                            if (token) h['Authorization'] = 'Bearer ' + token;
-
-                            const directRes = await fetch(serverUrl + '/api/imprimir', {
-                                method: 'POST',
-                                headers: h,
-                                body: JSON.stringify({
+                        // 3. Prioridade 1: Usar window.opener.printService (contexto validado na janela principal)
+                        if (window.opener && window.opener.printService && typeof window.opener.printService.printDocument === 'function') {
+                            try {
+                                const resOp = await window.opener.printService.printDocument({
                                     nome: fileName,
-                                    arquivo: fileBase64,
-                                    impressora: selectedPrinter
-                                }),
-                                signal: controller.signal
-                            });
-                            clearTimeout(to);
-
-                            if (directRes.ok) {
-                                const directData = await directRes.json();
-                                if (directData.sucesso) {
+                                    arquivoBase64: fileBase64,
+                                    impressora: selectedPrinter,
+                                    serverUrl: serverUrl
+                                });
+                                if (resOp && (resOp.sucesso || resOp.ok)) {
                                     printSuccess = true;
-                                    printerUsed = directData.impressora || selectedPrinter;
+                                    printerUsed = resOp.impressora || selectedPrinter;
                                 }
+                            } catch (opErr) {
+                                console.warn('[PrintWindow] Envio via window.opener.printService falhou:', opErr.message);
                             }
-                        } catch (directErr) {
-                            console.warn('[PrintWindow] Envio direto falhou, usando proxy backend...', directErr.message);
                         }
 
-                        // 4. Se falhou direto, enviar via proxy backend do servidor web
+                        // 4. Prioridade 2: Tentar envio direto ao computador partilhado
+                        if (!printSuccess) {
+                            try {
+                                const controller = new AbortController();
+                                const to = setTimeout(() => controller.abort(), 35000);
+                                const h = { 'Content-Type': 'application/json' };
+                                if (token) h['Authorization'] = 'Bearer ' + token;
+
+                                const directRes = await fetch(serverUrl + '/api/imprimir', {
+                                    method: 'POST',
+                                    headers: h,
+                                    body: JSON.stringify({
+                                        nome: fileName,
+                                        arquivo: fileBase64,
+                                        impressora: selectedPrinter
+                                    }),
+                                    signal: controller.signal
+                                });
+                                clearTimeout(to);
+
+                                if (directRes.ok) {
+                                    const directData = await directRes.json();
+                                    if (directData.sucesso) {
+                                        printSuccess = true;
+                                        printerUsed = directData.impressora || selectedPrinter;
+                                    }
+                                }
+                            } catch (directErr) {
+                                console.warn('[PrintWindow] Envio direto falhou, usando proxy backend...', directErr.message);
+                            }
+                        }
+
+                        // 5. Prioridade 3: Enviar via proxy backend do servidor web
                         if (!printSuccess) {
                             const payload = {
                                 serverUrl,
@@ -11507,7 +11603,8 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                                 token
                             };
 
-                            const res = await fetch('/api/print/imprimir', {
+                            const proxyUrl = APP_ORIGIN + '/api/print/imprimir';
+                            const res = await fetch(proxyUrl, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(payload)
@@ -11549,29 +11646,43 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     let connected = false;
                     let padrao = null;
 
-                    // 1. Tentar direto no computador partilhado
-                    try {
-                        const controller = new AbortController();
-                        const to = setTimeout(() => controller.abort(), 2500);
-                        const h = {};
-                        if (token) h['Authorization'] = 'Bearer ' + token;
-                        const directRes = await fetch(url + '/api/status', { method: 'GET', headers: h, signal: to });
-                        clearTimeout(to);
-                        if (directRes.ok) {
-                            const data = await directRes.json();
-                            connected = true;
-                            padrao = data.impressora_padrao;
-                        }
-                    } catch (e) {}
+                    // 1. Usar window.opener se disponível
+                    if (window.opener && window.opener.printService && typeof window.opener.printService.checkStatus === 'function') {
+                        try {
+                            const resOp = await window.opener.printService.checkStatus(url);
+                            if (resOp && resOp.ok) {
+                                connected = true;
+                                padrao = resOp.impressora_padrao;
+                            }
+                        } catch (e) {}
+                    }
 
-                    // 2. Fallback proxy backend
+                    // 2. Tentar direto
+                    if (!connected) {
+                        try {
+                            const controller = new AbortController();
+                            const to = setTimeout(() => controller.abort(), 2500);
+                            const h = {};
+                            if (token) h['Authorization'] = 'Bearer ' + token;
+                            const directRes = await fetch(url + '/api/status', { method: 'GET', headers: h, signal: to });
+                            clearTimeout(to);
+                            if (directRes.ok) {
+                                const data = await directRes.json();
+                                connected = true;
+                                padrao = data.impressora_padrao;
+                            }
+                        } catch (e) {}
+                    }
+
+                    // 3. Fallback proxy
                     if (!connected) {
                         try {
                             const params = new URLSearchParams({ serverUrl: url });
                             if (token) params.set('token', token);
-                            const res = await fetch('/api/print/status?' + params.toString());
+                            const proxyUrl = APP_ORIGIN + '/api/print/status?' + params.toString();
+                            const res = await fetch(proxyUrl);
                             const data = await res.json();
-                            if (data.ok) {
+                            if (data && data.ok) {
                                 connected = true;
                                 padrao = data.impressora_padrao;
                             }
@@ -11590,12 +11701,16 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     const token = document.getElementById('cfg-server-token').value.trim();
 
                     if (url) {
-                        localStorage.setItem(SERVER_STORAGE_KEY, url);
-                        if (window.opener?.printService) window.opener.printService.setServerUrl(url);
+                        try { localStorage.setItem(SERVER_STORAGE_KEY, url); } catch(e){}
+                        if (window.opener?.printService) {
+                            try { window.opener.printService.setServerUrl(url); } catch(e){}
+                        }
                     }
                     if (token !== undefined) {
-                        localStorage.setItem(TOKEN_STORAGE_KEY, token);
-                        if (window.opener?.printService) window.opener.printService.setApiToken(token);
+                        try { localStorage.setItem(TOKEN_STORAGE_KEY, token); } catch(e){}
+                        if (window.opener?.printService) {
+                            try { window.opener.printService.setApiToken(token); } catch(e){}
+                        }
                     }
 
                     showNotice('Definições guardadas com sucesso!', 'success');
@@ -11604,7 +11719,9 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     reloadPrinters();
                 }
 
-                // Iniciar status e impressoras assim que a janela estiver pronta
+                // Iniciar status e impressoras imediatamente e no evento load
+                checkStatus();
+                reloadPrinters();
                 window.addEventListener('load', () => {
                     checkStatus();
                     reloadPrinters();
@@ -11628,7 +11745,8 @@ export async function directPrintDeliveryNote(client = null) {
     }
 
     try {
-        toast('⚡ A contactar computador de impressão (192.168.88.10)...', 'info');
+        const sUrl = (typeof printService?.getServerUrl === 'function' ? printService.getServerUrl() : '') || '192.168.88.10';
+        toast(`⚡ A contactar computador de impressão (${sUrl.replace(/^https?:\/\//, '')})...`, 'info');
         const status = await printService.checkStatus();
         if (!status.ok) {
             toast('Computador de impressão offline. A abrir pré-visualização da Guia...', 'warning');
