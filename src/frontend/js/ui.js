@@ -9963,16 +9963,41 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
     const textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
 
-    // Detetar se o cliente tem muitas ordens (mais de 2 ordens) para emitir em 2 folhas A4 separadas (Armazém e Portaria)
-    const isMultiPage = (client.rows && client.rows.length > 2);
+    // Determinar modo de impressão baseado no número total de ordens:
+    // - <= 2 ordens: '1_FOLHA' (1 folha única A4 dividida ao meio com destaque ✂)
+    // - 3 a 8 ordens: '2_FOLHAS' (1 folha A4 para 1ª via + 1 folha A4 para 2ª via)
+    // - > 8 ordens: '4_FOLHAS' (2 folhas para 1ª via + 2 folhas para 2ª via)
+    const totalOrdersCount = client.rows ? client.rows.length : 0;
+    let printMode = '1_FOLHA';
+    if (totalOrdersCount > 8) {
+        printMode = '4_FOLHAS';
+    } else if (totalOrdersCount > 2) {
+        printMode = '2_FOLHAS';
+    }
+
+    // Para o modo 4 Folhas, dividir as ordens em duas partes (Parte 1 e Parte 2):
+    // A Parte 1 tem os 3 blocos/cards de cliente/recebimento/armazenagem, por isso comporta confortavelmente até 8 ordens.
+    // A Parte 2 tem cabeçalho compacto de continuação, comportando as restantes ordens com totais e assinaturas.
+    const splitIdx = Math.min(8, Math.ceil(totalOrdersCount / 2));
+    const part1Rows = (client.rows || []).slice(0, splitIdx);
+    const part2Rows = (client.rows || []).slice(splitIdx);
 
     // Helper para gerar o HTML de cada via mantendo a identidade visual com tipografia nítida e legível
-    const generateViaHtml = (viaType, isFullPage = false) => {
+    const generateViaHtml = (viaType, pagePart = 'FULL') => {
         const isArmazem = viaType === 'ARMAZEM';
         const docTitle = isArmazem ? 'Guia de Entrega' : 'Guia de Saída';
-        const badgeLabel = isFullPage
-            ? (isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA (FOLHA 1 DE 2)' : '2ª VIA — PORTARIA & SEGURANÇA (FOLHA 2 DE 2)')
-            : (isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA' : '2ª VIA — PORTARIA & SEGURANÇA');
+        
+        let badgeLabel = '';
+        if (pagePart === 'HALF') {
+            badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA' : '2ª VIA — PORTARIA & SEGURANÇA';
+        } else if (pagePart === 'FULL') {
+            badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA (FOLHA 1 DE 2)' : '2ª VIA — PORTARIA & SEGURANÇA (FOLHA 2 DE 2)';
+        } else if (pagePart === 'PART1') {
+            badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM (FOLHA 1 DE 4 — PARTE 1/2)' : '2ª VIA — PORTARIA (FOLHA 3 DE 4 — PARTE 1/2)';
+        } else if (pagePart === 'PART2') {
+            badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM (FOLHA 2 DE 4 — CONCLUSÃO)' : '2ª VIA — PORTARIA (FOLHA 4 DE 4 — CONCLUSÃO)';
+        }
+
         const badgeStyle = isArmazem 
             ? 'background: #e0e7ff; color: #1e1b4b; border: 1.5px solid #4338ca; font-weight: 900;' 
             : 'background: #fef3c7; color: #78350f; border: 1.5px solid #d97706; font-weight: 900;';
@@ -10004,60 +10029,38 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                    <span>Visto / Carimbo da Portaria (Hora Saída: ____:____)</span>
                </div>`;
 
-        let tableRowsHtml = '';
-        // Em modo Full Page (2 folhas) OU quando há poucas ordens (<= 2), lista individualmente cada linha com sua descrição
-        if (isFullPage || (client.rows && client.rows.length <= 2)) {
-            tableRowsHtml = (client.rows || []).map((r, idx) => {
-                const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
-                const desc = descIdx !== -1 ? String(r.originalRow[descIdx] || '').trim() : '';
-                const cleanOrder = (orderNum && orderNum !== '—') ? orderNum : '';
-                const cleanDesc = (desc && desc !== '—') ? desc : '';
-                const pkgs = packagesIdx !== -1 ? (parseFloat(r.originalRow[packagesIdx]) || 0) : 0;
-                const discharged = dischargeIdx !== -1 ? (parseFloat(r.originalRow[dischargeIdx]) || 0) : 0;
+        // Determinar linhas a renderizar nesta página
+        let currentRows = client.rows || [];
+        let startRowIndex = 0;
+        if (pagePart === 'PART1') {
+            currentRows = part1Rows;
+            startRowIndex = 0;
+        } else if (pagePart === 'PART2') {
+            currentRows = part2Rows;
+            startRowIndex = splitIdx;
+        }
 
-                let title = cleanOrder ? `Ordem: ${cleanOrder}` : (client.rows.length === 1 ? 'Mercadoria do Cliente' : `Item ${idx + 1}`);
-                let descLine = cleanDesc ? `<div class="orders-desc" style="font-size: 11px; color: #111827; font-weight: 700; margin-top: 1px;">${cleanDesc}</div>` : '';
+        const tableRowsHtml = currentRows.map((r, idx) => {
+            const globalIdx = startRowIndex + idx;
+            const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
+            const desc = descIdx !== -1 ? String(r.originalRow[descIdx] || '').trim() : '';
+            const cleanOrder = (orderNum && orderNum !== '—') ? orderNum : '';
+            const cleanDesc = (desc && desc !== '—') ? desc : '';
+            const pkgs = packagesIdx !== -1 ? (parseFloat(r.originalRow[packagesIdx]) || 0) : 0;
+            const discharged = dischargeIdx !== -1 ? (parseFloat(r.originalRow[dischargeIdx]) || 0) : 0;
 
-                return `
-                    <tr>
-                        <td class="td-desc">
-                            <strong>${title}</strong>
-                            ${descLine}
-                        </td>
-                        <td class="td-num">${pkgs}</td>
-                        <td class="td-num">${discharged}</td>
-                        <td class="td-action">
-                            <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
-                        </td>
-                        <td class="td-action">
-                            <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        } else {
-            const descItemsHtml = (client.rows || []).map(r => {
-                const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
-                const desc = descIdx !== -1 ? String(r.originalRow[descIdx] || '').trim() : '';
-                const cleanOrder = (orderNum && orderNum !== '—') ? orderNum : '';
-                const cleanDesc = (desc && desc !== '—') ? desc : '';
-                const pkgs = packagesIdx !== -1 ? (parseFloat(r.originalRow[packagesIdx]) || 0) : 0;
-                if (cleanOrder && cleanDesc) return `<div>• <strong>${cleanOrder}</strong>: ${cleanDesc} (${pkgs} vol)</div>`;
-                if (cleanOrder) return `<div>• <strong>${cleanOrder}</strong> (${pkgs} vol)</div>`;
-                if (cleanDesc) return `<div>• ${cleanDesc} (${pkgs} vol)</div>`;
-                return '';
-            }).filter(Boolean).join('');
+            let title = cleanOrder ? `Ordem: ${cleanOrder}` : (client.rows.length === 1 ? 'Mercadoria do Cliente' : `Item ${globalIdx + 1}`);
 
-            tableRowsHtml = `
+            return `
                 <tr>
                     <td class="td-desc">
-                        <strong>Mercadoria do Cliente</strong>
-                        <div class="orders-desc" style="max-height: 85px; overflow-y: hidden;">
-                            ${descItemsHtml || `Ordens: ${ordersString}`}
+                        <div class="row-order-title">
+                            <strong class="order-tag">${title}</strong>
+                            ${cleanDesc ? `<span class="order-desc-inline">${cleanDesc}</span>` : ''}
                         </div>
                     </td>
-                    <td class="td-num">${totalOriginal}</td>
-                    <td class="td-num">${totalDischarged}</td>
+                    <td class="td-num">${pkgs}</td>
+                    <td class="td-num">${discharged}</td>
                     <td class="td-action">
                         <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
                     </td>
@@ -10066,21 +10069,54 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     </td>
                 </tr>
             `;
+        }).join('');
+
+        // Linha final da tabela (Continua na próxima folha OU Total Geral consolidado)
+        let tableFooterRowHtml = '';
+        if (pagePart === 'PART1') {
+            tableFooterRowHtml = `
+                <tr class="totals-row">
+                    <td colspan="5" style="text-align: center; font-size: 11px; font-weight: 800; background: #f8fafc; padding: 5px;">
+                        [ Continua na Folha ${isArmazem ? '2' : '4'} — ${part1Rows.length} de ${totalOrdersCount} ordens listadas nesta folha ]
+                    </td>
+                </tr>
+            `;
+        } else {
+            tableFooterRowHtml = `
+                <tr class="totals-row">
+                    <td class="td-desc"><strong>TOTAL GERAL</strong></td>
+                    <td class="td-num"><strong>${totalOriginal}</strong></td>
+                    <td class="td-num"><strong>${totalDischarged}</strong></td>
+                    <td class="td-manual">[ Preenchimento Manual ]</td>
+                    <td class="td-manual">[ Preenchimento Manual ]</td>
+                </tr>
+            `;
         }
 
-        const watermarkSize = isFullPage ? '460px' : '330px';
-        const pageFooterHtml = isFullPage ? `
-            <div class="guia-page-footer">
-                <span>Guia Nº <strong>${guiaNumber}</strong> • ${isArmazem ? 'Folha 1 de 2 (Armazém / Conferência)' : 'Folha 2 de 2 (Portaria & Segurança)'}</span>
-                <span>Jupiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
-            </div>
-        ` : '';
-
-        return `
-            <div class="${isFullPage ? 'guia-full' : 'guia-half'}">
-                <div class="watermark-bg" style="width: ${watermarkSize}; height: ${watermarkSize};">
-                    <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Watermark" />
+        // Bloco de cabeçalho e cards:
+        // PART2 usa cabeçalho compacto de continuação sem os 3 cards para aproveitar ao máximo a folha de conclusão
+        let topHeaderHtml = '';
+        if (pagePart === 'PART2') {
+            topHeaderHtml = `
+                <div class="header" style="border-bottom: 2px solid #000000; padding-bottom: 4px; margin-bottom: 5px;">
+                    <div class="logo-section">
+                        <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Logistics" class="header-logo" style="width: 40px; height: 40px;" />
+                        <div>
+                            <h1 class="company-title" style="font-size: 17px; line-height: 1.1;">JUPITER LOGISTICS LDA</h1>
+                            <div class="company-sub" style="font-size: 9.5px; line-height: 1.25; margin-top: 2px;">
+                                Guia Nº: <strong>${guiaNumber}</strong> | Cliente: <strong>${clientName}</strong> (${clientCode}) | Viatura: <strong>${viaturaVal || '—'}</strong> | Data: <strong>${deliveryDate}</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="doc-info" style="text-align: right;">
+                        <h2 style="font-size: 16px; line-height: 1.1;">${docTitle} (Conclusão)</h2>
+                        <div style="margin: 2px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
+                        <p class="guia-meta" style="font-size: 9.5px;">Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
+                    </div>
                 </div>
+            `;
+        } else {
+            topHeaderHtml = `
                 <div class="header">
                     <div class="logo-section">
                         <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Logistics" class="header-logo" />
@@ -10123,6 +10159,63 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         <p><span class="lbl">Estado Pag.:</span> <strong class="val" style="color: ${isStoragePaid ? '#047857' : '#b91c1c'}; font-weight: 900;">${textStoragePaid}</strong></p>
                     </div>
                 </div>
+            `;
+        }
+
+        // Bloco de rodapé / notas / assinaturas:
+        let bottomContentHtml = '';
+        if (pagePart === 'PART1') {
+            bottomContentHtml = `
+                <div class="note-box" style="border-left-color: ${actionColColor}; margin-top: auto;">
+                    <strong>Continuação:</strong> Esta guia possui ${totalOrdersCount} ordens no total. As restantes ${part2Rows.length} ordens, o Total Geral consolidado e as assinaturas oficiais constam na <strong>Folha ${isArmazem ? '2' : '4'}</strong>.
+                </div>
+            `;
+        } else {
+            bottomContentHtml = `
+                <div class="note-box" style="border-left-color: ${actionColColor};">
+                    ${noteText}
+                </div>
+                <div class="signatures">
+                    ${sigBox1}
+                    ${sigBox2}
+                </div>
+            `;
+        }
+
+        // Rodapé da página com identificação do documento e folha
+        let pageFooterHtml = '';
+        if (pagePart === 'FULL') {
+            pageFooterHtml = `
+                <div class="guia-page-footer">
+                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isArmazem ? 'Folha 1 de 2 (Armazém / Conferência)' : 'Folha 2 de 2 (Portaria & Segurança)'}</span>
+                    <span>Jupiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
+                </div>
+            `;
+        } else if (pagePart === 'PART1') {
+            pageFooterHtml = `
+                <div class="guia-page-footer">
+                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isArmazem ? 'Folha 1 de 4 (1ª Via — Armazém / Parte 1)' : 'Folha 3 de 4 (2ª Via — Portaria / Parte 1)'}</span>
+                    <span>Jupiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
+                </div>
+            `;
+        } else if (pagePart === 'PART2') {
+            pageFooterHtml = `
+                <div class="guia-page-footer">
+                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isArmazem ? 'Folha 2 de 4 (1ª Via — Armazém / Conclusão)' : 'Folha 4 de 4 (2ª Via — Portaria / Conclusão)'}</span>
+                    <span>Jupiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
+                </div>
+            `;
+        }
+
+        const watermarkSize = pagePart === 'HALF' ? '330px' : '440px';
+        const containerClass = pagePart === 'HALF' ? 'guia-half' : 'guia-full';
+
+        return `
+            <div class="${containerClass}">
+                <div class="watermark-bg" style="width: ${watermarkSize}; height: ${watermarkSize};">
+                    <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Watermark" />
+                </div>
+                ${topHeaderHtml}
 
                 <table class="guia-table">
                     <thead>
@@ -10136,24 +10229,11 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     </thead>
                     <tbody>
                         ${tableRowsHtml}
-                        <tr class="totals-row">
-                            <td class="td-desc"><strong>TOTAL GERAL</strong></td>
-                            <td class="td-num"><strong>${totalOriginal}</strong></td>
-                            <td class="td-num"><strong>${totalDischarged}</strong></td>
-                            <td class="td-manual">[ Preenchimento Manual ]</td>
-                            <td class="td-manual">[ Preenchimento Manual ]</td>
-                        </tr>
+                        ${tableFooterRowHtml}
                     </tbody>
                 </table>
 
-                <div class="note-box" style="border-left-color: ${actionColColor};">
-                    ${noteText}
-                </div>
-
-                <div class="signatures">
-                    ${sigBox1}
-                    ${sigBox2}
-                </div>
+                ${bottomContentHtml}
                 ${pageFooterHtml}
             </div>
         `;
@@ -10176,73 +10256,91 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             * { box-sizing: border-box; margin: 0; padding: 0; }
             body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: #000000; line-height: 1.35; background: #ffffff; }
             .page-wrapper { width: 210mm; max-width: 210mm; height: 288mm; max-height: 288mm; margin: 0 auto; background: white; padding: 4mm 6mm; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; }
-            .guia-half { position: relative; height: 48.5%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 1.5px solid #000000; border-radius: 6px; padding: 8px 12px; background: #ffffff; }
-            .guia-full { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 2px solid #000000; border-radius: 6px; padding: 14px 18px; background: #ffffff; }
-            .guia-full .header { padding-bottom: 8px; margin-bottom: 8px; }
-            .guia-full .header-logo { width: 52px; height: 52px; }
-            .guia-full .company-title { font-size: 22px; }
-            .guia-full .doc-info h2 { font-size: 20px; }
-            .guia-full .guia-table { margin-bottom: 8px; }
-            .guia-full .guia-table th { padding: 6px 10px; font-size: 11.5px; }
-            .guia-full .guia-table td { padding: 6px 10px; font-size: 12px; }
-            .guia-full .signatures { margin-top: 10px; gap: 40px; }
-            .guia-full .sig-box { padding-top: 6px; }
-            .guia-page-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid #000000; padding-top: 5px; margin-top: 6px; font-size: 10px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.02em; }
+            .guia-half { position: relative; height: 48.5%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 1.5px solid #000000; border-radius: 6px; padding: 6px 10px; background: #ffffff; }
+            .guia-full { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 2px solid #000000; border-radius: 6px; padding: 10px 14px; background: #ffffff; }
+            .guia-full .header { padding-bottom: 5px; margin-bottom: 5px; }
+            .guia-full .header-logo { width: 46px; height: 46px; }
+            .guia-full .company-title { font-size: 20px; }
+            .guia-full .doc-info h2 { font-size: 18px; }
+            .guia-page-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid #000000; padding-top: 4px; margin-top: 4px; font-size: 9.5px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.02em; }
             .watermark-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.11; pointer-events: none; z-index: 0; display: flex; align-items: center; justify-content: center; }
             .watermark-bg img { width: 100%; height: 100%; object-fit: contain; }
             .header, .details-grid, .guia-table, .note-box, .signatures, .guia-page-footer { position: relative; z-index: 1; }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000000; padding-bottom: 5px; margin-bottom: 5px; }
-            .logo-section { display: flex; align-items: center; gap: 10px; }
-            .header-logo { width: 48px; height: 48px; object-fit: contain; }
-            .company-title { margin: 0; color: #000000; font-size: 20px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.1; }
-            .company-sub { font-size: 10px; color: #111827; font-weight: 700; line-height: 1.35; margin-top: 2px; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000000; padding-bottom: 4px; margin-bottom: 4px; }
+            .logo-section { display: flex; align-items: center; gap: 8px; }
+            .header-logo { width: 44px; height: 44px; object-fit: contain; }
+            .company-title { margin: 0; color: #000000; font-size: 19px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.1; }
+            .company-sub { font-size: 9.5px; color: #111827; font-weight: 700; line-height: 1.3; margin-top: 1px; }
             .doc-info { text-align: right; }
-            .doc-info h2 { margin: 0; color: #000000; font-size: 18px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.1; }
-            .via-badge { display: inline-block; font-size: 11px; font-weight: 900; padding: 3px 10px; border-radius: 4px; letter-spacing: 0.03em; text-transform: uppercase; margin-top: 2px; }
-            .guia-no { font-size: 13px; font-weight: 800; color: #000000; margin: 2px 0 0 0; }
-            .guia-meta { font-size: 10.5px; color: #111827; margin: 1px 0 0 0; font-weight: 700; }
-            .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 4px; }
-            .card { border: 1.5px solid #1e293b; padding: 5px 9px; border-radius: 6px; background: #ffffff; }
-            .card h3 { margin: 0 0 3px 0; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #000000; letter-spacing: 0.04em; border-bottom: 1.5px solid #64748b; padding-bottom: 2px; }
-            .card p { margin: 2px 0; font-size: 11.5px; font-weight: 700; color: #000000; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
-            .card .lbl { color: #1e293b; font-weight: 800; font-size: 11px; white-space: nowrap; flex-shrink: 0; }
-            .card .val { color: #000000; font-weight: 900; text-align: right; font-size: 12px; word-break: break-word; }
-            .card .viatura-val { color: #000000; font-weight: 900; font-size: 12px; }
-            .guia-table { width: 100%; border-collapse: collapse; margin-bottom: 5px; border: 2px solid #000000; border-radius: 4px; overflow: hidden; }
-            .guia-table th { background: #e2e8f0; padding: 5px 8px; text-align: left; font-size: 11px; text-transform: uppercase; font-weight: 900; color: #000000; border-bottom: 2px solid #000000; border-right: 1px solid #475569; }
+            .doc-info h2 { margin: 0; color: #000000; font-size: 17px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.1; }
+            .via-badge { display: inline-block; font-size: 10px; font-weight: 900; padding: 2.5px 8px; border-radius: 4px; letter-spacing: 0.02em; text-transform: uppercase; margin-top: 2px; }
+            .guia-no { font-size: 12px; font-weight: 800; color: #000000; margin: 1px 0 0 0; }
+            .guia-meta { font-size: 10px; color: #111827; margin: 1px 0 0 0; font-weight: 700; }
+            .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 4px; }
+            .card { border: 1.5px solid #1e293b; padding: 4px 7px; border-radius: 5px; background: #ffffff; }
+            .card h3 { margin: 0 0 2px 0; font-size: 10px; font-weight: 900; text-transform: uppercase; color: #000000; letter-spacing: 0.03em; border-bottom: 1.5px solid #64748b; padding-bottom: 1px; }
+            .card p { margin: 1.5px 0; font-size: 10.5px; font-weight: 700; color: #000000; display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+            .card .lbl { color: #1e293b; font-weight: 800; font-size: 10px; white-space: nowrap; flex-shrink: 0; }
+            .card .val { color: #000000; font-weight: 900; text-align: right; font-size: 11px; word-break: break-word; }
+            .card .viatura-val { color: #000000; font-weight: 900; font-size: 11px; }
+            .guia-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; border: 2px solid #000000; border-radius: 4px; overflow: hidden; }
+            .guia-table th { background: #e2e8f0; padding: 4px 6px; text-align: left; font-size: 10px; text-transform: uppercase; font-weight: 900; color: #000000; border-bottom: 2px solid #000000; border-right: 1px solid #475569; }
             .guia-table th:last-child { border-right: none; }
-            .guia-table td { padding: 5px 8px; font-size: 12px; font-weight: 800; border-bottom: 1px solid #64748b; border-right: 1px solid #cbd5e1; color: #000000; vertical-align: middle; }
+            .guia-table td { padding: 3px 6px; font-size: 11px; font-weight: 800; border-bottom: 1px solid #64748b; border-right: 1px solid #cbd5e1; color: #000000; vertical-align: middle; }
             .guia-table td:last-child { border-right: none; }
-            .td-desc strong { font-weight: 900; color: #000000; font-size: 12.5px; }
-            .orders-desc { font-size: 11px; color: #000000; font-weight: 700; margin-top: 1px; }
-            .td-num { text-align: center; font-size: 13.5px; font-weight: 900; color: #000000; }
-            .td-action { text-align: center; padding: 4px 6px !important; }
-            .write-line { display: inline-block; min-width: 75px; border-bottom: 2px dashed #000000; height: 18px; vertical-align: bottom; margin-right: 3px; }
-            .vol-unit { font-size: 11px; color: #000000; font-weight: 900; }
+            .row-order-title { display: flex; flex-direction: column; gap: 1px; }
+            .order-tag { font-size: 11px; font-weight: 900; color: #000000; line-height: 1.15; }
+            .order-desc-inline { font-size: 9.5px; font-weight: 700; color: #1e293b; line-height: 1.2; }
+            .td-num { text-align: center; font-size: 12.5px; font-weight: 900; color: #000000; }
+            .td-action { text-align: center; padding: 2px 4px !important; }
+            .write-line { display: inline-block; min-width: 60px; border-bottom: 1.5px dashed #000000; height: 15px; vertical-align: bottom; margin-right: 2px; }
+            .vol-unit { font-size: 9.5px; color: #000000; font-weight: 900; }
             .totals-row { background: #f1f5f9; border-top: 2px solid #000000; }
-            .totals-row td { border-bottom: none; padding: 5px 8px; font-size: 12.5px; }
-            .td-manual { text-align: center; font-size: 10.5px; color: #1e293b; font-weight: 800; font-style: italic; }
-            .note-box { font-size: 11px; color: #000000; font-weight: 700; border: 1px solid #cbd5e1; border-left-width: 4.5px; padding: 5px 12px; line-height: 1.4; margin: 3px 0 5px 0; background: #f8fafc; border-radius: 0 4px 4px 0; }
+            .totals-row td { border-bottom: none; padding: 4px 6px; font-size: 11.5px; }
+            .td-manual { text-align: center; font-size: 10px; color: #1e293b; font-weight: 800; font-style: italic; }
+            .note-box { font-size: 10px; color: #000000; font-weight: 700; border: 1px solid #cbd5e1; border-left-width: 4px; padding: 3.5px 8px; line-height: 1.35; margin: 2px 0 4px 0; background: #f8fafc; border-radius: 0 4px 4px 0; }
             .note-box strong { font-weight: 900; color: #000000; }
-            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 4px; }
-            .sig-box { border-top: 2px solid #000000; padding-top: 4px; text-align: center; }
-            .sig-box p { margin: 0; font-size: 12px; font-weight: 900; color: #000000; }
-            .sig-box span { font-size: 10.5px; font-weight: 700; color: #1e293b; }
-            .cut-separator { height: 18px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #000000; font-size: 10px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; user-select: none; margin: 2px 0; }
+            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 3px; }
+            .sig-box { border-top: 2px solid #000000; padding-top: 3px; text-align: center; }
+            .sig-box p { margin: 0; font-size: 11px; font-weight: 900; color: #000000; }
+            .sig-box span { font-size: 9.5px; font-weight: 700; color: #1e293b; }
+            .cut-separator { height: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #000000; font-size: 9.5px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; user-select: none; margin: 1px 0; }
             .cut-line { flex: 1; border-top: 1.5px dashed #475569; }
-            .cut-scissors { font-size: 14px; color: #000000; }
+            .cut-scissors { font-size: 13px; color: #000000; }
         `;
         tempContainer.appendChild(styleEl);
 
-        if (isMultiPage) {
-            // Emissão em 2 Folhas A4 completas
+        if (printMode === '4_FOLHAS') {
+            // Emissão em 4 Folhas A4 (2 para Armazém e 2 para Portaria)
+            const p1 = document.createElement('div');
+            p1.className = 'page-wrapper';
+            p1.innerHTML = generateViaHtml('ARMAZEM', 'PART1');
+
+            const p2 = document.createElement('div');
+            p2.className = 'page-wrapper';
+            p2.innerHTML = generateViaHtml('ARMAZEM', 'PART2');
+
+            const p3 = document.createElement('div');
+            p3.className = 'page-wrapper';
+            p3.innerHTML = generateViaHtml('PORTARIA', 'PART1');
+
+            const p4 = document.createElement('div');
+            p4.className = 'page-wrapper';
+            p4.innerHTML = generateViaHtml('PORTARIA', 'PART2');
+
+            tempContainer.appendChild(p1);
+            tempContainer.appendChild(p2);
+            tempContainer.appendChild(p3);
+            tempContainer.appendChild(p4);
+        } else if (printMode === '2_FOLHAS') {
+            // Emissão em 2 Folhas A4 completas (1 para Armazém e 1 para Portaria)
             const page1 = document.createElement('div');
             page1.className = 'page-wrapper';
-            page1.innerHTML = generateViaHtml('ARMAZEM', true);
+            page1.innerHTML = generateViaHtml('ARMAZEM', 'FULL');
 
             const page2 = document.createElement('div');
             page2.className = 'page-wrapper';
-            page2.innerHTML = generateViaHtml('PORTARIA', true);
+            page2.innerHTML = generateViaHtml('PORTARIA', 'FULL');
 
             tempContainer.appendChild(page1);
             tempContainer.appendChild(page2);
@@ -10252,7 +10350,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             wrapperDiv.id = 'guia-page-wrapper';
             wrapperDiv.className = 'page-wrapper';
             wrapperDiv.innerHTML = `
-                ${generateViaHtml('ARMAZEM', false)}
+                ${generateViaHtml('ARMAZEM', 'HALF')}
                 <div class="cut-separator">
                     <span class="cut-scissors">✂</span>
                     <div class="cut-line"></div>
@@ -10260,14 +10358,15 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     <div class="cut-line"></div>
                     <span class="cut-scissors">✂</span>
                 </div>
-                ${generateViaHtml('PORTARIA', false)}
+                ${generateViaHtml('PORTARIA', 'HALF')}
             `;
             tempContainer.appendChild(wrapperDiv);
         }
         document.body.appendChild(tempContainer);
 
         try {
-            toast(isMultiPage ? '⚡ A renderizar PDF de 2 Folhas (Armazém & Portaria)...' : '⚡ A renderizar PDF de alta resolução da Guia Dupla...', 'info');
+            const pagesWord = printMode === '4_FOLHAS' ? '4 Folhas' : (printMode === '2_FOLHAS' ? '2 Folhas' : 'Folha Única');
+            toast(`⚡ A renderizar PDF de ${pagesWord} da Guia...`, 'info');
             const fileBase64 = await printService.elementToPdfBase64(tempContainer, window);
             const targetPrinter = printService.getSelectedPrinter() || 'Armazem print';
             toast(`⚡ A enviar para a impressora [${targetPrinter}] no computador partilhado...`, 'info');
@@ -10278,7 +10377,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 impressora: targetPrinter
             });
 
-            toast(`✅ Guia Dupla (${guiaNumber}${isMultiPage ? ' - 2 Folhas' : ''}) impressa com sucesso no Armazém [${res.impressora || targetPrinter}]!`, 'success');
+            toast(`✅ Guia Dupla (${guiaNumber} • ${pagesWord}) impressa com sucesso no Armazém [${res.impressora || targetPrinter}]!`, 'success');
         } catch (err) {
             console.error('[ERRO DIRECT PRINT]', err);
             toast(`Erro na impressão direta: ${err.message}. A abrir visualização...`, 'error');
@@ -10534,7 +10633,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     overflow: hidden;
                     border: 1.5px solid #000000;
                     border-radius: 6px;
-                    padding: 8px 12px;
+                    padding: 6px 10px;
                     background: #ffffff;
                 }
                 .guia-full {
@@ -10547,49 +10646,31 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     overflow: hidden;
                     border: 2px solid #000000;
                     border-radius: 6px;
-                    padding: 14px 18px;
+                    padding: 10px 14px;
                     background: #ffffff;
                 }
                 .guia-full .header {
-                    padding-bottom: 8px;
-                    margin-bottom: 8px;
+                    padding-bottom: 5px;
+                    margin-bottom: 5px;
                 }
                 .guia-full .header-logo {
-                    width: 52px;
-                    height: 52px;
+                    width: 46px;
+                    height: 46px;
                 }
                 .guia-full .company-title {
-                    font-size: 22px;
-                }
-                .guia-full .doc-info h2 {
                     font-size: 20px;
                 }
-                .guia-full .guia-table {
-                    margin-bottom: 8px;
-                }
-                .guia-full .guia-table th {
-                    padding: 6px 10px;
-                    font-size: 11.5px;
-                }
-                .guia-full .guia-table td {
-                    padding: 6px 10px;
-                    font-size: 12px;
-                }
-                .guia-full .signatures {
-                    margin-top: 10px;
-                    gap: 40px;
-                }
-                .guia-full .sig-box {
-                    padding-top: 6px;
+                .guia-full .doc-info h2 {
+                    font-size: 18px;
                 }
                 .guia-page-footer {
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
                     border-top: 1.5px solid #000000;
-                    padding-top: 5px;
-                    margin-top: 6px;
-                    font-size: 10px;
+                    padding-top: 4px;
+                    margin-top: 4px;
+                    font-size: 9.5px;
                     font-weight: 800;
                     color: #1e293b;
                     text-transform: uppercase;
@@ -10597,7 +10678,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 }
                 .page-divider-screen {
                     width: 210mm;
-                    margin: 24px auto 14px auto;
+                    margin: 20px auto 12px auto;
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -10619,8 +10700,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     top: 50%;
                     left: 50%;
                     transform: translate(-50%, -50%);
-                    width: 330px;
-                    height: 330px;
                     opacity: 0.11;
                     pointer-events: none;
                     z-index: 0;
@@ -10635,7 +10714,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     -webkit-print-color-adjust: exact !important;
                     print-color-adjust: exact !important;
                 }
-                .header, .details-grid, .guia-table, .note-box, .signatures {
+                .header, .details-grid, .guia-table, .note-box, .signatures, .guia-page-footer {
                     position: relative;
                     z-index: 1;
                 }
@@ -10644,33 +10723,33 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     justify-content: space-between;
                     align-items: center;
                     border-bottom: 2px solid #000000;
-                    padding-bottom: 5px;
-                    margin-bottom: 5px;
+                    padding-bottom: 4px;
+                    margin-bottom: 4px;
                 }
                 .logo-section {
                     display: flex;
                     align-items: center;
-                    gap: 10px;
+                    gap: 8px;
                 }
                 .header-logo {
-                    width: 48px;
-                    height: 48px;
+                    width: 44px;
+                    height: 44px;
                     object-fit: contain;
                 }
                 .company-title {
                     margin: 0;
                     color: #000000;
-                    font-size: 20px;
+                    font-size: 19px;
                     font-weight: 900;
                     letter-spacing: -0.02em;
                     line-height: 1.1;
                 }
                 .company-sub {
-                    font-size: 10px;
+                    font-size: 9.5px;
                     color: #111827;
                     font-weight: 700;
-                    line-height: 1.35;
-                    margin-top: 2px;
+                    line-height: 1.3;
+                    margin-top: 1px;
                 }
                 .doc-info {
                     text-align: right;
@@ -10678,7 +10757,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .doc-info h2 {
                     margin: 0;
                     color: #000000;
-                    font-size: 18px;
+                    font-size: 17px;
                     font-weight: 900;
                     text-transform: uppercase;
                     letter-spacing: 0.01em;
@@ -10686,26 +10765,26 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 }
                 .via-badge {
                     display: inline-block;
-                    font-size: 11px;
+                    font-size: 10px;
                     font-weight: 900;
-                    padding: 3px 10px;
+                    padding: 2.5px 8px;
                     border-radius: 4px;
-                    letter-spacing: 0.03em;
+                    letter-spacing: 0.02em;
                     text-transform: uppercase;
                     margin-top: 2px;
                 }
                 .guia-no {
-                    font-size: 13px;
+                    font-size: 12px;
                     font-weight: 800;
                     color: #000000;
-                    margin: 2px 0 0 0;
+                    margin: 1px 0 0 0;
                 }
                 .guia-no strong {
                     font-weight: 900;
                     color: #000000;
                 }
                 .guia-meta {
-                    font-size: 10.5px;
+                    font-size: 10px;
                     color: #111827;
                     margin: 1px 0 0 0;
                     font-weight: 700;
@@ -10716,39 +10795,39 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .details-grid {
                     display: grid;
                     grid-template-columns: 1fr 1fr 1fr;
-                    gap: 8px;
+                    gap: 6px;
                     margin-bottom: 4px;
                 }
                 .card {
                     border: 1.5px solid #1e293b;
-                    padding: 5px 9px;
-                    border-radius: 6px;
+                    padding: 4px 7px;
+                    border-radius: 5px;
                     background: #ffffff;
                 }
                 .card h3 {
-                    margin: 0 0 3px 0;
-                    font-size: 11px;
+                    margin: 0 0 2px 0;
+                    font-size: 10px;
                     font-weight: 900;
                     text-transform: uppercase;
                     color: #000000;
-                    letter-spacing: 0.04em;
+                    letter-spacing: 0.03em;
                     border-bottom: 1.5px solid #64748b;
-                    padding-bottom: 2px;
+                    padding-bottom: 1px;
                 }
                 .card p {
-                    margin: 2px 0;
-                    font-size: 11.5px;
+                    margin: 1.5px 0;
+                    font-size: 10.5px;
                     font-weight: 700;
                     color: #000000;
                     display: flex;
                     justify-content: space-between;
                     align-items: baseline;
-                    gap: 6px;
+                    gap: 4px;
                 }
                 .card .lbl {
                     color: #1e293b;
                     font-weight: 800;
-                    font-size: 11px;
+                    font-size: 10px;
                     white-space: nowrap;
                     flex-shrink: 0;
                 }
@@ -10756,27 +10835,27 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     color: #000000;
                     font-weight: 900;
                     text-align: right;
-                    font-size: 12px;
+                    font-size: 11px;
                     word-break: break-word;
                 }
                 .card .viatura-val {
                     color: #000000;
                     font-weight: 900;
-                    font-size: 12px;
+                    font-size: 11px;
                 }
                 .guia-table {
                     width: 100%;
                     border-collapse: collapse;
-                    margin-bottom: 5px;
+                    margin-bottom: 4px;
                     border: 2px solid #000000;
                     border-radius: 4px;
                     overflow: hidden;
                 }
                 .guia-table th {
                     background: #e2e8f0;
-                    padding: 5px 8px;
+                    padding: 4px 6px;
                     text-align: left;
-                    font-size: 11px;
+                    font-size: 10px;
                     text-transform: uppercase;
                     font-weight: 900;
                     color: #000000;
@@ -10787,8 +10866,8 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     border-right: none;
                 }
                 .guia-table td {
-                    padding: 5px 8px;
-                    font-size: 12px;
+                    padding: 3px 6px;
+                    font-size: 11px;
                     font-weight: 800;
                     border-bottom: 1px solid #64748b;
                     border-right: 1px solid #cbd5e1;
@@ -10798,37 +10877,43 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .guia-table td:last-child {
                     border-right: none;
                 }
-                .td-desc strong {
+                .row-order-title {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1px;
+                }
+                .order-tag {
+                    font-size: 11px;
                     font-weight: 900;
                     color: #000000;
-                    font-size: 12.5px;
+                    line-height: 1.15;
                 }
-                .orders-desc {
-                    font-size: 11px;
-                    color: #000000;
+                .order-desc-inline {
+                    font-size: 9.5px;
                     font-weight: 700;
-                    margin-top: 1px;
+                    color: #1e293b;
+                    line-height: 1.2;
                 }
                 .td-num {
                     text-align: center;
-                    font-size: 13.5px;
+                    font-size: 12.5px;
                     font-weight: 900;
                     color: #000000;
                 }
                 .td-action {
                     text-align: center;
-                    padding: 4px 6px !important;
+                    padding: 2px 4px !important;
                 }
                 .write-line {
                     display: inline-block;
-                    min-width: 75px;
-                    border-bottom: 2px dashed #000000;
-                    height: 18px;
+                    min-width: 60px;
+                    border-bottom: 1.5px dashed #000000;
+                    height: 15px;
                     vertical-align: bottom;
-                    margin-right: 3px;
+                    margin-right: 2px;
                 }
                 .vol-unit {
-                    font-size: 11px;
+                    font-size: 9.5px;
                     color: #000000;
                     font-weight: 900;
                 }
@@ -10838,25 +10923,25 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 }
                 .totals-row td {
                     border-bottom: none;
-                    padding: 5px 8px;
-                    font-size: 12.5px;
+                    padding: 4px 6px;
+                    font-size: 11.5px;
                 }
                 .td-manual {
                     text-align: center;
-                    font-size: 10.5px;
+                    font-size: 10px;
                     color: #1e293b;
                     font-weight: 800;
                     font-style: italic;
                 }
                 .note-box {
-                    font-size: 11px;
+                    font-size: 10px;
                     color: #000000;
                     font-weight: 700;
                     border: 1px solid #cbd5e1;
-                    border-left-width: 4.5px;
-                    padding: 5px 12px;
-                    line-height: 1.4;
-                    margin: 3px 0 5px 0;
+                    border-left-width: 4px;
+                    padding: 3.5px 8px;
+                    line-height: 1.35;
+                    margin: 2px 0 4px 0;
                     background: #f8fafc;
                     border-radius: 0 4px 4px 0;
                 }
@@ -10867,45 +10952,45 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .signatures {
                     display: grid;
                     grid-template-columns: 1fr 1fr;
-                    gap: 32px;
-                    margin-top: 4px;
+                    gap: 24px;
+                    margin-top: 3px;
                 }
                 .sig-box {
                     border-top: 2px solid #000000;
-                    padding-top: 4px;
+                    padding-top: 3px;
                     text-align: center;
                 }
                 .sig-box p {
-                    margin: 1px 0 0 0;
-                    font-size: 12px;
+                    margin: 0;
+                    font-size: 11px;
                     font-weight: 900;
                     color: #000000;
                 }
                 .sig-box span {
-                    font-size: 10.5px;
+                    font-size: 9.5px;
                     font-weight: 700;
                     color: #1e293b;
                 }
                 .cut-separator {
-                    height: 18px;
+                    height: 16px;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     gap: 8px;
                     color: #000000;
-                    font-size: 10px;
+                    font-size: 9.5px;
                     font-weight: 900;
                     letter-spacing: 0.05em;
                     text-transform: uppercase;
                     user-select: none;
-                    margin: 2px 0;
+                    margin: 1px 0;
                 }
                 .cut-line {
                     flex: 1;
                     border-top: 1.5px dashed #475569;
                 }
                 .cut-scissors {
-                    font-size: 14px;
+                    font-size: 13px;
                     color: #000000;
                 }
 
@@ -10992,7 +11077,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 <div class="bar-left">
                     <div>
                         <div class="bar-title">Guia Dupla Oficial (A4)</div>
-                        <div class="bar-sub">${isMultiPage ? '📄 2 Folhas (Folha 1: Armazém • Folha 2: Portaria)' : '📄 Folha Única Dupla (✂ Destaque Armazém & Portaria)'}</div>
+                        <div class="bar-sub">${printMode === '4_FOLHAS' ? `📄 4 Folhas (${totalOrdersCount} Ordens • 2 Folhas Armazém + 2 Folhas Portaria)` : (printMode === '2_FOLHAS' ? `📄 2 Folhas (${totalOrdersCount} Ordens • Folha 1: Armazém • Folha 2: Portaria)` : '📄 Folha Única Dupla (✂ Destaque Armazém & Portaria)')}</div>
                     </div>
                     <div id="status-badge" class="server-badge badge-checking" onclick="openServerConfigModal()" title="Clique para ver ou alterar o IP do servidor de impressão">
                         <span class="badge-dot"></span>
@@ -11049,23 +11134,49 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 </div>
             </div>
 
-            <!-- Conteúdo da Guia: 2 Folhas (Multi-Page) ou 1 Folha Dupla com Destaque -->
-            ${isMultiPage ? `
+            <!-- Conteúdo da Guia: 4 Folhas, 2 Folhas ou 1 Folha Dupla com Destaque -->
+            ${printMode === '4_FOLHAS' ? `
+                <!-- Folha 1: 1ª Via Armazém (Parte 1/2) -->
+                <div id="guia-page-1" class="page-wrapper">
+                    ${generateViaHtml('ARMAZEM', 'PART1')}
+                </div>
+                <div class="page-divider-screen">
+                    <span>FOLHA 2 — 1ª VIA ARMAZÉM / CONFERÊNCIA (PARTE 2 / CONCLUSÃO)</span>
+                </div>
+                <!-- Folha 2: 1ª Via Armazém (Conclusão) -->
+                <div id="guia-page-2" class="page-wrapper">
+                    ${generateViaHtml('ARMAZEM', 'PART2')}
+                </div>
+                <div class="page-divider-screen" style="border-top-color: #3b82f6;">
+                    <span>FOLHA 3 — 2ª VIA PORTARIA & SEGURANÇA (PARTE 1/2)</span>
+                </div>
+                <!-- Folha 3: 2ª Via Portaria (Parte 1/2) -->
+                <div id="guia-page-3" class="page-wrapper">
+                    ${generateViaHtml('PORTARIA', 'PART1')}
+                </div>
+                <div class="page-divider-screen">
+                    <span>FOLHA 4 — 2ª VIA PORTARIA & SEGURANÇA (PARTE 2 / CONCLUSÃO)</span>
+                </div>
+                <!-- Folha 4: 2ª Via Portaria (Conclusão) -->
+                <div id="guia-page-4" class="page-wrapper">
+                    ${generateViaHtml('PORTARIA', 'PART2')}
+                </div>
+            ` : (printMode === '2_FOLHAS' ? `
                 <!-- Folha 1: Armazém e Conferência -->
                 <div id="guia-page-1" class="page-wrapper">
-                    ${generateViaHtml('ARMAZEM', true)}
+                    ${generateViaHtml('ARMAZEM', 'FULL')}
                 </div>
                 <div class="page-divider-screen">
                     <span>FOLHA 2 — PORTARIA & SEGURANÇA</span>
                 </div>
                 <!-- Folha 2: Portaria e Segurança -->
                 <div id="guia-page-2" class="page-wrapper">
-                    ${generateViaHtml('PORTARIA', true)}
+                    ${generateViaHtml('PORTARIA', 'FULL')}
                 </div>
             ` : `
                 <!-- Folha Única Dupla com Destaque -->
                 <div id="guia-page-wrapper" class="page-wrapper">
-                    ${generateViaHtml('ARMAZEM', false)}
+                    ${generateViaHtml('ARMAZEM', 'HALF')}
                     <div class="cut-separator">
                         <span class="cut-scissors">✂</span>
                         <div class="cut-line"></div>
@@ -11073,9 +11184,9 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         <div class="cut-line"></div>
                         <span class="cut-scissors">✂</span>
                     </div>
-                    ${generateViaHtml('PORTARIA', false)}
+                    ${generateViaHtml('PORTARIA', 'HALF')}
                 </div>
-            `}
+            `)}
 
             <script>
                 const SERVER_STORAGE_KEY = 'printer_server_url';
