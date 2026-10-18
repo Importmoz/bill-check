@@ -1558,6 +1558,9 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             rowStatus = 'PENDENTE';
         }
 
+        const rawDuty = dutyIdx !== -1 ? row[dutyIdx] : 0;
+        const dutyVal = parseFloat(String(rawDuty || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
         const rawPaid = paidIdx !== -1 ? row[paidIdx] : 0;
         const paidVal = parseFloat(String(rawPaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
@@ -1565,14 +1568,22 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
         const prepaidVal = parseFloat(String(rawPrepaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
         const rawBalance = balanceIdx !== -1 ? row[balanceIdx] : 0;
-        const balanceVal = parseFloat(String(rawBalance || '0').replace(/[^0-9.-]+/g, '')) || 0;
+        let balanceVal = parseFloat(String(rawBalance || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+        // Fallback robusto para saldo real se a célula estiver vazia ou zero
+        if (balanceVal === 0 && dutyVal > 0 && (paidVal + prepaidVal) < dutyVal) {
+            balanceVal = Math.max(0, dutyVal - prepaidVal - paidVal);
+        }
+        if (dutyVal > 0 && (paidVal + prepaidVal) >= dutyVal) {
+            balanceVal = 0;
+        }
 
         // Padrão: verificar se tem pré-pago, pagamento ou se aguarda pagamento
         if (rowStatus === '' || rowStatus === '?') {
-            if (balanceVal === 0 && prepaidVal > 0) {
+            if (balanceVal === 0 && (prepaidVal > 0 || (dutyVal > 0 && paidVal >= dutyVal))) {
                 rowStatus = 'CONFIRMADO';
             } else if (paidVal > 0) {
-                rowStatus = 'PENDENTE';
+                rowStatus = 'PARCIAL';
             } else {
                 rowStatus = 'AGUARDA PAGAMENTO';
             }
@@ -2207,7 +2218,15 @@ export async function showConfirmDetail(client, clientIndex) {
             const dutyPrepaid = getNum(rowData, dutyPrepIdx);
             const amountDuty = getNum(rowData, amtDutyIdx);
             const paid = getNum(rowData, paidDutyIdx);
-            const balance = getNum(rowData, balanceIdx);
+            let balance = balanceIdx !== -1 && rowData[balanceIdx] !== '' && rowData[balanceIdx] !== undefined 
+                ? getNum(rowData, balanceIdx) 
+                : Math.max(0, amountDuty - dutyPrepaid - paid);
+            if (balance === 0 && amountDuty > 0 && (paid + dutyPrepaid) < amountDuty) {
+                balance = Math.max(0, amountDuty - dutyPrepaid - paid);
+            }
+            if (amountDuty > 0 && (paid + dutyPrepaid) >= amountDuty) {
+                balance = 0;
+            }
             const bankDuty = getRaw(rowData, bankDutyIdx);
             
             // Armazém / Frete dados
@@ -2448,10 +2467,11 @@ export async function showConfirmDetail(client, clientIndex) {
             pbHtml += renderReconciliationBlock(freightPayments, 'Detalhes de Reconciliação - FRETE', 'rose');
         }
 
-        let remainingToPay = targetAmount - totalAllocated;
+        const effectivePaidOrAllocated = Math.max(totalAllocated, totalPaid);
+        let remainingToPay = targetAmount - effectivePaidOrAllocated;
         if (remainingToPay < 0) remainingToPay = 0;
 
-        let trueRemaining = (totalAmountDuty - totalDutyPrepaid) - totalAllocated;
+        let trueRemaining = (totalAmountDuty - totalDutyPrepaid) - effectivePaidOrAllocated;
         if (trueRemaining < 0) trueRemaining = 0;
 
         window.currentActiveClientState = {
@@ -3930,7 +3950,15 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     const dutyPrepaid = getNum(rowData, dutyPrepIdx);
     const amountDuty = getNum(rowData, amtDutyIdx);
     const paid = getNum(rowData, paidIdx);
-    const balance = getNum(rowData, balanceIdx);
+    let balance = balanceIdx !== -1 && rowData[balanceIdx] !== '' && rowData[balanceIdx] !== undefined
+        ? getNum(rowData, balanceIdx)
+        : Math.max(0, amountDuty - dutyPrepaid - paid);
+    if (balance === 0 && amountDuty > 0 && (paid + dutyPrepaid) < amountDuty) {
+        balance = Math.max(0, amountDuty - dutyPrepaid - paid);
+    }
+    if (amountDuty > 0 && (paid + dutyPrepaid) >= amountDuty) {
+        balance = 0;
+    }
     const bankDuty = getRaw(rowData, bankDutyIdx);
 
     let rowStatus = String(rowData[statusIdx] || 'PENDENTE').trim();
@@ -4001,7 +4029,15 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         totalDutyPrepaid += getNum(rData, dutyPrepIdx);
         totalAmountDuty += getNum(rData, amtDutyIdx);
         
-        const bal = getNum(rData, balanceIdx);
+        let bal = balanceIdx !== -1 && rData[balanceIdx] !== '' && rData[balanceIdx] !== undefined
+            ? getNum(rData, balanceIdx)
+            : Math.max(0, amtDutyIdx !== -1 ? (getNum(rData, amtDutyIdx) - getNum(rData, dutyPrepIdx) - getNum(rData, paidIdx)) : 0);
+        if (bal === 0 && amtDutyIdx !== -1 && getNum(rData, amtDutyIdx) > 0 && (getNum(rData, paidIdx) + getNum(rData, dutyPrepIdx)) < getNum(rData, amtDutyIdx)) {
+            bal = Math.max(0, getNum(rData, amtDutyIdx) - getNum(rData, dutyPrepIdx) - getNum(rData, paidIdx));
+        }
+        if (amtDutyIdx !== -1 && getNum(rData, amtDutyIdx) > 0 && (getNum(rData, paidIdx) + getNum(rData, dutyPrepIdx)) >= getNum(rData, amtDutyIdx)) {
+            bal = 0;
+        }
         totalGSheetBalance += bal;
 
         let rStatus = String(rData[statusIdx] || 'PENDENTE').trim();
@@ -4028,10 +4064,11 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         let totalAllocated = 0;
         payments.forEach(p => totalAllocated += p.amount);
 
-        let remainingToPay = targetAmount - totalAllocated;
+        const effectivePaidOrAllocated = Math.max(totalAllocated, totalPaid);
+        let remainingToPay = targetAmount - effectivePaidOrAllocated;
         if (remainingToPay < 0) remainingToPay = 0;
 
-        let trueRemaining = (totalAmountDuty - totalDutyPrepaid) - totalAllocated;
+        let trueRemaining = (totalAmountDuty - totalDutyPrepaid) - effectivePaidOrAllocated;
         if (trueRemaining < 0) trueRemaining = 0;
 
         window.currentActiveClientState.targetAmount = targetAmount;
@@ -5951,6 +5988,9 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
     document.getElementById('payment-mini-filter').classList.remove('hidden');
 
     currentMiniFilterExpectedAmount = parseFloat(defaultAmount) || 0;
+    if (currentMiniFilterExpectedAmount <= 0 && window.currentActiveClientState) {
+        currentMiniFilterExpectedAmount = parseFloat(window.currentActiveClientState.trueRemaining || window.currentActiveClientState.remainingToPay || 0);
+    }
 
     // Atualizar info box do cliente
     const infoBox = document.getElementById('mini-filter-header-client-info');
@@ -6139,17 +6179,18 @@ export async function searchPaymentMiniFilter() {
 export function checkMiniFilterStatus() {
     const allocated = parseFloat(document.getElementById('mini-filter-allocate-amount').value) || 0;
     const statusSelect = document.getElementById('mini-filter-status');
+    const commentContainer = document.getElementById('mini-filter-comment-container');
     if (statusSelect) {
-        if (allocated > 0 && allocated < (currentMiniFilterExpectedAmount - 1.0)) {
+        if (allocated > 0 && currentMiniFilterExpectedAmount > 0 && allocated < (currentMiniFilterExpectedAmount - 1.0)) {
             if (statusSelect.value !== 'PARCIAL') {
                 statusSelect.value = 'PARCIAL';
-                document.getElementById('mini-filter-comment-container').classList.remove('hidden');
             }
-        } else if (allocated > 0 && allocated >= (currentMiniFilterExpectedAmount - 1.0)) {
+            if (commentContainer) commentContainer.classList.remove('hidden');
+        } else if (allocated > 0 && (currentMiniFilterExpectedAmount <= 0 || allocated >= (currentMiniFilterExpectedAmount - 1.0))) {
             if (statusSelect.value === 'PARCIAL' || statusSelect.value === 'PENDENTE') {
                 statusSelect.value = 'CONFIRMADO';
-                document.getElementById('mini-filter-comment-container').classList.add('hidden');
             }
+            if (commentContainer) commentContainer.classList.add('hidden');
         }
     }
 }
@@ -6192,7 +6233,9 @@ export function togglePaymentSelection(id, date, ref, fullAmount, bank = '', acc
     const totalMaxAvailable = selectedPaymentsForLink.reduce((sum, p) => sum + p.amount, 0);
 
     // Preencher campo de alocação com o valor sugerido
-    const suggested = Math.min(currentMiniFilterExpectedAmount, totalMaxAvailable);
+    const suggested = currentMiniFilterExpectedAmount > 0
+        ? Math.min(currentMiniFilterExpectedAmount, totalMaxAvailable)
+        : totalMaxAvailable;
     document.getElementById('mini-filter-allocate-amount').value = suggested > 0 ? suggested.toFixed(2) : '';
     document.getElementById('mini-filter-max-available').innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(totalMaxAvailable);
 
@@ -6206,15 +6249,15 @@ export function selectPaymentResult(id, date, ref, trElement, fullAmount) {
 }
 
 export async function confirmPaymentSelection() {
-    const status = document.getElementById('mini-filter-status').value;
+    let status = document.getElementById('mini-filter-status').value;
     const combinedInfo = document.getElementById('mini-filter-combined-info').value;
     const allocatedAmount = parseFloat(document.getElementById('mini-filter-allocate-amount').value) || 0;
 
     const totalMaxAvailable = selectedPaymentsForLink.reduce((sum, p) => sum + p.amount, 0);
 
-    if (status === 'CONFIRMADO') {
+    if (status === 'CONFIRMADO' || status === 'PARCIAL') {
         if (selectedPaymentsForLink.length === 0) {
-            ui.toast('Para marcar como CONFIRMADO, selecione primeiro um ou mais pagamentos na lista.', "warning");
+            ui.toast('Para vincular o pagamento, selecione primeiro um ou mais pagamentos na lista.', "warning");
             return;
         }
 
@@ -6226,6 +6269,15 @@ export async function confirmPaymentSelection() {
         if (allocatedAmount > totalMaxAvailable + 0.01) {
             ui.toast("O valor a alocar não pode ser superior ao valor disponível nos pagamentos selecionados.", "warning");
             return;
+        }
+    }
+
+    // Se o valor alocado for menor que o esperado, forçar status para PARCIAL
+    if (allocatedAmount > 0 && currentMiniFilterExpectedAmount > 0 && allocatedAmount < (currentMiniFilterExpectedAmount - 1.0)) {
+        if (status === 'CONFIRMADO') {
+            status = 'PARCIAL';
+            const statusSelect = document.getElementById('mini-filter-status');
+            if (statusSelect) statusSelect.value = 'PARCIAL';
         }
     }
 
@@ -6343,7 +6395,7 @@ export async function confirmPaymentSelection() {
                 const firstRowIndex = sortedClientRows[0]?.originalIndex;
 
                 let allocatedAmountRemaining = allocatedAmount;
-                const filterStatus = document.getElementById('mini-filter-status')?.value || 'CONFIRMADO';
+                const filterStatus = status;
 
                 // Formatar as datas de todos os pagamentos selecionados para vínculo usando parseDate
                 const formattedDates = selectedPaymentsForLink.map(p => {
@@ -6382,8 +6434,14 @@ export async function confirmPaymentSelection() {
                         if (bankDutyIdx !== -1) rowData[bankDutyIdx] = '';
                     } else {
                         // Distribuir o valor do pagamento
-                        const currentBalance = isFreight ? (parseFloat(rowObj.balFreight) || 0) : (parseFloat(rowObj.balance) || 0);
                         const currentPaid = isFreight ? (parseFloat(rowObj.pdFreight) || 0) : (parseFloat(rowObj.paid) || 0);
+                        const amt = isFreight ? (parseFloat(rowObj.amtFreight) || 0) : (parseFloat(rowObj.amountDuty) || 0);
+                        const prep = isFreight ? 0 : (parseFloat(rowObj.dutyPrepaid) || 0);
+
+                        let currentBalance = isFreight ? (parseFloat(rowObj.balFreight) || 0) : (parseFloat(rowObj.balance) || 0);
+                        if (currentBalance === 0 && amt > 0 && (currentPaid + prep) < amt) {
+                            currentBalance = Math.max(0, amt - prep - currentPaid);
+                        }
                         
                         let allocatedForThisRow = 0;
                         if (currentBalance > 0 && allocatedAmountRemaining > 0) {
@@ -6443,10 +6501,13 @@ export async function confirmPaymentSelection() {
                         if (isExceptionStatus) {
                             newStatus = filterStatus;
                         } else if (!isFreight) {
-                            if (newBalance <= 1.0) {
+                            if (newBalance <= 1.0 && (newPaid > 0 || prep > 0 || amt === 0)) {
                                 newStatus = 'CONFIRMADO';
-                            } else if (newPaid > 0) {
+                            } else if (newPaid > 0 || allocatedForThisRow > 0) {
                                 newStatus = 'PARCIAL';
+                            } else if (filterStatus === 'PARCIAL') {
+                                const rawCur = String(rawRow[statusIdx] || 'PENDENTE').trim().toUpperCase();
+                                newStatus = (rawCur === 'CONFIRMADO') ? 'PENDENTE' : (rawCur || 'PENDENTE');
                             } else {
                                 const rawCur = String(rawRow[statusIdx] || 'PENDENTE').trim().toUpperCase();
                                 newStatus = (rawCur === 'CONFIRMADO' || rawCur === 'PARCIAL') ? 'PENDENTE' : (rawCur || 'PENDENTE');
@@ -6552,6 +6613,9 @@ export async function confirmPaymentSelection() {
                     // Acumular apenas as células modificadas para o Google Sheets
                     if (paidIdx !== -1) {
                         batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(paidIdx)}${sheetRowNumber}`), values: [[rowData[paidIdx]]] });
+                    }
+                    if (balanceIdx !== -1) {
+                        batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(balanceIdx)}${sheetRowNumber}`), values: [[rowData[balanceIdx]]] });
                     }
                     if (!isFreight && bankDutyIdx !== -1) {
                         if (newStatus === 'PENDENTE') {
