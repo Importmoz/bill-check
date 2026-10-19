@@ -2467,12 +2467,31 @@ export async function showConfirmDetail(client, clientIndex) {
             pbHtml += renderReconciliationBlock(freightPayments, 'Detalhes de Reconciliação - FRETE', 'rose');
         }
 
-        const effectivePaidOrAllocated = Math.max(totalAllocated, totalPaid);
-        let remainingToPay = targetAmount - effectivePaidOrAllocated;
-        if (remainingToPay < 0) remainingToPay = 0;
+        // 1. Fonte Primária: Google Sheets (Planilha)
+        let gSheetRemaining = null;
+        if (totalGSheetBalance !== undefined && totalGSheetBalance !== null && !isNaN(totalGSheetBalance) && totalGSheetBalance > 0.01) {
+            gSheetRemaining = totalGSheetBalance;
+        } else if (totalAmountDuty > 0) {
+            if (totalPaid > 0 || totalDutyPrepaid > 0) {
+                gSheetRemaining = Math.max(0, totalAmountDuty - totalDutyPrepaid - totalPaid);
+            } else if (isFullyPrepaid || (totalGSheetBalance !== undefined && totalGSheetBalance !== null && Math.abs(totalGSheetBalance) < 0.01 && allConfirmed)) {
+                gSheetRemaining = 0;
+            } else {
+                gSheetRemaining = targetAmount;
+            }
+        }
 
-        let trueRemaining = (totalAmountDuty - totalDutyPrepaid) - effectivePaidOrAllocated;
-        if (trueRemaining < 0) trueRemaining = 0;
+        // 2. Fonte de Segurança / Auditoria: PocketBase (contingência se a planilha não conseguir determinar)
+        let trueRemaining = 0;
+        if (gSheetRemaining !== null && !isNaN(gSheetRemaining)) {
+            trueRemaining = gSheetRemaining;
+        } else if (targetAmount > 0 && totalAllocated > 0) {
+            trueRemaining = Math.max(0, targetAmount - totalAllocated);
+        } else {
+            trueRemaining = Math.max(0, targetAmount);
+        }
+
+        let remainingToPay = trueRemaining;
 
         window.currentActiveClientState = {
             combinedInfo,
@@ -4064,12 +4083,31 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         let totalAllocated = 0;
         payments.forEach(p => totalAllocated += p.amount);
 
-        const effectivePaidOrAllocated = Math.max(totalAllocated, totalPaid);
-        let remainingToPay = targetAmount - effectivePaidOrAllocated;
-        if (remainingToPay < 0) remainingToPay = 0;
+        // 1. Fonte Primária: Google Sheets (Planilha)
+        let gSheetRemaining = null;
+        if (totalGSheetBalance !== undefined && totalGSheetBalance !== null && !isNaN(totalGSheetBalance) && totalGSheetBalance > 0.01) {
+            gSheetRemaining = totalGSheetBalance;
+        } else if (totalAmountDuty > 0) {
+            if (totalPaid > 0 || totalDutyPrepaid > 0) {
+                gSheetRemaining = Math.max(0, totalAmountDuty - totalDutyPrepaid - totalPaid);
+            } else if (isFullyPrepaid || (totalGSheetBalance !== undefined && totalGSheetBalance !== null && Math.abs(totalGSheetBalance) < 0.01 && allConfirmed)) {
+                gSheetRemaining = 0;
+            } else {
+                gSheetRemaining = targetAmount;
+            }
+        }
 
-        let trueRemaining = (totalAmountDuty - totalDutyPrepaid) - effectivePaidOrAllocated;
-        if (trueRemaining < 0) trueRemaining = 0;
+        // 2. Fonte de Segurança / Auditoria: PocketBase (contingência se a planilha não conseguir determinar)
+        let trueRemaining = 0;
+        if (gSheetRemaining !== null && !isNaN(gSheetRemaining)) {
+            trueRemaining = gSheetRemaining;
+        } else if (targetAmount > 0 && totalAllocated > 0) {
+            trueRemaining = Math.max(0, targetAmount - totalAllocated);
+        } else {
+            trueRemaining = Math.max(0, targetAmount);
+        }
+
+        let remainingToPay = trueRemaining;
 
         window.currentActiveClientState.targetAmount = targetAmount;
         window.currentActiveClientState.remainingToPay = remainingToPay;
@@ -4367,15 +4405,16 @@ export function getPaymentCardHtml(client, stateObj) {
         isFullyPrepaid
     } = stateObj;
 
-    // Lógica do utilizador adaptada para pagamentos parciais:
+    // 1. Fonte Primária: Planilha Google Sheets
     // O card deve estar visível se o cliente não estiver totalmente confirmado
-    // E (o saldo na planilha for zero, OU houver pagamentos vinculados, OU houver um valor pago na planilha).
+    // e possuir dados a regularizar na planilha ou pagamentos vinculados
     const isBalanceZero = totalGSheetBalance !== undefined && Math.abs(totalGSheetBalance) < 0.01;
     const isAllConfirmed = allConfirmed === true;
-    const hasPaymentsLinked = payments && payments.length > 0;
+    const hasRemainingBalance = totalGSheetBalance !== undefined && totalGSheetBalance > 0.01;
     const hasPaidAmount = totalPaid !== undefined && totalPaid > 0.01;
+    const hasPaymentsLinked = payments && payments.length > 0;
 
-    const shouldShowCard = !isAllConfirmed && (isBalanceZero || hasPaymentsLinked || hasPaidAmount);
+    const shouldShowCard = !isAllConfirmed && (hasRemainingBalance || hasPaidAmount || isBalanceZero || hasPaymentsLinked || targetAmount > 0);
     if (!shouldShowCard) {
         return '';
     }
@@ -4434,15 +4473,19 @@ export function getPaymentCardHtml(client, stateObj) {
         cardClick = `onclick="window.paymentReconciliationContext = null; ui.openPaymentMiniFilter('${escapeJSAndHTML(combinedInfo)}', '${escapeJSAndHTML(bankValue)}', '${escapeJSAndHTML(trueRemaining)}', '', '${escapeJSAndHTML(client.displayName)}', '${escapeJSAndHTML(clientPhone)}', '${escapeJSAndHTML(clientNotaDuty)}')"`;
         cardCursor = "cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all";
 
-        if (payments && payments.length > 0) {
+        // Se houver valor pago na planilha OU saldo pendente menor que o total OU pagamentos no PocketBase
+        const isPartialOnGSheet = (totalPaid > 0 && remainingToPay > 0) || (remainingToPay > 0 && remainingToPay < targetAmount);
+        const isPartialOnPocketBase = payments && payments.length > 0 && remainingToPay > 0;
+
+        if (isPartialOnGSheet || isPartialOnPocketBase) {
             displayValueHtml = `
                 <div class="text-[12px] text-gray-500 mb-1 font-semibold uppercase">Falta Pagar</div>
                 ${formatValue(remainingToPay)}
-                <div class="text-[10px] text-blue-500 mt-2 font-semibold">Total Esperado: ${formatValue(targetAmount)}</div>
+                <div class="text-[10px] text-blue-500 mt-2 font-semibold">Total Esperado: ${formatValue(targetAmount)}${totalPaid > 0 ? ` | Já Pago na Folha: ${formatValue(totalPaid)}` : ''}</div>
             `;
             titleLabel = "Pagamento Parcial Pendente";
         } else {
-            displayValueHtml = formatValue(targetAmount);
+            displayValueHtml = formatValue(remainingToPay > 0 ? remainingToPay : targetAmount);
         }
     }
 
@@ -5987,10 +6030,20 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
 
     document.getElementById('payment-mini-filter').classList.remove('hidden');
 
-    currentMiniFilterExpectedAmount = parseFloat(defaultAmount) || 0;
-    if (currentMiniFilterExpectedAmount <= 0 && window.currentActiveClientState) {
-        currentMiniFilterExpectedAmount = parseFloat(window.currentActiveClientState.trueRemaining || window.currentActiveClientState.remainingToPay || 0);
+    // 1. Fonte Primária: Saldo da Planilha Google Sheets
+    let expectedAmount = 0;
+    if (window.currentActiveClientState && window.currentActiveClientState.totalGSheetBalance > 0) {
+        expectedAmount = window.currentActiveClientState.totalGSheetBalance;
+    } else if (parseFloat(defaultAmount) > 0) {
+        expectedAmount = parseFloat(defaultAmount);
+    } else if (window.currentActiveClientState && window.currentActiveClientState.trueRemaining > 0) {
+        expectedAmount = window.currentActiveClientState.trueRemaining;
+    } else if (window.currentActiveClientState && window.currentActiveClientState.remainingToPay > 0) {
+        expectedAmount = window.currentActiveClientState.remainingToPay;
+    } else if (window.currentActiveClientState && window.currentActiveClientState.targetAmount > 0) {
+        expectedAmount = window.currentActiveClientState.targetAmount;
     }
+    currentMiniFilterExpectedAmount = expectedAmount;
 
     // Atualizar info box do cliente
     const infoBox = document.getElementById('mini-filter-header-client-info');
@@ -6077,7 +6130,7 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
     }
 
     bankSelect.value = defaultBank;
-    document.getElementById('mini-filter-amount').value = defaultAmount;
+    document.getElementById('mini-filter-amount').value = expectedAmount > 0 ? expectedAmount.toFixed(2) : defaultAmount;
     document.getElementById('mini-filter-search').value = defaultTerm;
 
     document.getElementById('mini-filter-results').innerHTML = '';
@@ -6287,7 +6340,7 @@ export async function confirmPaymentSelection() {
         setBtnLoading(btn, true, 'Vincular...');
         setLoader(true, 'A gravar reconciliação...');
 
-        // 1. Distribuir o valor alocado e atualizar PocketBase
+        // 1. Distribuir o valor alocado em memória para as transações selecionadas
         const usedPayments = [];
         if (selectedPaymentsForLink.length > 0 && allocatedAmount > 0) {
             let allocatedAmountRemaining = allocatedAmount;
@@ -6304,10 +6357,6 @@ export async function confirmPaymentSelection() {
                     allocatedAmountRemaining -= toAllocate;
                 }
             }
-        }
-
-        for (const up of usedPayments) {
-            await markPaymentReconciled(up.id, combinedInfo, up.amount);
         }
 
         // 2. Google Sheet - Distribuir saldos e escrever as datas das respectivas transações utilizadas
@@ -6734,7 +6783,18 @@ export async function confirmPaymentSelection() {
                     }
                 }
 
-                // 5. Auditoria: Registar vinculo / reconciliação de pagamento
+                // 5. PocketBase - Reconciliação como Segurança da Informação (executada após sucesso na planilha Google Sheets)
+                if (usedPayments.length > 0) {
+                    try {
+                        for (const up of usedPayments) {
+                            await markPaymentReconciled(up.id, combinedInfo, up.amount);
+                        }
+                    } catch (pbErr) {
+                        console.warn("[PocketBase] Falha ao registar conciliação no PocketBase (Google Sheets já foi atualizado com sucesso):", pbErr);
+                    }
+                }
+
+                // 6. Auditoria: Registar vinculo / reconciliação de pagamento
                 const clientNo = window.currentActiveClient?.no || (window.currentClientRows?.[0]?.no) || '';
                 const clientName = window.currentActiveClient?.displayName || (window.currentClientRows?.[0]?.client) || '';
                 const sheetId = state.confirm?.sheetId || '';
