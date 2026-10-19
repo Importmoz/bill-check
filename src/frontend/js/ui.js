@@ -2471,11 +2471,11 @@ export async function showConfirmDetail(client, clientIndex) {
         let gSheetRemaining = null;
         if (totalGSheetBalance !== undefined && totalGSheetBalance !== null && !isNaN(totalGSheetBalance) && totalGSheetBalance > 0.01) {
             gSheetRemaining = totalGSheetBalance;
+        } else if (allConfirmed) {
+            gSheetRemaining = 0;
         } else if (totalAmountDuty > 0) {
-            if (totalPaid > 0 || totalDutyPrepaid > 0) {
-                gSheetRemaining = Math.max(0, totalAmountDuty - totalDutyPrepaid - totalPaid);
-            } else if (isFullyPrepaid || (totalGSheetBalance !== undefined && totalGSheetBalance !== null && Math.abs(totalGSheetBalance) < 0.01 && allConfirmed)) {
-                gSheetRemaining = 0;
+            if (totalAllocated > 0) {
+                gSheetRemaining = Math.max(0, targetAmount - totalAllocated);
             } else {
                 gSheetRemaining = targetAmount;
             }
@@ -4087,11 +4087,11 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         let gSheetRemaining = null;
         if (totalGSheetBalance !== undefined && totalGSheetBalance !== null && !isNaN(totalGSheetBalance) && totalGSheetBalance > 0.01) {
             gSheetRemaining = totalGSheetBalance;
+        } else if (allConfirmed) {
+            gSheetRemaining = 0;
         } else if (totalAmountDuty > 0) {
-            if (totalPaid > 0 || totalDutyPrepaid > 0) {
-                gSheetRemaining = Math.max(0, totalAmountDuty - totalDutyPrepaid - totalPaid);
-            } else if (isFullyPrepaid || (totalGSheetBalance !== undefined && totalGSheetBalance !== null && Math.abs(totalGSheetBalance) < 0.01 && allConfirmed)) {
-                gSheetRemaining = 0;
+            if (totalAllocated > 0) {
+                gSheetRemaining = Math.max(0, targetAmount - totalAllocated);
             } else {
                 gSheetRemaining = targetAmount;
             }
@@ -4462,20 +4462,14 @@ export function getPaymentCardHtml(client, stateObj) {
         cardCursor = "cursor-default opacity-60";
         displayValueHtml = formatValue(targetAmount);
         titleLabel = "Duty Prepaid (Pago na China)";
-    } else if (remainingToPay <= 0 && targetAmount > 0) {
-        cardClick = "";
-        cardCursor = "cursor-default opacity-60";
-        cardBorder = "border-gray-200 bg-gray-50";
-        textColor = "text-gray-400";
-        titleLabel = "Pagamento Concluído";
-        displayValueHtml = formatValue(targetAmount);
     } else {
-        cardClick = `onclick="window.paymentReconciliationContext = null; ui.openPaymentMiniFilter('${escapeJSAndHTML(combinedInfo)}', '${escapeJSAndHTML(bankValue)}', '${escapeJSAndHTML(trueRemaining)}', '', '${escapeJSAndHTML(client.displayName)}', '${escapeJSAndHTML(clientPhone)}', '${escapeJSAndHTML(clientNotaDuty)}')"`;
+        const amountToPass = (trueRemaining > 0) ? trueRemaining : ((remainingToPay > 0) ? remainingToPay : targetAmount);
+        cardClick = `onclick="window.paymentReconciliationContext = null; ui.openPaymentMiniFilter('${escapeJSAndHTML(combinedInfo)}', '${escapeJSAndHTML(bankValue)}', '${escapeJSAndHTML(amountToPass)}', '', '${escapeJSAndHTML(client.displayName)}', '${escapeJSAndHTML(clientPhone)}', '${escapeJSAndHTML(clientNotaDuty)}')"`;
         cardCursor = "cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all";
 
         // Se houver valor pago na planilha OU saldo pendente menor que o total OU pagamentos no PocketBase
-        const isPartialOnGSheet = (totalPaid > 0 && remainingToPay > 0) || (remainingToPay > 0 && remainingToPay < targetAmount);
-        const isPartialOnPocketBase = payments && payments.length > 0 && remainingToPay > 0;
+        const isPartialOnGSheet = (totalGSheetBalance > 0.01 && targetAmount > totalGSheetBalance) || (totalPaid > 0 && remainingToPay > 0 && remainingToPay < targetAmount);
+        const isPartialOnPocketBase = payments && payments.length > 0 && remainingToPay > 0 && remainingToPay < targetAmount;
 
         if (isPartialOnGSheet || isPartialOnPocketBase) {
             displayValueHtml = `
@@ -4485,7 +4479,7 @@ export function getPaymentCardHtml(client, stateObj) {
             `;
             titleLabel = "Pagamento Parcial Pendente";
         } else {
-            displayValueHtml = formatValue(remainingToPay > 0 ? remainingToPay : targetAmount);
+            displayValueHtml = formatValue(targetAmount > 0 ? targetAmount : remainingToPay);
         }
     }
 
