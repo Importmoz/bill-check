@@ -735,6 +735,87 @@ export function updateBillModeUI(mode, policy = null) {
 /**
  * Renderiza o Seletor de Modo de Visualização do Finance
  */
+
+/**
+ * Retorna o indicador visual (ícone) de ordenação de uma coluna
+ */
+function getSortIndicator(field) {
+    const currentField = state.finance.sortField || 'default';
+    const currentDir = state.finance.sortDirection || 'asc';
+
+    if (currentField !== field) {
+        return '<span class="inline-block ml-1 opacity-25 text-[8px] transition-opacity group-hover:opacity-80">↕</span>';
+    }
+    if (currentDir === 'desc') {
+        return '<span class="inline-block ml-1 text-blue-600 font-black text-[9px]">▼</span>';
+    }
+    return '<span class="inline-block ml-1 text-blue-600 font-black text-[9px]">▲</span>';
+}
+
+/**
+ * Ordena as folhas/projetos de acordo com o campo e direção configurados
+ */
+export function sortFinanceSheets(sheets) {
+    if (!sheets || sheets.length <= 1) return sheets ? [...sheets] : [];
+
+    const field = state.finance.sortField || 'default';
+    const direction = state.finance.sortDirection || 'asc';
+
+    if (field === 'default') return [...sheets];
+
+    const sorted = [...sheets];
+    const modifier = direction === 'desc' ? -1 : 1;
+    const groupMap = new Map((state.finance.groups || []).map(g => [g.id, g.name]));
+
+    sorted.sort((a, b) => {
+        // Regra especial: Pendentes no topo (Saldo > 0 primeiro)
+        if (field === 'pending_first') {
+            const aPending = (a.balance || 0) > 0 ? 1 : 0;
+            const bPending = (b.balance || 0) > 0 ? 1 : 0;
+            if (aPending !== bPending) return bPending - aPending;
+            return ((b.balance || 0) - (a.balance || 0)) * modifier;
+        }
+
+        // Regra especial: Liquidados no topo (Saldo <= 0 primeiro)
+        if (field === 'settled_first') {
+            const aSettled = (a.balance || 0) <= 0 ? 1 : 0;
+            const bSettled = (b.balance || 0) <= 0 ? 1 : 0;
+            if (aSettled !== bSettled) return bSettled - aSettled;
+            return ((a.balance || 0) - (b.balance || 0)) * modifier;
+        }
+
+        // Ordenação por Grupo / Lote
+        if (field === 'group') {
+            const nameA = a.groupId && groupMap.has(a.groupId) ? groupMap.get(a.groupId) : 'Sem Grupo';
+            const nameB = b.groupId && groupMap.has(b.groupId) ? groupMap.get(b.groupId) : 'Sem Grupo';
+            const cmp = nameA.localeCompare(nameB, 'pt', { numeric: true, sensitivity: 'base' });
+            if (cmp !== 0) return cmp * modifier;
+            return String(a.title || '').localeCompare(String(b.title || ''), 'pt', { numeric: true });
+        }
+
+        // Ordenação por Documento / Nome
+        if (field === 'title') {
+            const strA = String(a.title || '').toLowerCase();
+            const strB = String(b.title || '').toLowerCase();
+            return strA.localeCompare(strB, 'pt', { numeric: true, sensitivity: 'base' }) * modifier;
+        }
+
+        // Ordenação por campos numéricos: dutyPrepaid, amountDuty, paid, balance
+        if (['dutyPrepaid', 'amountDuty', 'paid', 'balance'].includes(field)) {
+            const numA = Number(a[field]) || 0;
+            const numB = Number(b[field]) || 0;
+            if (numA !== numB) {
+                return (numA - numB) * modifier;
+            }
+            return String(a.title || '').localeCompare(String(b.title || ''), 'pt', { numeric: true });
+        }
+
+        return 0;
+    });
+
+    return sorted;
+}
+
 export function renderFinanceViewSwitcher(sheets) {
     const container = document.getElementById('finance-view-switcher');
     if (!container) return;
@@ -742,6 +823,15 @@ export function renderFinanceViewSwitcher(sheets) {
     const currentMode = state.finance.viewMode || 'groups';
     const totalCount = (sheets || []).length;
     const selectedCount = state.finance.selectedSheets ? state.finance.selectedSheets.size : 0;
+    const currentSortField = state.finance.sortField || 'default';
+    const currentSortDir = state.finance.sortDirection || 'asc';
+
+    let currentPreset = 'default';
+    if (currentSortField === 'pending_first' || currentSortField === 'settled_first') {
+        currentPreset = currentSortField;
+    } else if (currentSortField !== 'default') {
+        currentPreset = `${currentSortField}_${currentSortDir}`;
+    }
 
     const getBtnClass = (mode) => {
         const isActive = currentMode === mode;
@@ -751,32 +841,84 @@ export function renderFinanceViewSwitcher(sheets) {
         return "bg-white text-slate-700 hover:bg-slate-100 hover:text-slate-900 border-slate-300 font-bold";
     };
 
+    const isCustomSort = currentSortField !== 'default';
+
     container.innerHTML = `
-        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 bg-slate-100/90 border border-slate-300/80 rounded-2xl shadow-sm">
-            <div class="flex items-center gap-1.5 overflow-x-auto p-0.5">
-                <button onclick="window.setFinanceViewMode('groups')" class="px-3 py-1.5 text-[10px] uppercase rounded-xl border transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${getBtnClass('groups')}" title="Visualizar agrupado por lotes/pastas">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-                    <span>Por Grupos</span>
-                </button>
-                <button onclick="window.setFinanceViewMode('all')" class="px-3 py-1.5 text-[10px] uppercase rounded-xl border transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${getBtnClass('all')}" title="Visualizar todas as listas numa tabela única">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                    <span>Tabela Única (Todas)</span>
-                    <span class="px-1.5 py-0.2 text-[9px] font-black rounded-full ${currentMode === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}">${totalCount}</span>
-                </button>
-                <button onclick="window.setFinanceViewMode('selected')" class="px-3 py-1.5 text-[10px] uppercase rounded-xl border transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${getBtnClass('selected')}" title="Visualizar apenas as listas que foram marcadas com checkbox">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
-                    <span>Tabela Única (Marcadas)</span>
-                    <span class="px-1.5 py-0.2 text-[9px] font-black rounded-full ${currentMode === 'selected' ? 'bg-white/20 text-white' : (selectedCount > 0 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700')}">${selectedCount}</span>
-                </button>
+        <div class="space-y-2.5">
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-2 bg-slate-100/90 border border-slate-300/80 rounded-2xl shadow-sm">
+                <div class="flex items-center gap-1.5 overflow-x-auto p-0.5">
+                    <button onclick="window.setFinanceViewMode('groups')" class="px-3 py-1.5 text-[10px] uppercase rounded-xl border transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${getBtnClass('groups')}" title="Visualizar agrupado por lotes/pastas">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                        <span>Por Grupos</span>
+                    </button>
+                    <button onclick="window.setFinanceViewMode('all')" class="px-3 py-1.5 text-[10px] uppercase rounded-xl border transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${getBtnClass('all')}" title="Visualizar todas as listas numa tabela única">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                        <span>Tabela Única (Todas)</span>
+                        <span class="px-1.5 py-0.2 text-[9px] font-black rounded-full ${currentMode === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}">${totalCount}</span>
+                    </button>
+                    <button onclick="window.setFinanceViewMode('selected')" class="px-3 py-1.5 text-[10px] uppercase rounded-xl border transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${getBtnClass('selected')}" title="Visualizar apenas as listas que foram marcadas com checkbox">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+                        <span>Tabela Única (Marcadas)</span>
+                        <span class="px-1.5 py-0.2 text-[9px] font-black rounded-full ${currentMode === 'selected' ? 'bg-white/20 text-white' : (selectedCount > 0 ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700')}">${selectedCount}</span>
+                    </button>
+                </div>
+                <div class="flex items-center gap-1 self-end sm:self-auto px-1">
+                    <button onclick="window.toggleSelectAllFinanceSheets(true)" class="px-2.5 py-1 text-[9px] font-bold uppercase text-slate-600 hover:text-black hover:bg-slate-200/80 rounded-lg transition-all cursor-pointer" title="Marcar todas as listas">
+                        Marcar Todas
+                    </button>
+                    <span class="text-slate-300">|</span>
+                    <button onclick="window.toggleSelectAllFinanceSheets(false)" class="px-2.5 py-1 text-[9px] font-bold uppercase text-slate-600 hover:text-black hover:bg-slate-200/80 rounded-lg transition-all cursor-pointer" title="Desmarcar todas as listas">
+                        Desmarcar
+                    </button>
+                </div>
             </div>
-            <div class="flex items-center gap-1 self-end sm:self-auto px-1">
-                <button onclick="window.toggleSelectAllFinanceSheets(true)" class="px-2.5 py-1 text-[9px] font-bold uppercase text-slate-600 hover:text-black hover:bg-slate-200/80 rounded-lg transition-all cursor-pointer" title="Marcar todas as listas">
-                    Marcar Todas
-                </button>
-                <span class="text-slate-300">|</span>
-                <button onclick="window.toggleSelectAllFinanceSheets(false)" class="px-2.5 py-1 text-[9px] font-bold uppercase text-slate-600 hover:text-black hover:bg-slate-200/80 rounded-lg transition-all cursor-pointer" title="Desmarcar todas as listas">
-                    Desmarcar
-                </button>
+
+            <!-- Barra de Ordenação e Regras de Organização -->
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 px-3.5 py-2 bg-white border border-slate-300/80 rounded-xl shadow-xs">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <div class="flex items-center gap-1.5 text-slate-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="10" x2="3" y2="10"></line><line x1="21" y1="6" x2="3" y2="6"></line><line x1="21" y1="14" x2="3" y2="14"></line><line x1="21" y1="18" x2="7" y2="18"></line></svg>
+                        <span class="text-[9px] font-black uppercase tracking-wider text-slate-600 whitespace-nowrap">Organizar itens:</span>
+                    </div>
+                    <select onchange="window.setFinanceSortPreset(this.value)" class="text-[10px] font-bold uppercase bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1 text-slate-900 outline-none focus:border-black cursor-pointer transition-all hover:bg-slate-100">
+                        <option value="default" ${currentPreset === 'default' ? 'selected' : ''}>Ordem Padrão (Original)</option>
+                        <optgroup label="Alfabética / Documento">
+                            <option value="title_asc" ${currentPreset === 'title_asc' ? 'selected' : ''}>Documento (A → Z)</option>
+                            <option value="title_desc" ${currentPreset === 'title_desc' ? 'selected' : ''}>Documento (Z → A)</option>
+                        </optgroup>
+                        <optgroup label="Balanço & Saldo">
+                            <option value="balance_desc" ${currentPreset === 'balance_desc' ? 'selected' : ''}>Maior Saldo Devedor (Decrescente)</option>
+                            <option value="balance_asc" ${currentPreset === 'balance_asc' ? 'selected' : ''}>Menor Saldo (Crescente)</option>
+                            <option value="pending_first" ${currentPreset === 'pending_first' ? 'selected' : ''}>Pendentes no Topo (Saldo &gt; 0 primeiro)</option>
+                            <option value="settled_first" ${currentPreset === 'settled_first' ? 'selected' : ''}>Liquidados no Topo (Saldo &le; 0 primeiro)</option>
+                        </optgroup>
+                        <optgroup label="Valores / Dever">
+                            <option value="amountDuty_desc" ${currentPreset === 'amountDuty_desc' ? 'selected' : ''}>Maior Dever / Amount (Decrescente)</option>
+                            <option value="amountDuty_asc" ${currentPreset === 'amountDuty_asc' ? 'selected' : ''}>Menor Dever / Amount (Crescente)</option>
+                        </optgroup>
+                        <optgroup label="Pagamentos Liquidados">
+                            <option value="paid_desc" ${currentPreset === 'paid_desc' ? 'selected' : ''}>Maior Valor Pago (Decrescente)</option>
+                            <option value="paid_asc" ${currentPreset === 'paid_asc' ? 'selected' : ''}>Menor Valor Pago (Crescente)</option>
+                        </optgroup>
+                        <optgroup label="Duty Prepaid">
+                            <option value="dutyPrepaid_desc" ${currentPreset === 'dutyPrepaid_desc' ? 'selected' : ''}>Maior Duty Prepaid</option>
+                            <option value="dutyPrepaid_asc" ${currentPreset === 'dutyPrepaid_asc' ? 'selected' : ''}>Menor Duty Prepaid</option>
+                        </optgroup>
+                    </select>
+
+                    ${isCustomSort ? `
+                    <button onclick="window.toggleFinanceSortDirection()" class="px-2 py-1 text-[9px] font-black uppercase rounded-lg border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 transition-all flex items-center gap-1 cursor-pointer" title="Inverter direção da ordenação">
+                        <span>${currentSortDir === 'desc' ? 'Decrescente ▼' : 'Crescente ▲'}</span>
+                    </button>
+                    <button onclick="window.resetFinanceSort()" class="px-2 py-1 text-[9px] font-bold uppercase rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer" title="Restaurar ordem original">
+                        Limpar Ordem
+                    </button>
+                    ` : ''}
+                </div>
+
+                <div class="text-[9px] text-slate-400 font-semibold self-end sm:self-auto hidden md:block">
+                    Dica: Pode também clicar nos cabeçalhos das colunas (▲/▼)
+                </div>
             </div>
         </div>
     `;
@@ -936,26 +1078,52 @@ function createFinanceTable(sheets, onRemove, groupId = '') {
     }
 
     const allInGroupSelected = sheets.length > 0 && sheets.every(s => state.finance.selectedSheets && state.finance.selectedSheets.has(s.id));
+    const sortedSheets = sortFinanceSheets(sheets);
 
     const table = document.createElement('table');
     table.className = "w-full text-left border-collapse";
 
     table.innerHTML = `
         <thead>
-            <tr class="bg-slate-50 text-[9px] font-normal uppercase tracking-widest text-slate-500 border-b border-slate-700">
+            <tr class="bg-slate-50 text-[9px] font-normal uppercase tracking-widest text-slate-500 border-b border-slate-700 select-none">
                 <th class="py-2 px-3 w-10 text-center">
                     <input type="checkbox" id="chk-group-${groupId}" ${allInGroupSelected ? 'checked' : ''} onchange="window.toggleSelectAllFinanceGroup('${groupId}', this.checked)" class="w-3.5 h-3.5 rounded border-gray-300 text-black focus:ring-black cursor-pointer align-middle" title="Selecionar todas as folhas deste grupo">
                 </th>
-                <th class="py-2 px-3">Documento</th>
-                <th class="py-2 px-3 text-center">Duty Prep</th>
-                <th class="py-2 px-3 text-center">Amount</th>
-                <th class="py-2 px-3 text-center">Paid</th>
-                <th class="py-2 px-3 text-center">Balance</th>
+                <th onclick="window.setFinanceSort('title')" class="py-2 px-3 cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Documento (A-Z / Z-A)">
+                    <div class="flex items-center gap-1">
+                        <span>Documento</span>
+                        ${getSortIndicator('title')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('dutyPrepaid')" class="py-2 px-3 text-center cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Duty Prepaid">
+                    <div class="flex items-center justify-center gap-1">
+                        <span>Duty Prep</span>
+                        ${getSortIndicator('dutyPrepaid')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('amountDuty')" class="py-2 px-3 text-center cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Amount (Dever)">
+                    <div class="flex items-center justify-center gap-1">
+                        <span>Amount</span>
+                        ${getSortIndicator('amountDuty')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('paid')" class="py-2 px-3 text-center cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Valor Pago (Liquidado)">
+                    <div class="flex items-center justify-center gap-1">
+                        <span>Paid</span>
+                        ${getSortIndicator('paid')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('balance')" class="py-2 px-3 text-center cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Saldo (Balanço)">
+                    <div class="flex items-center justify-center gap-1">
+                        <span>Balance</span>
+                        ${getSortIndicator('balance')}
+                    </div>
+                </th>
                 <th class="py-2 px-3 text-right w-10"></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
-            ${sheets.map(s => {
+            ${sortedSheets.map(s => {
                 const isSelected = state.finance.selectedSheets && state.finance.selectedSheets.has(s.id);
                 return `
                 <tr class="group hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/70' : ''}" id="finance-row-${s.id}">
@@ -1033,6 +1201,7 @@ export function createUnifiedFinanceTable(sheets, onRemoveSheet, isSelectedOnly 
 
     const allInTableSelected = sheets.length > 0 && sheets.every(s => state.finance.selectedSheets && state.finance.selectedSheets.has(s.id));
     const groupMap = new Map((state.finance.groups || []).map(g => [g.id, g.name]));
+    const sortedSheets = sortFinanceSheets(sheets);
 
     const topBar = document.createElement('div');
     topBar.className = "flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-700";
@@ -1055,21 +1224,51 @@ export function createUnifiedFinanceTable(sheets, onRemoveSheet, isSelectedOnly 
 
     table.innerHTML = `
         <thead>
-            <tr class="bg-slate-50 text-[9px] font-normal uppercase tracking-widest text-slate-500 border-b border-slate-700">
+            <tr class="bg-slate-50 text-[9px] font-normal uppercase tracking-widest text-slate-500 border-b border-slate-700 select-none">
                 <th class="py-2.5 px-3 w-10 text-center">
                     <input type="checkbox" id="chk-unified-all" ${allInTableSelected ? 'checked' : ''} onchange="window.toggleSelectAllUnifiedSheets(this.checked)" class="w-3.5 h-3.5 rounded border-gray-300 text-black focus:ring-black cursor-pointer align-middle" title="Marcar ou desmarcar todas">
                 </th>
-                <th class="py-2.5 px-3">Documento / Lista</th>
-                <th class="py-2.5 px-3">Grupo / Lote</th>
-                <th class="py-2.5 px-3 text-center">Duty Prep</th>
-                <th class="py-2.5 px-3 text-center">Amount</th>
-                <th class="py-2.5 px-3 text-center">Paid</th>
-                <th class="py-2.5 px-3 text-center">Balance</th>
+                <th onclick="window.setFinanceSort('title')" class="py-2.5 px-3 cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Documento / Nome">
+                    <div class="flex items-center gap-1">
+                        <span>Documento / Lista</span>
+                        ${getSortIndicator('title')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('group')" class="py-2.5 px-3 cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Grupo / Lote">
+                    <div class="flex items-center gap-1">
+                        <span>Grupo / Lote</span>
+                        ${getSortIndicator('group')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('dutyPrepaid')" class="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Duty Prepaid">
+                    <div class="flex items-center justify-center gap-1">
+                        <span>Duty Prep</span>
+                        ${getSortIndicator('dutyPrepaid')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('amountDuty')" class="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Amount (Dever)">
+                    <div class="flex items-center justify-center gap-1">
+                        <span>Amount</span>
+                        ${getSortIndicator('amountDuty')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('paid')" class="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Valor Pago (Liquidado)">
+                    <div class="flex items-center justify-center gap-1">
+                        <span>Paid</span>
+                        ${getSortIndicator('paid')}
+                    </div>
+                </th>
+                <th onclick="window.setFinanceSort('balance')" class="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-200/60 transition-colors group" title="Ordenar por Saldo (Balanço)">
+                    <div class="flex items-center justify-center gap-1">
+                        <span>Balance</span>
+                        ${getSortIndicator('balance')}
+                    </div>
+                </th>
                 <th class="py-2.5 px-3 text-right w-10"></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
-            ${sheets.map(s => {
+            ${sortedSheets.map(s => {
                 const isSelected = state.finance.selectedSheets && state.finance.selectedSheets.has(s.id);
                 const groupName = s.groupId && groupMap.has(s.groupId) ? groupMap.get(s.groupId) : 'Sem Grupo';
                 return `
@@ -1537,7 +1736,7 @@ export function printFinanceGroup(groupId) {
         return;
     }
 
-    renderAndTriggerFinancePrint(`LOTE / GRUPO: ${groupName}`, sheets, false);
+    renderAndTriggerFinancePrint(`LOTE / GRUPO: ${groupName}`, sortFinanceSheets(sheets), false);
 }
 
 /**
@@ -1561,7 +1760,7 @@ export function printUnifiedFinanceTable() {
         return;
     }
 
-    renderAndTriggerFinancePrint(title, sheets, true);
+    renderAndTriggerFinancePrint(title, sortFinanceSheets(sheets), true);
 }
 
 

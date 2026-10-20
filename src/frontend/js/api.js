@@ -136,7 +136,9 @@ export const state = {
         sheets: [],
         selectedSheets: new Set(),
         expandedGroups: new Set(JSON.parse(localStorage.getItem('finance_expanded_groups') || '[]')),
-        viewMode: localStorage.getItem('finance_view_mode') || 'groups'
+        viewMode: localStorage.getItem('finance_view_mode') || 'groups',
+        sortField: localStorage.getItem('finance_sort_field') || 'default',
+        sortDirection: localStorage.getItem('finance_sort_direction') || 'asc'
     },
     team: {
         tables: [],

@@ -71,6 +71,10 @@ window.toggleSelectAllFinanceSheets = toggleSelectAllFinanceSheets;
 window.toggleSelectAllUnifiedSheets = toggleSelectAllUnifiedSheets;
 window.printFinanceGroup = ui.printFinanceGroup;
 window.printUnifiedFinanceTable = ui.printUnifiedFinanceTable;
+window.setFinanceSort = setFinanceSort;
+window.setFinanceSortPreset = setFinanceSortPreset;
+window.toggleFinanceSortDirection = toggleFinanceSortDirection;
+window.resetFinanceSort = resetFinanceSort;
 window.openTable = openTable;
 window.setBillTableMode = setBillTableMode;
 window.onBillSourceChanged = onBillSourceChanged;
@@ -460,6 +464,59 @@ function toggleFinanceGroupCollapse(groupId) {
 function toggleAllFinanceGroups() {
     state.finance.expandedGroups.clear(); // Apenas fecha todos para manter a regra de um por vez
     localStorage.setItem('finance_expanded_groups', JSON.stringify([]));
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
+
+function setFinanceSort(field) {
+    if (state.finance.sortField === field) {
+        state.finance.sortDirection = state.finance.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        state.finance.sortField = field;
+        if (['amountDuty', 'balance', 'paid', 'dutyPrepaid'].includes(field)) {
+            state.finance.sortDirection = 'desc';
+        } else {
+            state.finance.sortDirection = 'asc';
+        }
+    }
+    localStorage.setItem('finance_sort_field', state.finance.sortField);
+    localStorage.setItem('finance_sort_direction', state.finance.sortDirection);
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
+function setFinanceSortPreset(presetKey) {
+    if (!presetKey || presetKey === 'default') {
+        state.finance.sortField = 'default';
+        state.finance.sortDirection = 'asc';
+    } else if (presetKey === 'pending_first' || presetKey === 'settled_first') {
+        state.finance.sortField = presetKey;
+        state.finance.sortDirection = 'asc';
+    } else {
+        const lastUnderscore = presetKey.lastIndexOf('_');
+        if (lastUnderscore !== -1) {
+            state.finance.sortField = presetKey.substring(0, lastUnderscore);
+            state.finance.sortDirection = presetKey.substring(lastUnderscore + 1);
+        } else {
+            state.finance.sortField = presetKey;
+            state.finance.sortDirection = 'asc';
+        }
+    }
+    localStorage.setItem('finance_sort_field', state.finance.sortField);
+    localStorage.setItem('finance_sort_direction', state.finance.sortDirection);
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
+function toggleFinanceSortDirection() {
+    state.finance.sortDirection = state.finance.sortDirection === 'asc' ? 'desc' : 'asc';
+    localStorage.setItem('finance_sort_direction', state.finance.sortDirection);
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
+function resetFinanceSort() {
+    state.finance.sortField = 'default';
+    state.finance.sortDirection = 'asc';
+    localStorage.setItem('finance_sort_field', 'default');
+    localStorage.setItem('finance_sort_direction', 'asc');
     ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
 }
 
