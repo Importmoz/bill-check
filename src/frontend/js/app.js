@@ -2262,11 +2262,23 @@ async function confirmAndDeleteFile(fileId, fileName, parentId) {
             });
         }
 
+        ui.toast("Ficheiro apagado com sucesso!", "success");
+
         // Recarregar pasta
-        openDriveExplorer(parentId);
+        await openDriveExplorer(parentId);
+
+        const miniSide = document.getElementById('mini-filter-drive-side');
+        if (miniSide && miniSide.classList.contains('w-80')) {
+            try {
+                const files = await api.listGDriveFiles(parentId);
+                ui.renderDriveFiles(files, parentId, 'mini-filter-drive-content');
+            } catch (e) {
+                console.warn("Erro ao atualizar suportes no mini-filtro:", e);
+            }
+        }
     } catch (err) {
         ui.toast("Erro ao apagar ficheiro: " + err.message, "error");
-        openDriveExplorer(parentId);
+        await openDriveExplorer(parentId);
     } finally {
         ui.setLoader(false);
     }

@@ -1427,11 +1427,12 @@ async function confirmAndDeleteFile(fileId, fileName, parentId) {
     ui.setLoader(true);
     try {
         await api.deleteGDriveFile(fileId);
+        ui.toast("Ficheiro apagado com sucesso!", "success");
         // Recarregar pasta
-        openDriveExplorer(parentId);
+        await openDriveExplorer(parentId);
     } catch (err) {
         ui.toast("Erro ao apagar ficheiro: " + err.message, "error");
-        openDriveExplorer(parentId);
+        await openDriveExplorer(parentId);
     } finally {
         ui.setLoader(false);
     }
