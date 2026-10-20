@@ -66,6 +66,9 @@ window.toggleFinanceSheetSelect = toggleFinanceSheetSelect;
 window.toggleSelectAllFinanceGroup = toggleSelectAllFinanceGroup;
 window.applyBulkFinanceGroupMove = applyBulkFinanceGroupMove;
 window.clearFinanceSelection = clearFinanceSelection;
+window.setFinanceViewMode = setFinanceViewMode;
+window.toggleSelectAllFinanceSheets = toggleSelectAllFinanceSheets;
+window.toggleSelectAllUnifiedSheets = toggleSelectAllUnifiedSheets;
 window.openTable = openTable;
 window.setBillTableMode = setBillTableMode;
 window.onBillSourceChanged = onBillSourceChanged;
@@ -376,6 +379,7 @@ async function removeFinanceSheet(id) {
     if (!confirm("Deseja ocultar este projeto da visualização do Finance? (O projeto no Confirm não será apagado)")) return;
     ui.setLoader(true);
     try {
+        state.finance.selectedSheets.delete(id);
         await api.deleteFinanceSheet(id);
         ui.toast("Projeto ocultado do Finance.", "success");
         await showFinance();
@@ -457,6 +461,36 @@ function toggleAllFinanceGroups() {
     ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
 }
 
+function setFinanceViewMode(mode) {
+    state.finance.viewMode = mode;
+    localStorage.setItem('finance_view_mode', mode);
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
+function toggleSelectAllFinanceSheets(checked) {
+    const sheets = state.finance.sheets || [];
+    if (checked) {
+        sheets.forEach(s => state.finance.selectedSheets.add(s.id));
+    } else {
+        state.finance.selectedSheets.clear();
+    }
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
+function toggleSelectAllUnifiedSheets(checked) {
+    const sheets = state.finance.sheets || [];
+    if (state.finance.viewMode === 'selected' && !checked) {
+        state.finance.selectedSheets.clear();
+    } else {
+        if (checked) {
+            sheets.forEach(s => state.finance.selectedSheets.add(s.id));
+        } else {
+            state.finance.selectedSheets.clear();
+        }
+    }
+    ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+}
+
 function toggleFinanceSheetSelect(sheetId, isChecked) {
     if (isChecked) {
         state.finance.selectedSheets.add(sheetId);
@@ -467,8 +501,22 @@ function toggleFinanceSheetSelect(sheetId, isChecked) {
     if (row) {
         if (isChecked) row.classList.add('bg-blue-50/70');
         else row.classList.remove('bg-blue-50/70');
+        const chk = row.querySelector('.finance-sheet-checkbox');
+        if (chk) chk.checked = isChecked;
+    }
+    const uRow = document.getElementById(`finance-unified-row-${sheetId}`);
+    if (uRow) {
+        if (isChecked) uRow.classList.add('bg-blue-50/70');
+        else uRow.classList.remove('bg-blue-50/70');
+        const chk = uRow.querySelector('.finance-sheet-checkbox');
+        if (chk) chk.checked = isChecked;
     }
     ui.updateFinanceBulkBar();
+
+    // Se estiver no modo 'selected', atualizar o dashboard e sumário para refletir a nova seleção
+    if (state.finance.viewMode === 'selected') {
+        ui.renderFinanceDashboard(deleteFinanceGroup, removeFinanceSheet, null, renameFinanceGroup);
+    }
 }
 
 function toggleSelectAllFinanceGroup(groupId, isChecked) {

@@ -135,7 +135,8 @@ export const state = {
         groups: [],
         sheets: [],
         selectedSheets: new Set(),
-        expandedGroups: new Set(JSON.parse(localStorage.getItem('finance_expanded_groups') || '[]'))
+        expandedGroups: new Set(JSON.parse(localStorage.getItem('finance_expanded_groups') || '[]')),
+        viewMode: localStorage.getItem('finance_view_mode') || 'groups'
     },
     team: {
         tables: [],
