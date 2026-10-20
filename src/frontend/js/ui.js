@@ -879,10 +879,16 @@ function createFinanceGroupSection(group, sheets, onDelete, onRemoveSheet, onRen
         </div>
     ` : '';
 
-    const actionButtons = (!isUngrouped && !isCollapsed) ? `
+    const actionButtons = `
+        <button onclick="window.printFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-slate-500 hover:text-slate-900 transition-all flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-slate-300/40" title="Imprimir lista e valores deste grupo">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            Imprimir
+        </button>
+        ${(!isUngrouped && !isCollapsed) ? `
         <button onclick="window.renameFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-slate-400 hover:text-slate-900 transition-all">Renomear</button>
         <button onclick="window.deleteFinanceGroup('${group.id}')" class="text-[9px] font-black uppercase text-red-500/40 hover:text-red-500 transition-all">Remover</button>
-    ` : '';
+        ` : ''}
+    `;
 
     const headerClass = "flex flex-col md:flex-row justify-between items-start md:items-center gap-2 px-2 py-2 cursor-pointer select-none rounded-xl hover:bg-slate-200/50 transition-all mb-1";
 
@@ -1028,6 +1034,22 @@ export function createUnifiedFinanceTable(sheets, onRemoveSheet, isSelectedOnly 
     const allInTableSelected = sheets.length > 0 && sheets.every(s => state.finance.selectedSheets && state.finance.selectedSheets.has(s.id));
     const groupMap = new Map((state.finance.groups || []).map(g => [g.id, g.name]));
 
+    const topBar = document.createElement('div');
+    topBar.className = "flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-700";
+    topBar.innerHTML = `
+        <div class="flex items-center gap-2">
+            <span class="text-[10px] font-black uppercase tracking-wider text-slate-800">
+                ${isSelectedOnly ? 'Tabela Consolidada (Listas Marcadas)' : 'Tabela Consolidada (Todas as Listas)'}
+            </span>
+            <span class="px-2 py-0.5 text-[9px] font-black rounded-full bg-slate-200 text-slate-700">${sheets.length}</span>
+        </div>
+        <button onclick="window.printUnifiedFinanceTable()" class="px-2.5 py-1 text-[9px] font-black uppercase bg-white border border-slate-300 text-slate-700 hover:text-black hover:border-black rounded-lg shadow-sm transition-all flex items-center gap-1.5 cursor-pointer" title="Imprimir ou exportar em PDF esta tabela">
+            <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+            Imprimir Tabela
+        </button>
+    `;
+    tableContainer.appendChild(topBar);
+
     const table = document.createElement('table');
     table.className = "w-full text-left border-collapse";
 
@@ -1156,6 +1178,390 @@ export function renderFinanceSummary(sheets) {
             </div>
         </div>
     `;
+}
+
+
+
+/**
+ * Gera e dispara a impressão de uma lista/tabela de finanças
+ */
+function renderAndTriggerFinancePrint(reportTitle, sheets, showGroupCol = false) {
+    const totals = (sheets || []).reduce((acc, s) => {
+        acc.dutyPrepaid += (s.dutyPrepaid || 0);
+        acc.amountDuty += (s.amountDuty || 0);
+        acc.paid += (s.paid || 0);
+        acc.balance += (s.balance || 0);
+        return acc;
+    }, { dutyPrepaid: 0, amountDuty: 0, paid: 0, balance: 0 });
+
+    const groupMap = new Map((state.finance.groups || []).map(g => [g.id, g.name]));
+    const now = new Date();
+    const dateStr = now.toLocaleDateString('pt-PT');
+    const timeStr = now.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório Financeiro - ${reportTitle}</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 12mm 12mm 14mm 12mm;
+        }
+        * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #0f172a;
+            background: #f8fafc;
+            margin: 0;
+            padding: 20px;
+        }
+        @media print {
+            body {
+                background: #ffffff;
+                padding: 0;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .container {
+                box-shadow: none !important;
+                border: none !important;
+                padding: 0 !important;
+                max-width: 100% !important;
+            }
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 28px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.06);
+        }
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 16px;
+            margin-bottom: 20px;
+        }
+        .brand-title {
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: -0.5px;
+            text-transform: uppercase;
+            margin: 0 0 6px 0;
+            color: #0f172a;
+        }
+        .group-badge {
+            display: inline-block;
+            background: #0f172a;
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 800;
+            padding: 3px 10px;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+        .meta-info {
+            text-align: right;
+            font-size: 11px;
+            color: #64748b;
+            font-weight: 600;
+            line-height: 1.5;
+        }
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 22px;
+        }
+        .kpi-card {
+            border: 1.5px solid #0f172a;
+            border-radius: 8px;
+            padding: 12px 14px;
+            background: #ffffff;
+        }
+        .kpi-card.kpi-balance {
+            background: #1e293b;
+            color: #ffffff;
+        }
+        .kpi-label {
+            font-size: 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            margin-bottom: 3px;
+        }
+        .kpi-balance .kpi-label {
+            color: #94a3b8;
+        }
+        .kpi-val {
+            font-size: 16px;
+            font-weight: 900;
+            color: #0f172a;
+        }
+        .kpi-paid .kpi-val {
+            color: #16a34a;
+        }
+        .kpi-balance .kpi-val {
+            color: #ffffff;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11px;
+            margin-bottom: 20px;
+        }
+        th {
+            background: #f1f5f9;
+            color: #334155;
+            font-size: 9px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 9px 10px;
+            border-top: 1.5px solid #0f172a;
+            border-bottom: 1.5px solid #0f172a;
+            text-align: left;
+        }
+        td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #1e293b;
+            vertical-align: middle;
+        }
+        tr:nth-child(even) td {
+            background-color: #f8fafc;
+        }
+        tfoot td {
+            background: #1e293b !important;
+            color: #ffffff !important;
+            font-weight: 900;
+            font-size: 11px;
+            text-transform: uppercase;
+            border-top: 2px solid #0f172a;
+            padding: 10px;
+        }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .footer-note {
+            margin-top: 28px;
+            padding-top: 14px;
+            border-top: 1px dashed #cbd5e1;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            font-size: 10px;
+            color: #64748b;
+            font-weight: 600;
+        }
+        .sign-area {
+            text-align: right;
+            line-height: 2;
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print" style="position: sticky; top: 12px; z-index: 100; max-width: 900px; margin: 0 auto 16px auto; background: #0f172a; color: #ffffff; padding: 10px 16px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 16px rgba(0,0,0,0.2);">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px;">Pré-visualização de Impressão</span>
+            <span style="font-size: 10px; background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 9999px;">${sheets.length} itens</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <button onclick="window.print()" style="background: #ffffff; color: #0f172a; border: none; padding: 7px 16px; font-size: 11px; font-weight: 900; text-transform: uppercase; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                Imprimir / Guardar PDF
+            </button>
+            <button onclick="window.close()" style="background: rgba(255,255,255,0.1); color: #cbd5e1; border: 1px solid rgba(255,255,255,0.2); padding: 7px 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; border-radius: 8px; cursor: pointer;">
+                Fechar
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="header-bar">
+            <div>
+                <h1 class="brand-title">RELATÓRIO FINANCEIRO</h1>
+                <div class="group-badge">${reportTitle}</div>
+            </div>
+            <div class="meta-info">
+                <div><strong>Data:</strong> ${dateStr} às ${timeStr}</div>
+                <div><strong>Total:</strong> ${sheets.length} documento(s)</div>
+            </div>
+        </div>
+
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Dever Consolidado</div>
+                <div class="kpi-val">${formatMZN(totals.amountDuty)}</div>
+            </div>
+            <div class="kpi-card kpi-paid">
+                <div class="kpi-label">Total Liquidado</div>
+                <div class="kpi-val">${formatMZN(totals.paid)}</div>
+            </div>
+            <div class="kpi-card kpi-balance">
+                <div class="kpi-label">Balanço Global</div>
+                <div class="kpi-val">${formatMZN(totals.balance)}</div>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 35px; text-align: center;">#</th>
+                    <th>Documento / Lista</th>
+                    ${showGroupCol ? '<th style="width: 140px;">Grupo / Lote</th>' : ''}
+                    <th style="width: 110px; text-align: center;">Duty Prep</th>
+                    <th style="width: 110px; text-align: center;">Amount</th>
+                    <th style="width: 110px; text-align: center;">Paid</th>
+                    <th style="width: 110px; text-align: center;">Balance</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${sheets.map((s, idx) => {
+                    const groupBadge = showGroupCol 
+                        ? `<td style="font-size: 10px; font-weight: 700; color: #475569; text-transform: uppercase;">${(s.groupId && groupMap.get(s.groupId)) || 'Sem Grupo'}</td>`
+                        : '';
+                    return `
+                    <tr>
+                        <td style="text-align: center; font-size: 10px; color: #64748b; font-weight: 700;">${idx + 1}</td>
+                        <td style="font-size: 11px; font-weight: 700; color: #0f172a; text-transform: uppercase;">${s.title || 'Sem Título'}</td>
+                        ${groupBadge}
+                        <td style="text-align: center; font-size: 11px; color: #475569;">${formatMZN(s.dutyPrepaid)}</td>
+                        <td style="text-align: center; font-size: 11px; font-weight: 700; color: #0f172a;">${formatMZN(s.amountDuty)}</td>
+                        <td style="text-align: center; font-size: 11px; font-weight: 700; color: #16a34a;">${formatMZN(s.paid)}</td>
+                        <td style="text-align: center; font-size: 11px; font-weight: 800; color: ${s.balance > 0 ? '#dc2626' : '#2563eb'};">${formatMZN(s.balance)}</td>
+                    </tr>
+                    `;
+                }).join('')}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td style="text-align: center;"></td>
+                    <td ${showGroupCol ? 'colspan="2"' : ''}>Consolidado (${sheets.length} ${sheets.length === 1 ? 'item' : 'itens'})</td>
+                    <td style="text-align: center;">${formatMZN(totals.dutyPrepaid)}</td>
+                    <td style="text-align: center;">${formatMZN(totals.amountDuty)}</td>
+                    <td style="text-align: center; color: #86efac;">${formatMZN(totals.paid)}</td>
+                    <td style="text-align: center; color: ${totals.balance > 0 ? '#fca5a5' : '#bfdbfe'};">${formatMZN(totals.balance)}</td>
+                </tr>
+            </tfoot>
+        </table>
+
+        <div class="footer-note">
+            <div>
+                Documento emitido automaticamente pelo módulo FINANCE.<br>
+                BILL-CHECK &bull; Gestão Operacional e Financeira
+            </div>
+            <div class="sign-area">
+                Conferido por: ___________________________________<br>
+                Data: _____ / _____ / __________
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                window.print();
+            }, 350);
+        });
+    </script>
+</body>
+</html>`;
+
+    const printWindow = window.open('', '_blank', 'width=960,height=900');
+    if (!printWindow) {
+        // Fallback por iframe invisível caso popups estejam bloqueados
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = '0';
+        document.body.appendChild(iframe);
+
+        const doc = iframe.contentWindow.document;
+        doc.open();
+        doc.write(htmlContent);
+        doc.close();
+
+        iframe.contentWindow.focus();
+        setTimeout(() => {
+            iframe.contentWindow.print();
+            setTimeout(() => {
+                if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+            }, 2000);
+        }, 500);
+        return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+}
+
+/**
+ * Imprime a lista completa e consolidação de um grupo específico
+ */
+export function printFinanceGroup(groupId) {
+    const validGroupIds = new Set(state.finance.groups.map(g => g.id));
+    let groupName = 'Folhas Sem Grupo';
+    let sheets = [];
+
+    if (groupId === 'ungrouped') {
+        sheets = state.finance.sheets.filter(s => !s.groupId || !validGroupIds.has(s.groupId));
+    } else {
+        const group = state.finance.groups.find(g => g.id === groupId);
+        if (!group) {
+            toast("Grupo não encontrado.", "error");
+            return;
+        }
+        groupName = group.name;
+        sheets = state.finance.sheets.filter(s => s.groupId === groupId);
+    }
+
+    if (sheets.length === 0) {
+        toast("Este grupo não contém nenhuma lista/documento para imprimir.", "warning");
+        return;
+    }
+
+    renderAndTriggerFinancePrint(`LOTE / GRUPO: ${groupName}`, sheets, false);
+}
+
+/**
+ * Imprime a lista/tabela consolidada do Finance (Todas ou Marcadas)
+ */
+export function printUnifiedFinanceTable() {
+    const viewMode = state.finance.viewMode || 'groups';
+    let title = 'TODAS AS LISTAS CONSOLIDADAS';
+    let sheets = [];
+
+    if (viewMode === 'selected') {
+        sheets = state.finance.sheets.filter(s => state.finance.selectedSheets && state.finance.selectedSheets.has(s.id));
+        title = 'LISTAS MARCADAS (CONSOLIDADO)';
+    } else {
+        sheets = state.finance.sheets;
+        title = 'TODAS AS LISTAS (CONSOLIDADO)';
+    }
+
+    if (sheets.length === 0) {
+        toast("Nenhuma lista disponível para imprimir.", "warning");
+        return;
+    }
+
+    renderAndTriggerFinancePrint(title, sheets, true);
 }
 
 
