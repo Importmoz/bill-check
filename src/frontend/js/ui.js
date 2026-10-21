@@ -3883,7 +3883,11 @@ export function openWarehouseStatusModal() {
             }
         }
 
-        const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
+        const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
+        const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? String(client.rows[0]?.[motivoIsencaoIdx] || '').trim() : '';
+        const storageInfo = parseStorageInfo(storagePaidVal, storageCost, motivoIsencaoVal);
+        storageCost = storageInfo.cost;
+        const isStoragePaid = storageInfo.isPaid;
 
         grandTotalQuantity += totalQuantity;
         grandTotalStorage += storageCost;
@@ -4409,6 +4413,47 @@ export async function ensureViaturaColumn() {
     return idx;
 }
 window.ensureViaturaColumn = ensureViaturaColumn;
+
+export async function ensureMotivoIsencaoColumn() {
+    const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
+    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+    const targets = ['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO'].map(cleanString);
+    
+    let idx = columns.findIndex(c => targets.includes(cleanString(c)));
+    if (idx !== -1) return idx;
+
+    const colName = 'MOTIVO ISENCAO ARMAZENAGEM';
+    const newColumns = [...columns, colName];
+    idx = newColumns.length - 1;
+
+    let cleanSheetName = '';
+    if (state.confirm.range && state.confirm.range.includes('!')) {
+        cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
+    }
+    const sheetPrefix = cleanSheetName ? `'${cleanSheetName}'!` : '';
+    const lastColLetter = getColLetter(idx);
+    const range = `${sheetPrefix}${lastColLetter}1`;
+
+    try {
+        state.confirm.columns = newColumns;
+        if (state.confirm.data && state.confirm.data.length > 0) {
+            state.confirm.data[0] = newColumns;
+            for (let i = 1; i < state.confirm.data.length; i++) {
+                if (state.confirm.data[i] && Array.isArray(state.confirm.data[i])) {
+                    while (state.confirm.data[i].length < newColumns.length) {
+                        state.confirm.data[i].push('');
+                    }
+                }
+            }
+        }
+        await updateGSheet(state.confirm.sheetId, range, [[colName]]);
+    } catch (e) {
+        console.warn('Erro ao criar coluna MOTIVO ISENCAO ARMAZENAGEM no GSheet:', e.message);
+    }
+
+    return idx;
+}
+window.ensureMotivoIsencaoColumn = ensureMotivoIsencaoColumn;
 
 /**
  * Abre o modal de edição de nota de contacto do cliente
@@ -9990,6 +10035,71 @@ export async function saveFreightModal() {
 /**
  * Verifica e cria colunas de Armazém em falta no GSheet
  */
+
+export function parseStorageInfo(storagePaidStr, calculatedCost, motivoIsencaoStr) {
+    const rawPaid = String(storagePaidStr || '').trim().toUpperCase();
+    const rawMotivo = String(motivoIsencaoStr || '').trim();
+    const isExempt = !!rawMotivo && !rawMotivo.includes('[EXTRAORDINÁRIA]');
+
+    if (isExempt) {
+        return {
+            cost: 0,
+            originalCost: calculatedCost,
+            isExempt: true,
+            isNegotiated: false,
+            isPaid: true,
+            statusText: 'ISENTO'
+        };
+    }
+
+    let negotiatedAmount = null;
+    const match = rawPaid.match(/(?:PAGO|PENDENTE|SIM)?\s*\(?\s*([0-9.,]+)\s*(?:MT|MZN)?/i);
+    if (match && match[1]) {
+        let clean = match[1].trim();
+        if (clean.includes('.') && clean.includes(',')) {
+            clean = clean.replace(/\./g, '').replace(',', '.');
+        } else if (clean.includes('.')) {
+            if (/^\d{1,3}\.\d{3}$/.test(clean)) {
+                clean = clean.replace(/\./g, '');
+            }
+        } else if (clean.includes(',')) {
+            if (/^\d{1,3},\d{3}$/.test(clean)) {
+                clean = clean.replace(/,/g, '');
+            } else {
+                clean = clean.replace(',', '.');
+            }
+        }
+        const parsed = parseFloat(clean);
+        if (!isNaN(parsed) && parsed >= 0) {
+            negotiatedAmount = parsed;
+        }
+    }
+
+    const effectiveCost = negotiatedAmount !== null ? negotiatedAmount : calculatedCost;
+    const isNegotiated = negotiatedAmount !== null && Math.abs(negotiatedAmount - calculatedCost) > 1;
+
+    let isPaid = false;
+    if (effectiveCost === 0) {
+        isPaid = true;
+    } else if (rawPaid.includes('SIM') || rawPaid.includes('PAGO') || rawPaid.includes('LIVRE') || rawPaid.includes('OK') || rawPaid.includes('ISENTO')) {
+        isPaid = true;
+    } else if (rawPaid.includes('NAO') || rawPaid.includes('PENDENTE')) {
+        isPaid = false;
+    } else if (negotiatedAmount !== null && !rawPaid.includes('PENDENTE') && !rawPaid.includes('NAO')) {
+        isPaid = true;
+    }
+
+    return {
+        cost: effectiveCost,
+        originalCost: calculatedCost,
+        isExempt: false,
+        isNegotiated: isNegotiated,
+        isPaid: isPaid,
+        statusText: isPaid ? 'PAGO' : 'PENDENTE'
+    };
+}
+window.parseStorageInfo = parseStorageInfo;
+
 export async function checkAndCreateWarehouseColumns() {
     const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
     const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
@@ -10113,6 +10223,280 @@ window.updateArmazemSaldo = function() {
     saldoBadge.innerText = `${saldo} Vol`;
     if (entregueBadge) entregueBadge.innerText = `${deliver} Vol`;
 };
+
+
+export function fillSameClientData() {
+    const client = window.currentActiveClient;
+    if (!client) {
+        toast('Nenhum cliente ativo selecionado.', 'warning');
+        return;
+    }
+
+    const container = document.getElementById('armazem-form-container') || document;
+    const deliverToInput = container.querySelector('input[name="deliverTo"]');
+    const contactoInput = container.querySelector('input[name="contacto"]');
+
+    const clientName = client.displayName || client.name || '';
+    let clientPhone = client.phone || client.contacto || '';
+    if (!clientPhone && client.rows && client.rows.length > 0) {
+        const columns = state.confirm?.columns || [];
+        const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
+        const phoneIdx = columns.findIndex(c => {
+            const h = cleanString(c);
+            return h.includes('PHONE') || h.includes('TELEFONE') || h.includes('CELULAR') || h.includes('TEL') || h.includes('CONTACT');
+        });
+        if (phoneIdx !== -1) {
+            for (const r of client.rows) {
+                const val = r.originalRow?.[phoneIdx];
+                if (val && String(val).trim() !== '' && String(val).trim() !== '—') {
+                    clientPhone = String(val).trim();
+                    break;
+                }
+            }
+        }
+    }
+
+    if (deliverToInput) {
+        deliverToInput.value = clientName;
+        deliverToInput.classList.add('ring-2', 'ring-indigo-500');
+        setTimeout(() => deliverToInput.classList.remove('ring-2', 'ring-indigo-500'), 1500);
+    }
+    if (contactoInput) {
+        contactoInput.value = clientPhone;
+        contactoInput.classList.add('ring-2', 'ring-indigo-500');
+        setTimeout(() => contactoInput.classList.remove('ring-2', 'ring-indigo-500'), 1500);
+    }
+
+    toast(`Dados do próprio cliente preenchidos: ${clientName}`, 'success');
+}
+window.fillSameClientData = fillSameClientData;
+
+export function toggleViaturaField(checkbox) {
+    const container = checkbox.closest('.col-span-1') || checkbox.closest('.col-span-3') || checkbox.parentElement?.parentElement || document;
+    const inputContainer = container.querySelector('#viatura-input-container');
+    const hint = container.querySelector('#viatura-badge-hint');
+    const input = container.querySelector('input[name="viatura"]');
+
+    if (checkbox.checked) {
+        if (inputContainer) inputContainer.classList.remove('hidden');
+        if (hint) hint.classList.add('hidden');
+        if (input) {
+            input.disabled = false;
+            input.focus();
+        }
+    } else {
+        if (inputContainer) inputContainer.classList.add('hidden');
+        if (hint) hint.classList.remove('hidden');
+        if (input) {
+            input.value = '';
+        }
+    }
+}
+window.toggleViaturaField = toggleViaturaField;
+
+export function toggleIsencao(checkbox) {
+    const container = document.getElementById('armazem-form-container') || document;
+    const isencaoFields = container.querySelector('#isencao-fields-container');
+    const isencaoHint = container.querySelector('#isencao-active-hint');
+    const motivoSelect = container.querySelector('#select-isencao');
+    const motivoInput = container.querySelector('input[name="motivoIsencao"]');
+
+    if (checkbox.checked) {
+        if (isencaoFields) isencaoFields.classList.remove('hidden');
+        if (isencaoHint) isencaoHint.classList.remove('hidden');
+        if (motivoSelect) {
+            motivoSelect.disabled = false;
+            if (!motivoSelect.value) motivoSelect.value = 'Autorização da Direção';
+        }
+        if (motivoInput) {
+            motivoInput.disabled = false;
+            if (!motivoInput.value) motivoInput.value = motivoSelect ? motivoSelect.value : 'Isenção autorizada';
+            motivoInput.focus();
+        }
+    } else {
+        if (isencaoFields) isencaoFields.classList.add('hidden');
+        if (isencaoHint) isencaoHint.classList.add('hidden');
+        if (motivoSelect) {
+            motivoSelect.disabled = true;
+            motivoSelect.value = '';
+        }
+        if (motivoInput) {
+            motivoInput.disabled = true;
+            motivoInput.value = '';
+        }
+    }
+    updateArmazemCalculations();
+}
+window.toggleIsencao = toggleIsencao;
+
+export function handleIsencaoChange(selectEl) {
+    const container = document.getElementById('armazem-form-container') || document;
+    const motivoInput = container.querySelector('input[name="motivoIsencao"]');
+    if (!motivoInput) return;
+
+    const val = selectEl.value;
+    if (val === 'Outro') {
+        motivoInput.value = '';
+        motivoInput.focus();
+    } else if (val) {
+        motivoInput.value = val;
+    }
+    updateArmazemCalculations();
+}
+window.handleIsencaoChange = handleIsencaoChange;
+
+export function resetStorageAmount() {
+    const container = document.getElementById('armazem-form-container') || document;
+    const input = container.querySelector('#input-storage-pay-amount');
+    if (input) {
+        const standard = input.getAttribute('data-standard-cost') || '0';
+        input.value = standard;
+        updateArmazemCalculations();
+        toast('Valor padrão de armazenagem restaurado: ' + formatMZN(parseFloat(standard)), 'info');
+    }
+}
+window.resetStorageAmount = resetStorageAmount;
+
+export function updateArmazemCalculations() {
+    const container = document.getElementById('armazem-form-container') || document;
+    const isencaoCheckbox = container.querySelector('#check-has-isencao');
+    const isencaoFields = container.querySelector('#isencao-fields-container');
+    const isencaoHint = container.querySelector('#isencao-active-hint');
+    const motivoSelect = container.querySelector('#select-isencao');
+    const motivoInput = container.querySelector('input[name="motivoIsencao"]');
+
+    const storagePaymentSection = container.querySelector('#storage-payment-section');
+    const storagePayAmountInput = container.querySelector('#input-storage-pay-amount');
+    const storagePaidSelect = container.querySelector('select[name="storagePaid"]');
+    const storageNegotiateBadge = container.querySelector('#storage-negotiate-badge');
+
+    const badgeSaldo = document.getElementById('armazem-calc-saldo');
+    const badgeEntregue = document.getElementById('armazem-badge-entregue');
+    const badgeStorage = document.getElementById('armazem-badge-storage-cost');
+
+    // 1. Atualizar contagem de volumes e saldo
+    const dischargeInput = container.querySelector('input[name="discharge"]');
+    const deliverInput = container.querySelector('input[name="deliver"]');
+    if (dischargeInput && deliverInput) {
+        const dVal = parseFloat(dischargeInput.value) || 0;
+        const eVal = parseFloat(deliverInput.value) || 0;
+        if (badgeSaldo) badgeSaldo.textContent = `${Math.max(0, dVal - eVal)} Vol`;
+        if (badgeEntregue) badgeEntregue.textContent = `${eVal} Vol`;
+    }
+
+    const client = window.currentActiveClient;
+    if (!client) return;
+
+    // 2. Calcular dias decorridos e custo padrão
+    const dischargeDateStr = state.confirm?.dischargeDate || '';
+    const dDate = parseDate(dischargeDateStr);
+
+    const deliverDateInput = container.querySelector('input[name="deliverDate"]');
+    const targetEndDateStr = (deliverDateInput && deliverDateInput.value) ? deliverDateInput.value : new Date().toISOString().split('T')[0];
+    const targetEndDate = parseDate(targetEndDateStr);
+
+    let daysDiff = 0;
+    if (dDate && targetEndDate) {
+        const timeDiff = targetEndDate.getTime() - dDate.getTime();
+        daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
+        if (daysDiff > 0) daysDiff -= 1;
+    }
+
+    const isAnticipated = client.isAnticipated !== undefined ? client.isAnticipated : false;
+    let standardCost = 0;
+    if (dischargeDateStr) {
+        if (isAnticipated) {
+            standardCost = daysDiff <= 3 ? 0 : (daysDiff - 3) * 1000;
+        } else {
+            standardCost = daysDiff <= 3 ? daysDiff * 500 : 1500 + (daysDiff - 3) * 1000;
+        }
+    }
+
+    if (storagePayAmountInput) {
+        storagePayAmountInput.setAttribute('data-standard-cost', String(standardCost));
+    }
+
+    // 3. Verificar se há Isenção ativa
+    const isExempt = isencaoCheckbox && isencaoCheckbox.checked;
+
+    if (isExempt) {
+        if (isencaoFields) isencaoFields.classList.remove('hidden');
+        if (isencaoHint) isencaoHint.classList.remove('hidden');
+        if (motivoSelect) motivoSelect.disabled = false;
+        if (motivoInput) motivoInput.disabled = false;
+
+        if (storagePaymentSection) storagePaymentSection.classList.add('opacity-50', 'pointer-events-none');
+        if (storagePayAmountInput) {
+            storagePayAmountInput.value = '0';
+            storagePayAmountInput.disabled = true;
+        }
+        if (storagePaidSelect) {
+            storagePaidSelect.value = 'SIM';
+            storagePaidSelect.disabled = true;
+        }
+        if (storageNegotiateBadge) storageNegotiateBadge.classList.add('hidden');
+
+        if (badgeStorage) {
+            badgeStorage.innerHTML = `Armazenagem: <strong class="ml-1 font-extrabold text-emerald-800">0,00 MT (Isento ✅)</strong>`;
+            badgeStorage.className = 'font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-700 border-emerald-200';
+        }
+        return;
+    }
+
+    // 4. Não isento: habilitar secção de pagamento
+    if (isencaoFields) isencaoFields.classList.add('hidden');
+    if (isencaoHint) isencaoHint.classList.add('hidden');
+    if (motivoSelect) motivoSelect.disabled = true;
+    if (motivoInput) motivoInput.disabled = true;
+
+    if (storagePaymentSection) storagePaymentSection.classList.remove('opacity-50', 'pointer-events-none');
+    if (storagePayAmountInput) storagePayAmountInput.disabled = false;
+    if (storagePaidSelect) storagePaidSelect.disabled = false;
+
+    // Se custo padrão é 0 (dentro dos 3 dias livres)
+    if (standardCost === 0) {
+        if (storagePayAmountInput && (!storagePayAmountInput.value || parseFloat(storagePayAmountInput.value) === 0)) {
+            storagePayAmountInput.value = '0';
+        }
+        if (storagePaidSelect) storagePaidSelect.value = 'SIM';
+        if (storageNegotiateBadge) storageNegotiateBadge.classList.add('hidden');
+
+        if (badgeStorage) {
+            badgeStorage.innerHTML = `Armazenagem: <strong class="ml-1 font-extrabold text-emerald-800">0,00 MT (Livre ✅)</strong>`;
+            badgeStorage.className = 'font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-700 border-emerald-200';
+        }
+        return;
+    }
+
+    // Se custo padrão > 0, verificar negociação
+    let payAmount = storagePayAmountInput ? parseFloat(storagePayAmountInput.value) : standardCost;
+    if (isNaN(payAmount) || payAmount < 0) {
+        payAmount = standardCost;
+        if (storagePayAmountInput) storagePayAmountInput.value = standardCost;
+    }
+
+    const isNegotiated = Math.abs(payAmount - standardCost) > 1;
+    if (storageNegotiateBadge) {
+        if (isNegotiated) {
+            storageNegotiateBadge.classList.remove('hidden');
+            const diff = standardCost - payAmount;
+            storageNegotiateBadge.textContent = diff > 0 ? `🤝 Negociado (-${formatMZN(diff)})` : `🤝 Negociado (+${formatMZN(-diff)})`;
+        } else {
+            storageNegotiateBadge.classList.add('hidden');
+        }
+    }
+
+    const isPaid = storagePaidSelect && storagePaidSelect.value === 'SIM';
+    const statusText = isPaid ? 'Pago' : 'Pendente';
+    const statusColor = isPaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse';
+
+    if (badgeStorage) {
+        badgeStorage.innerHTML = `Armazenagem: <strong class="ml-1 font-extrabold">${formatMZN(payAmount)} (${statusText}${isNegotiated ? ' - Negociado' : ''})</strong>`;
+        badgeStorage.className = `font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border ${statusColor}`;
+    }
+}
+window.updateArmazemCalculations = updateArmazemCalculations;
+window.updateArmazemSaldo = updateArmazemCalculations;
 
 export async function renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed) {
     const container = document.getElementById('armazem-operations-container');
@@ -10314,28 +10698,23 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             }
         }
 
-        // Aplicar a regra de armazenamento
-        let storageCost = 0;
+        client.isAnticipated = isAnticipated;
+
+        let standardStorageCost = 0;
         if (dischargeDateStr) {
             if (isAnticipated) {
-                if (daysDiff <= 3) {
-                    storageCost = 0;
-                } else {
-                    storageCost = (daysDiff - 3) * 1000;
-                }
+                standardStorageCost = daysDiff <= 3 ? 0 : (daysDiff - 3) * 1000;
             } else {
-                if (daysDiff <= 3) {
-                    storageCost = daysDiff * 500;
-                } else {
-                    storageCost = 1500 + (daysDiff - 3) * 1000;
-                }
+                standardStorageCost = daysDiff <= 3 ? daysDiff * 500 : 1500 + (daysDiff - 3) * 1000;
             }
         }
 
-        // Estado do pagamento da armazenagem
-        const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
+        const storageInfo = parseStorageInfo(storagePaidVal, standardStorageCost, motivoIsencaoVal);
+        const isExempt = storageInfo.isExempt;
+        const isNegotiated = storageInfo.isNegotiated;
+        const storageCost = storageInfo.cost;
+        const isStoragePaid = storageInfo.isPaid;
 
-        // Verificar se a entrega está autorizada para emissão de Guia Dupla
         const hasDeliveryInfoSaved = totalDelivered > 0 && 
                                      String(deliverDateVal).trim() !== '' && 
                                      String(deliverDateVal).trim() !== '—' &&
@@ -10347,7 +10726,6 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const canEmitGuia = allowDelivery;
         const isEditable = !isDelivered && (!hasDeliveryInfoSaved || isAdmin);
 
-        // Cabeçalho da Guia com a data de descarga e dados de armazenagem
         const formatDateForDisplay = (dateStr) => {
             if (!dateStr) return '';
             const p = parseDate(dateStr);
@@ -10382,7 +10760,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         </div>
                     </div>
                 `;
-            } else if (storageCost > 0 && !isStoragePaid) {
+            } else if (storageCost > 0 && !isStoragePaid && !isExempt) {
                 bannerHtml = `
                     <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-red-500">
                         <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
@@ -10432,7 +10810,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             <ul class="list-disc pl-5 mt-1 text-[11px] text-red-700 font-bold space-y-0.5">
                                 ${!isDutyConfirmed ? '<li>Os Direitos Aduaneiros (Duty) não estão totalmente CONFIRMADOS.</li>' : ''}
                                 ${!isFreightPaid ? '<li>O Frete não está totalmente PAGO (Saldo pendente).</li>' : ''}
-                                ${(!isStoragePaid && storageCost > 0) ? `<li>Armazenagem acumulada pendente: <strong>${formatMZN(storageCost)}</strong>.</li>` : ''}
+                                ${(!isStoragePaid && storageCost > 0) ? `${(!isStoragePaid && storageCost > 0 && !isExempt) ? `<li>Armazenagem acumulada pendente: <strong>${formatMZN(storageCost)}</strong>.</li>` : ''}` : ''}
                             </ul>
                         </div>
                     </div>
@@ -10564,20 +10942,40 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         `;
 
         let storageBadgesHtml = '';
-        if (dischargeDateStr && storageCost > 0) {
-            const statusColor = isStoragePaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse';
-            const textStatus = isStoragePaid ? 'Pago' : 'Pendente';
-            storageBadgesHtml = `
-                <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                    Dias: <strong class="text-slate-700 ml-1 font-extrabold">${daysDiff}d</strong>
-                </span>
-                <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                    Tarifa: <strong class="text-slate-700 ml-1 font-extrabold">${isAnticipated ? 'Antecipado' : 'Normal/Multa'}</strong>
-                </span>
-                <span class="font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border ${statusColor}">
-                    Armazenagem: <strong class="ml-1 font-extrabold">${formatMZN(storageCost)} (${textStatus})</strong>
-                </span>
-            `;
+        if (dischargeDateStr) {
+            if (isExempt) {
+                storageBadgesHtml = `
+                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                        Dias: <strong class="text-slate-700 ml-1 font-extrabold">${daysDiff}d</strong>
+                    </span>
+                    <span id="armazem-badge-storage-cost" class="font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-700 border-emerald-200">
+                        Armazenagem: <strong class="ml-1 font-extrabold text-emerald-800">0,00 MT (Isento ✅)</strong>
+                    </span>
+                `;
+            } else if (storageCost > 0 || standardStorageCost > 0) {
+                const statusColor = isStoragePaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse';
+                const textStatus = isStoragePaid ? 'Pago' : 'Pendente';
+                storageBadgesHtml = `
+                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                        Dias: <strong class="text-slate-700 ml-1 font-extrabold">${daysDiff}d</strong>
+                    </span>
+                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                        Tarifa: <strong class="text-slate-700 ml-1 font-extrabold">${isAnticipated ? 'Antecipado' : 'Normal/Multa'}</strong>
+                    </span>
+                    <span id="armazem-badge-storage-cost" class="font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border ${statusColor}">
+                        Armazenagem: <strong class="ml-1 font-extrabold">${formatMZN(storageCost)} (${textStatus}${isNegotiated ? ' - Negociado' : ''})</strong>
+                    </span>
+                `;
+            } else {
+                storageBadgesHtml = `
+                    <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                        Dias: <strong class="text-slate-700 ml-1 font-extrabold">${daysDiff}d</strong>
+                    </span>
+                    <span id="armazem-badge-storage-cost" class="font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border bg-emerald-50 text-emerald-700 border-emerald-200">
+                        Armazenagem: <strong class="ml-1 font-extrabold text-emerald-800">0,00 MT (Livre ✅)</strong>
+                    </span>
+                `;
+            }
         }
 
         const deliveryStatusBadge = `
@@ -10614,90 +11012,137 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
                 </div>
                 
-                <div id="armazem-form-container" class="grid grid-cols-1 md:grid-cols-8 gap-3 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
-                    <div>
+                <div id="armazem-form-container" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                    <!-- Linha 1: Informações de Carga & Destinatário -->
+                    <div class="col-span-1 md:col-span-2">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Descarregado</label>
                         <input type="number" name="discharge" value="${dischargeVal}" placeholder="Qtd" 
-                            oninput="window.updateArmazemSaldo()"
+                            oninput="window.updateArmazemCalculations()"
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
-                    <div>
+                    <div class="col-span-1 md:col-span-2">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5 flex items-center justify-between">
                             <span>Entregue (Manual)</span>
                             <span class="text-[8px] text-indigo-600 font-bold">Qtd</span>
                         </label>
                         <input type="number" name="deliver" value="${deliverVal}" placeholder="Qtd" 
-                            oninput="window.updateArmazemSaldo()"
+                            oninput="window.updateArmazemCalculations()"
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'text-slate-800'}">
                     </div>
-                    <div>
+                    <div class="col-span-1 md:col-span-2">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Data Entrega</label>
                         <input type="date" name="deliverDate" value="${formatDateForInput(deliverDateVal)}" 
+                            onchange="window.updateArmazemCalculations()"
                             ${!isEditable ? 'disabled' : ''}
-                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            class="w-full text-center py-2 px-2 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
-                    <div class="col-span-1 md:col-span-2">
-                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Entregue A</label>
-                        <input type="text" name="deliverTo" value="${deliverToVal}" placeholder="Nome" 
+                    <div class="col-span-1 md:col-span-3">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="block text-[9px] font-black uppercase text-slate-400">Entregue A</label>
+                            ${isEditable ? `
+                            <button type="button" onclick="ui.fillSameClientData()" 
+                                class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[8px] font-black uppercase transition-all flex items-center gap-1 active:scale-95 cursor-pointer shadow-xs"
+                                title="Puxar nome e telefone do próprio cliente">
+                                <svg class="w-2.5 h-2.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                <span>Próprio Cliente</span>
+                            </button>
+                            ` : ''}
+                        </div>
+                        <input type="text" name="deliverTo" value="${deliverToVal}" placeholder="Nome do Destinatário" 
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
-                    <div>
+                    <div class="col-span-1 md:col-span-3">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Contacto</label>
                         <input type="text" name="contacto" value="${contactoVal}" placeholder="Contacto" 
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
-                    <div class="col-span-1 md:col-span-2">
-                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5 flex items-center justify-between">
-                            <span>Viatura / Matrícula</span>
-                            <span class="text-[8px] text-slate-500 font-bold normal-case">🚗 Se vier de carro</span>
-                        </label>
-                        <input type="text" name="viatura" value="${viaturaVal}" placeholder="Ex: ABC-123-MC / Toyota" 
-                            ${!isEditable ? 'disabled' : ''}
-                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
-                    </div>
+
+                    <!-- Linha 2: Veículo, Isenção, Armazenagem e Notas -->
                     <div class="col-span-1 md:col-span-3">
-                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5 flex items-center justify-between">
-                            <span>Nota / Estado Contacto</span>
-                            <span class="text-[8px] text-amber-600 font-bold normal-case">💬 Pagamento & Retirada</span>
-                        </label>
-                        <input type="text" name="notaContacto" value="${contactNoteVal}" placeholder="Ex: Contactado, promete pagar amanhã" 
-                            ${!isEditable ? 'disabled' : ''}
-                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-500 cursor-pointer hover:text-indigo-600 transition-colors">
+                                <input type="checkbox" id="check-has-viatura" onchange="ui.toggleViaturaField(this)" ${viaturaVal ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                                <span>🚗 Veículo / Matrícula</span>
+                            </label>
+                            <span class="text-[8px] text-slate-400 font-bold ${viaturaVal ? 'hidden' : ''}" id="viatura-badge-hint">(A pé / Sem carro)</span>
+                        </div>
+                        <div id="viatura-input-container" class="${viaturaVal ? '' : 'hidden'}">
+                            <input type="text" name="viatura" value="${viaturaVal}" placeholder="Ex: ABC-123-MC / Toyota" 
+                                ${!isEditable ? 'disabled' : ''}
+                                class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                        </div>
                     </div>
-                    <div class="col-span-1 md:col-span-2">
-                        <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-400 mb-1.5 cursor-pointer hover:text-indigo-600 transition-colors">
-                            <input type="checkbox" onchange="ui.toggleIsencaoFields(this)" ${motivoIsencaoVal ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
-                            <span>Adicionar Isenção / Notas</span>
-                        </label>
-                        <div class="flex flex-col gap-1.5 isencao-fields-container ${motivoIsencaoVal ? '' : 'hidden'}">
-                            <div class="flex gap-1.5">
-                                <select id="select-isencao" onchange="ui.handleIsencaoChange(this)"
-                                    ${!isEditable ? 'disabled' : ''}
-                                    class="w-[110px] py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-[9px] font-bold uppercase tracking-wider focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'text-indigo-700'}">
-                                    <option value="">Atribuir Isenção?</option>
-                                    <option value="Atraso no Despacho" ${motivoIsencaoVal.includes('Atraso no Despacho') ? 'selected' : ''}>Atraso no Despacho</option>
-                                    <option value="Autorização da Direção" ${motivoIsencaoVal.includes('Autorização da Direção') ? 'selected' : ''}>Autorização Dir.</option>
-                                    <option value="Erro de Sistema" ${motivoIsencaoVal.includes('Erro de Sistema') ? 'selected' : ''}>Erro Sistema</option>
+
+                    <div class="col-span-1 md:col-span-4">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-500 cursor-pointer hover:text-indigo-600 transition-colors">
+                                <input type="checkbox" id="check-has-isencao" onchange="ui.toggleIsencao(this)" ${isExempt ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                                <span>🎁 Adicionar Isenção (0 MT)</span>
+                            </label>
+                            <span class="text-[8px] text-emerald-600 font-bold ${isExempt ? '' : 'hidden'}" id="isencao-active-hint">✅ Armazenagem = 0 MT</span>
+                        </div>
+                        <div id="isencao-fields-container" class="${isExempt ? '' : 'hidden'} flex gap-1.5">
+                            <select id="select-isencao" onchange="ui.handleIsencaoChange(this)"
+                                ${!isEditable || !isExempt ? 'disabled' : ''}
+                                class="w-[125px] py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-[9px] font-bold uppercase tracking-wider focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'text-indigo-700'}">
+                                <option value="">Motivo...</option>
+                                <option value="Atraso no Despacho" ${motivoIsencaoVal.includes('Atraso no Despacho') ? 'selected' : ''}>Atraso no Despacho</option>
+                                <option value="Autorização da Direção" ${motivoIsencaoVal.includes('Autorização da Direção') ? 'selected' : ''}>Autorização Dir.</option>
+                                <option value="Erro de Sistema" ${motivoIsencaoVal.includes('Erro de Sistema') ? 'selected' : ''}>Erro Sistema</option>
+                                <option value="Outro" ${motivoIsencaoVal && !motivoIsencaoVal.includes('Atraso no Despacho') && !motivoIsencaoVal.includes('Autorização') && !motivoIsencaoVal.includes('Erro de Sistema') ? 'selected' : ''}>Outro</option>
+                            </select>
+                            <input type="text" name="motivoIsencao" value="${motivoIsencaoVal}" placeholder="Descreva o motivo da isenção..." 
+                                ${!isEditable || !isExempt ? 'disabled' : ''}
+                                oninput="window.updateArmazemCalculations()"
+                                class="flex-1 py-1.5 px-3 bg-white border border-slate-200 rounded-xl text-[10px] font-normal focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                        </div>
+                    </div>
+
+                    <div id="storage-payment-section" class="col-span-1 md:col-span-3 ${isExempt ? 'opacity-50 pointer-events-none' : ''}">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <label class="block text-[9px] font-black uppercase text-slate-400">Armazenagem (MZN)</label>
+                            <span id="storage-negotiate-badge" class="text-[8px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 ${isNegotiated ? '' : 'hidden'}">
+                                🤝 Negociado
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <div class="relative">
+                                <input type="number" id="input-storage-pay-amount" name="storagePayAmount" 
+                                    value="${isExempt ? 0 : storageCost}" min="0" step="100" 
+                                    data-standard-cost="${standardStorageCost}"
+                                    oninput="window.updateArmazemCalculations()"
+                                    ${!isEditable || isExempt ? 'disabled' : ''}
+                                    placeholder="${formatMZN(standardStorageCost)}"
+                                    title="Pode negociar o valor a pagar aqui se acordado com o cliente"
+                                    class="w-full text-center py-2 px-2 bg-white border border-slate-200 rounded-xl text-[11px] font-black text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable || isExempt ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            </div>
+                            <div>
+                                <select name="storagePaid" 
+                                    onchange="window.updateArmazemCalculations()"
+                                    ${!isEditable || isExempt ? 'disabled' : ''}
+                                    class="w-full text-center py-2 px-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${isStoragePaid ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'} ${!isEditable || isExempt ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                                    <option value="NAO" ${!isStoragePaid ? 'selected' : ''}>❌ PENDENTE</option>
+                                    <option value="SIM" ${isStoragePaid ? 'selected' : ''}>✅ PAGO</option>
                                 </select>
-                                <input type="text" name="motivoIsencao" value="${motivoIsencaoVal}" placeholder="Notas adicionais" 
-                                    ${!isEditable ? 'disabled' : ''}
-                                    class="flex-1 py-1.5 px-3 bg-white border border-slate-200 rounded-xl text-[10px] font-normal focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                             </div>
                         </div>
                     </div>
-                    <div class="col-span-1 md:col-span-1 ${storageCost === 0 ? 'hidden' : ''}">
-                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Armazenagem</label>
-                        <select name="storagePaid" ${!isEditable ? 'disabled' : ''}
-                            class="w-full text-center py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
-                            <option value="NAO" ${storageCost > 0 && storagePaidVal === 'NAO' ? 'selected' : ''}>❌ PENDENTE</option>
-                            <option value="SIM" ${storageCost === 0 || storagePaidVal === 'SIM' ? 'selected' : ''}>✅ PAGO</option>
-                        </select>
+
+                    <div class="col-span-1 md:col-span-2">
+                        <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Nota Contacto</label>
+                        <input type="text" name="notaContacto" value="${contactNoteVal}" placeholder="Ex: Contactado..." 
+                            ${!isEditable ? 'disabled' : ''}
+                            class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
-                    ${buttonsHtml}
+
+                    <!-- Rodapé com Botões de Ação -->
+                    <div class="col-span-1 md:col-span-12 pt-2 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
+                        ${buttonsHtml}
+                    </div>
                 </div>
 
                 <!-- Rastreio Operacional (Armazém & Guia) -->
@@ -10776,10 +11221,44 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateVal = formatDateForSheet(deliverDateValRaw);
     const deliverToVal = deliverToInput ? deliverToInput.value.trim() : '';
     const contactoVal = contactoInput ? contactoInput.value.trim() : '';
-    const viaturaVal = viaturaInput ? viaturaInput.value.trim() : '';
+
+    const isViaturaChecked = container.querySelector('#check-has-viatura')?.checked;
+    const viaturaVal = (isViaturaChecked && viaturaInput) ? viaturaInput.value.trim() : '';
+
     const notaContactoVal = notaContactoInput ? notaContactoInput.value.trim() : '';
-    const motivoIsencaoVal = motivoIsencaoInput ? motivoIsencaoInput.value.trim() : '';
-    const storagePaidVal = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
+
+    const isIsencaoChecked = container.querySelector('#check-has-isencao')?.checked;
+    let motivoIsencaoVal = '';
+    if (isIsencaoChecked) {
+        const selVal = container.querySelector('#select-isencao')?.value || '';
+        const txtVal = motivoIsencaoInput ? motivoIsencaoInput.value.trim() : '';
+        if (txtVal && selVal && selVal !== 'Outro' && !txtVal.includes(selVal)) {
+            motivoIsencaoVal = `${selVal} - ${txtVal}`;
+        } else {
+            motivoIsencaoVal = txtVal || selVal || 'Isenção autorizada';
+        }
+    }
+
+    const storagePayAmountInput = container.querySelector('#input-storage-pay-amount');
+    const standardCost = storagePayAmountInput ? parseFloat(storagePayAmountInput.getAttribute('data-standard-cost') || '0') : 0;
+    const enteredAmount = storagePayAmountInput ? (parseFloat(storagePayAmountInput.value) || 0) : standardCost;
+
+    let storagePaidVal = 'NAO';
+    if (isIsencaoChecked) {
+        storagePaidVal = 'ISENTO';
+    } else if (standardCost === 0) {
+        storagePaidVal = 'SIM';
+    } else {
+        const paidStatus = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
+        const isPaid = paidStatus === 'SIM';
+        const isNegotiated = Math.abs(enteredAmount - standardCost) > 1;
+
+        if (isNegotiated) {
+            storagePaidVal = isPaid ? `PAGO (${enteredAmount} MT)` : `PENDENTE (${enteredAmount} MT)`;
+        } else {
+            storagePaidVal = isPaid ? 'SIM' : 'NAO';
+        }
+    }
 
     const columns = state.confirm.columns || [];
     const cleanString = (str) => String(str || '')
@@ -10808,7 +11287,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateIdx = findCol(['DELIVER DATE']);
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
-    const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
+    let motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
     const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
     let contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
@@ -10818,6 +11297,9 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     let viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
     if (viaturaIdx === -1 && viaturaVal) {
         viaturaIdx = await ensureViaturaColumn();
+    }
+    if (motivoIsencaoIdx === -1 && motivoIsencaoVal) {
+        motivoIsencaoIdx = await ensureMotivoIsencaoColumn();
     }
 
     if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1 || storagePaidIdx === -1 || deliveredIdx === -1) {
@@ -11074,56 +11556,6 @@ export async function forceExtraordinaryDelivery(originalIndex, buttonEl) {
 }
 
 /**
- * Helper para interagir com o campo de Motivo de Isenção/Notas através de dropdown
- */
-export function handleIsencaoChange(selectEl) {
-    const container = selectEl.closest('.flex-col');
-    if (!container) return;
-    const textInput = container.querySelector('input[name="motivoIsencao"]');
-    const storageSelect = container.closest('#armazem-form-container')?.querySelector('select[name="storagePaid"]');
-    if (!textInput) return;
-
-    const val = selectEl.value;
-    
-    // Mantenha as tags extraordinárias se houver
-    const hasExtra = textInput.value.includes('[EXTRAORDINÁRIA]');
-    let extraStr = '';
-    if (hasExtra) {
-        const match = textInput.value.match(/(\[EXTRAORDINÁRIA\].*?)(?:\||$)/);
-        if (match) {
-            extraStr = match[1].trim();
-        }
-    }
-
-    if (val === '') {
-        // Remover selects
-        textInput.value = extraStr;
-        if (storageSelect) storageSelect.value = 'NAO';
-    } else if (val === 'Outro') {
-        textInput.value = extraStr ? `${extraStr} | ` : '';
-        textInput.focus();
-        if (storageSelect) storageSelect.value = 'SIM';
-    } else {
-        textInput.value = extraStr ? `${extraStr} | ${val}` : val;
-        if (storageSelect) storageSelect.value = 'SIM';
-    }
-}
-
-/**
- * Mostra ou esconde os campos de isenção/notas
- */
-export function toggleIsencaoFields(checkbox) {
-    const container = checkbox.closest('.col-span-2').querySelector('.isencao-fields-container');
-    if (container) {
-        if (checkbox.checked) {
-            container.classList.remove('hidden');
-        } else {
-            container.classList.add('hidden');
-        }
-    }
-}
-
-/**
  * Abre o ecrã de impressão para emissão de Guia de Entrega (ou imprime silenciosamente se silentDirect = true)
  * @param {Object} [clientParam] - Cliente ativo
  * @param {boolean} [silentDirect=false] - Se true, imprime direto no computador partilhado sem popup
@@ -11307,25 +11739,29 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
     }
 
-    let storageCost = 0;
+    let standardStorageCost = 0;
     if (dischargeDateStr) {
         if (isAnticipated) {
-            if (daysDiff <= 3) {
-                storageCost = 0;
-            } else {
-                storageCost = (daysDiff - 3) * 1000;
-            }
+            standardStorageCost = daysDiff <= 3 ? 0 : (daysDiff - 3) * 1000;
         } else {
-            if (daysDiff <= 3) {
-                storageCost = daysDiff * 500;
-            } else {
-                storageCost = 1500 + (daysDiff - 3) * 1000;
-            }
+            standardStorageCost = daysDiff <= 3 ? daysDiff * 500 : 1500 + (daysDiff - 3) * 1000;
         }
     }
 
-    const isStoragePaid = (storagePaidVal === 'SIM' || storagePaidVal === 'PAGO' || storageCost === 0);
-    const textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
+    const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
+    const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? String(firstRowData[motivoIsencaoIdx] || '').trim() : '';
+
+    const storageInfo = parseStorageInfo(storagePaidVal, standardStorageCost, motivoIsencaoVal);
+    const storageCost = storageInfo.cost;
+    const isStoragePaid = storageInfo.isPaid;
+    let textStoragePaid = 'PENDENTE';
+    if (storageInfo.isExempt) {
+        textStoragePaid = 'ISENTO (0,00 MZN)';
+    } else if (storageInfo.isNegotiated) {
+        textStoragePaid = isStoragePaid ? 'LIVRE / PAGO (NEGOCIADO)' : 'PENDENTE (NEGOCIADO)';
+    } else {
+        textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
+    }
 
     // Determinar modo de impressão baseado no número total de ordens (Otimizado para poupança de papel):
     // - 1 a 6 ordens: '1_FOLHA' (1 folha única A4 dividida ao meio com corte ✂ para poupar papel)
@@ -11513,13 +11949,13 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         <p><span class="lbl">Entregue A:</span> <strong class="val">${receiverName}</strong></p>
                         <p><span class="lbl">Contacto:</span> <strong class="val">${receiverContact}</strong></p>
                         <p><span class="lbl">Data Entrega:</span> <strong class="val">${deliveryDate}</strong></p>
-                        <p><span class="lbl">Viatura / Matrícula:</span> <strong class="val viatura-val">${viaturaVal ? viaturaVal : '_________________'}</strong></p>
+                        <p><span class="lbl">Viatura / Matrícula:</span> <strong class="val viatura-val">${viaturaVal ? viaturaVal : 'Sem Viatura (A pé / Transporte)'}</strong></p>
                     </div>
                     <div class="card">
                         <h3>Controlo de Armazenagem</h3>
                         <p><span class="lbl">Data Descarga:</span> <strong class="val">${dischargeDateDisplay}</strong></p>
                         <p><span class="lbl">Dias Decorridos:</span> <strong class="val">${daysDiff} dias</strong></p>
-                        <p><span class="lbl">Custo Armaz.:</span> <strong class="val">${formatMZN(storageCost)}</strong></p>
+                        <p><span class="lbl">Custo Armaz.:</span> <strong class="val">${storageInfo.isExempt ? '0,00 MZN (Isento)' : (storageInfo.isNegotiated ? `${formatMZN(storageInfo.cost)} (Negociado)` : formatMZN(storageCost))}</strong></p>
                         <p><span class="lbl">Estado Pag.:</span> <strong class="val" style="color: ${isStoragePaid ? '#047857' : '#b91c1c'}; font-weight: 900;">${textStoragePaid}</strong></p>
                     </div>
                 </div>
