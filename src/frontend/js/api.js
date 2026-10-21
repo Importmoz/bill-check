@@ -159,7 +159,10 @@ export const state = {
         notes: [],
         driveFiles: [],
         isOfflineMode: false,
-        hasPendingSync: false
+        hasPendingSync: false,
+        dashboardTab: 'normal',
+        projectPageSize: 30,
+        projectPage: 1
     },
     bank: {
         incomes: []

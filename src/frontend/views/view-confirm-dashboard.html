@@ -52,11 +52,17 @@
         </div>
 
 
-        <div id="confirm-projects-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 px-4">
-            <!-- Projetos vindos do PocketBase serão renderizados aqui -->
-            <div class="col-span-full py-20 text-center">
-                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-black mx-auto mb-4"></div>
-                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">A carregar os seus projetos...</p>
+        <!-- Container do Modo Normal (CTRs / Projetos com Intervalos) -->
+        <div id="confirm-normal-container">
+            <!-- Barra de Intervalos das CTRs -->
+            <div id="confirm-interval-bar" class="px-4 mb-4"></div>
+
+            <div id="confirm-projects-list" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-2.5 px-4">
+                <!-- Projetos vindos do PocketBase serão renderizados aqui -->
+                <div class="col-span-full py-20 text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-black mx-auto mb-4"></div>
+                    <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">A carregar os seus projetos...</p>
+                </div>
             </div>
         </div>
 
@@ -69,10 +75,13 @@
                         <label class="text-[9px] font-black uppercase text-slate-400">Filtrar por Status</label>
                         <select id="select-verify-status" onchange="window.filterVerifyClients(true)" class="bg-white border-2 border-slate-200 rounded-xl px-3 py-2 text-[10px] font-bold uppercase outline-none focus:border-black transition-all">
                             <option value="TODOS">TODOS OS STATUS</option>
-                            <option value="PENDENTE" selected>PENDENTE</option>
-                            <option value="VERIFICAR">VERIFICAR</option>
-                            <option value="PODE LEVANTAR">PODE LEVANTAR</option>
-                            <option value="OK">OK</option>
+                            <option value="PENDENTE" selected>⏳ PENDENTE</option>
+                            <option value="CONFIRMADO">✅ CONFIRMADO</option>
+                            <option value="PARCIAL">⚠️ PARCIAL</option>
+                            <option value="RE-VERIFICANDO">🔄 RE-VERIFICANDO</option>
+                            <option value="SEM COMPROVATIVO">❌ SEM COMPROVATIVO</option>
+                            <option value="COMPROVATIVO ERRADO">⚠️ COMPROVATIVO ERRADO</option>
+                            <option value="AGUARDA PAGAMENTO">💸 AGUARDA PAGAMENTO</option>
                         </select>
                     </div>
                     

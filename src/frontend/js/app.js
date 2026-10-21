@@ -129,6 +129,10 @@ window.openDriveExplorer = openDriveExplorer;
 window.saveConfirmToSheet = saveConfirmToSheet;
 window.handleConfirmSearch = handleConfirmSearch;
 window.handleConfirmProjectSearch = handleConfirmProjectSearch;
+window.setConfirmProjectInterval = setConfirmProjectInterval;
+window.prevConfirmProjectPage = prevConfirmProjectPage;
+window.nextConfirmProjectPage = nextConfirmProjectPage;
+window.setConfirmProjectPageSize = setConfirmProjectPageSize;
 window.navigateToFolder = navigateToFolder;
 
 window.driveGoBack = driveGoBack;
@@ -1730,6 +1734,8 @@ let projectFoldersCache = null; // Cache de pastas para abertura instantânea
 async function showConfirm() {
     if (!checkModulePermission('CONFIRM')) return ui.toast('Acesso negado ao módulo CONFIRM.', 'error');
     ui.showView('view-confirm-dashboard');
+    if (!api.state.confirm) api.state.confirm = {};
+    api.state.confirm.projectPage = 1;
     if (typeof window.setConfirmDashboardTab === 'function') {
         window.setConfirmDashboardTab('normal');
     }
@@ -1987,15 +1993,77 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
 
 function handleConfirmSearch() {
     const filterText = document.getElementById('input-confirm-search')?.value || '';
-    const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
-    ui.renderConfirmList(api.state.confirm.data, filterText, statusFilter);
+    const statusFilter = document.getElementById('confirm-status-filter')?.value || 'TODOS';
+    ui.renderConfirmList(api.state.confirm.data, filterText, statusFilter, true);
 }
 
 function handleConfirmProjectSearch() {
-    const filterText = document.getElementById('input-confirm-project-search').value.toLowerCase();
+    const searchInput = document.getElementById('input-confirm-project-search');
+    const filterText = searchInput ? searchInput.value.toLowerCase().trim() : '';
     const projects = api.state.confirm?.projects || [];
-    const filtered = projects.filter(p => p.name.toLowerCase().includes(filterText));
-    ui.renderConfirmProjects(filtered, true); 
+    if (api.state.confirm) {
+        api.state.confirm.projectPage = 1;
+    }
+    if (filterText) {
+        const filtered = projects.filter(p => p.name.toLowerCase().includes(filterText));
+        ui.renderConfirmProjects(filtered, true); 
+    } else {
+        ui.renderConfirmProjects(projects, false);
+    }
+}
+
+function refreshConfirmProjectsView() {
+    const searchInput = document.getElementById('input-confirm-project-search');
+    const filterText = searchInput ? searchInput.value.toLowerCase().trim() : '';
+    const allProjects = api.state.confirm?.projects || [];
+    if (filterText) {
+        const filtered = allProjects.filter(p => p.name.toLowerCase().includes(filterText));
+        ui.renderConfirmProjects(filtered, true);
+    } else {
+        ui.renderConfirmProjects(allProjects, false);
+    }
+}
+
+function setConfirmProjectInterval(pageVal) {
+    if (!api.state.confirm) api.state.confirm = {};
+    if (pageVal === 'all') {
+        api.state.confirm.projectPageSize = 'all';
+        api.state.confirm.projectPage = 1;
+    } else {
+        const p = parseInt(pageVal, 10) || 1;
+        api.state.confirm.projectPage = p;
+        if (api.state.confirm.projectPageSize === 'all') {
+            api.state.confirm.projectPageSize = 30;
+        }
+    }
+    refreshConfirmProjectsView();
+}
+
+function prevConfirmProjectPage() {
+    if (!api.state.confirm) api.state.confirm = {};
+    const cur = api.state.confirm.projectPage || 1;
+    if (cur > 1) {
+        api.state.confirm.projectPage = cur - 1;
+        refreshConfirmProjectsView();
+    }
+}
+
+function nextConfirmProjectPage() {
+    if (!api.state.confirm) api.state.confirm = {};
+    const cur = api.state.confirm.projectPage || 1;
+    api.state.confirm.projectPage = cur + 1;
+    refreshConfirmProjectsView();
+}
+
+function setConfirmProjectPageSize(sizeVal) {
+    if (!api.state.confirm) api.state.confirm = {};
+    if (sizeVal === 'all') {
+        api.state.confirm.projectPageSize = 'all';
+    } else {
+        api.state.confirm.projectPageSize = parseInt(sizeVal, 10) || 30;
+    }
+    api.state.confirm.projectPage = 1;
+    refreshConfirmProjectsView();
 }
 
 function openAddConfirmArticleModal() {
@@ -2640,8 +2708,9 @@ async function saveConfirmToSheet() {
         if (paidIdx !== -1) updatedRow[paidIdx] = amountDutyVal;
         if (balanceIdx !== -1) updatedRow[balanceIdx] = 0;
     } else if (selectedStatus === 'PENDENTE') {
-        if (paidIdx !== -1) updatedRow[paidIdx] = '';
-        if (balanceIdx !== -1) updatedRow[balanceIdx] = amountDutyVal;
+        if (paidIdx !== -1 && !updatedRow[paidIdx]) updatedRow[paidIdx] = amountDutyVal;
+        if (balanceIdx !== -1) updatedRow[balanceIdx] = 0;
+        selectedStatus = '?';
     } else if (selectedStatus === 'PARCIAL' && balanceIdx !== -1) {
         const paidVal = paidIdx !== -1 ? (parseFloat(String(updatedRow[paidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
         updatedRow[balanceIdx] = Math.max(0, amountDutyVal - paidVal);

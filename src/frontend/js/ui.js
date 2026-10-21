@@ -2229,7 +2229,96 @@ export function setConfirmProjectViewMode(mode) {
 }
 window.setConfirmProjectViewMode = setConfirmProjectViewMode;
 
-export function renderConfirmList(data, filterText = "", statusFilter = null) {
+
+export function getCanonicalStatus(str) {
+    const u = String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    if (!u) return '';
+    if (u.includes('ERRADO')) return 'COMPROVATIVO ERRADO';
+    if (u.includes('SEM COMP')) return 'SEM COMPROVATIVO';
+    if (u.includes('RE-VERIF') || u.includes('VERIFIC')) return 'RE-VERIFICANDO';
+    if (u.includes('PARCIAL')) return 'PARCIAL';
+    if (u.includes('CONFIRM')) return 'CONFIRMADO';
+    if (u.includes('AGUARDA')) return 'AGUARDA PAGAMENTO';
+    if (u.includes('PENDENTE')) return 'PENDENTE';
+    return u;
+}
+window.getCanonicalStatus = getCanonicalStatus;
+
+export function calculateRowStatus(confStr, balanceVal, bankDutyStr, paidVal = 0, prepaidVal = 0) {
+    const rawConf = String(confStr || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const cleanBank = String(bankDutyStr || '').trim().toUpperCase();
+    const hasBank = cleanBank !== '' && cleanBank !== '?' && cleanBank !== 'NIL' && cleanBank !== '-' && cleanBank !== 'SEM BANCO';
+    const numBalance = typeof balanceVal === 'number' ? balanceVal : (parseFloat(String(balanceVal || '0').replace(/[^0-9.-]+/g, '')) || 0);
+    const numPaid = typeof paidVal === 'number' ? paidVal : (parseFloat(String(paidVal || '0').replace(/[^0-9.-]+/g, '')) || 0);
+    const numPrepaid = typeof prepaidVal === 'number' ? prepaidVal : (parseFloat(String(prepaidVal || '0').replace(/[^0-9.-]+/g, '')) || 0);
+
+    const isZeroBalance = numBalance <= 0.01;
+
+    // 1. Estados explícitos manuais de auditoria / comprovativos
+    if (rawConf.includes('ERRADO')) {
+        return 'COMPROVATIVO ERRADO';
+    }
+    if (rawConf.includes('SEM COMP')) {
+        return 'SEM COMPROVATIVO';
+    }
+    if (rawConf.includes('RE-VERIF') || rawConf.includes('VERIFIC')) {
+        return 'RE-VERIFICANDO';
+    }
+    if (rawConf.includes('PARCIAL')) {
+        return 'PARCIAL';
+    }
+
+    // 2. Se marcado expressamente como CONFIRMADO na folha
+    if (rawConf.includes('CONFIRM')) {
+        if (!isZeroBalance) {
+            return 'PARCIAL';
+        }
+        return 'CONFIRMADO';
+    }
+
+    // 3. Se CONFIRMATION for '?' ou vazio ou 'PENDENTE'
+    if (isZeroBalance) {
+        if (hasBank) {
+            return 'PENDENTE';
+        }
+        if (numPrepaid > 0) {
+            return 'CONFIRMADO';
+        }
+        return 'PENDENTE';
+    }
+
+    // 4. Saldo em dívida (> 0)
+    if (hasBank || numPaid > 0) {
+        return 'PARCIAL';
+    }
+
+    return 'AGUARDA PAGAMENTO';
+}
+window.calculateRowStatus = calculateRowStatus;
+
+export function getRowStatusButtonClass(status) {
+    const s = getCanonicalStatus(status);
+    switch (s) {
+        case 'CONFIRMADO':
+            return 'bg-green-50 text-green-700 border-green-300 hover:bg-green-600 hover:text-white';
+        case 'PENDENTE':
+            return 'bg-yellow-400 text-black font-black border-yellow-500 hover:bg-yellow-500';
+        case 'PARCIAL':
+            return 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-600 hover:text-white';
+        case 'RE-VERIFICANDO':
+            return 'bg-blue-100 text-blue-800 border-blue-300 hover:bg-blue-600 hover:text-white';
+        case 'SEM COMPROVATIVO':
+            return 'bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-600 hover:text-white';
+        case 'COMPROVATIVO ERRADO':
+            return 'bg-red-100 text-red-800 border-red-300 hover:bg-red-600 hover:text-white';
+        case 'AGUARDA PAGAMENTO':
+        default:
+            return 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200';
+    }
+}
+window.getRowStatusButtonClass = getRowStatusButtonClass;
+
+export function renderConfirmList(data, filterText = "", statusFilter = null, isUserFilter = false) {
     const container = document.getElementById('confirm-list-container');
     if (!container) return;
 
@@ -2284,6 +2373,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
     const dutyPrepaidIdx = findColumnIndex(columns, ['DUTY PREPAID', 'PREPAID']);
     const balanceIdx = findColumnIndex(columns, ['BALANCE', 'BALANCO', 'SALDO']);
     const notaDutyIdx = findColumnIndex(columns, ['NOTA DUTY', 'NOTA', 'OBSERVACAO', 'OBSERVACOES', 'OBS', 'NOTA_DUTY']);
+    const bankDutyIdx = findColumnIndex(columns, ['BANK IN DUTY', 'BANK DUTY', 'BANK', 'BANCO']);
     
     const paidIdx = columns.findIndex((c, i) => {
         const h = cleanString(c);
@@ -2350,11 +2440,6 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
 
         const currentGroup = groupedClients.get(groupId);
 
-        let rowStatus = String(row[statusIdx] || '').trim();
-        if (rowStatus === '?') {
-            rowStatus = 'PENDENTE';
-        }
-
         const rawDuty = dutyIdx !== -1 ? row[dutyIdx] : 0;
         const dutyVal = parseFloat(String(rawDuty || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
@@ -2375,21 +2460,8 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             balanceVal = 0;
         }
 
-        // Padrão: verificar se tem pré-pago, pagamento ou se aguarda pagamento
-        if (rowStatus === '' || rowStatus === '?') {
-            if (balanceVal === 0 && (prepaidVal > 0 || (dutyVal > 0 && paidVal >= dutyVal))) {
-                rowStatus = 'CONFIRMADO';
-            } else if (paidVal > 0) {
-                rowStatus = 'PARCIAL';
-            } else {
-                rowStatus = 'AGUARDA PAGAMENTO';
-            }
-        }
-
-        // Se estiver CONFIRMADO mas o saldo for superior a 1.0, despromove para PARCIAL
-        if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
-            rowStatus = 'PARCIAL';
-        }
+        const rawBankDuty = bankDutyIdx !== -1 ? String(row[bankDutyIdx] || '').trim() : '';
+        const rowStatus = calculateRowStatus(row[statusIdx], balanceVal, rawBankDuty, paidVal, prepaidVal);
 
         const rawNota = notaDutyIdx !== -1 ? String(row[notaDutyIdx] || '').trim() : '';
         const hasRowResponse = rawNota.toUpperCase().includes('RESPOSTA:');
@@ -2437,34 +2509,52 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
         if (cleanStatuses.some(s => s === 'COMPROVATIVO ERRADO')) {
             clientStatus = 'COMPROVATIVO ERRADO';
             displayStatus = 'ERRADO';
-            statusClass = "bg-red-600 text-white";
+            statusClass = "bg-red-600 text-white font-black";
         } else if (cleanStatuses.some(s => s === 'SEM COMPROVATIVO')) {
             clientStatus = 'SEM COMPROVATIVO';
             displayStatus = 'SEM COMP.';
-            statusClass = "bg-orange-500 text-white";
+            statusClass = "bg-orange-500 text-white font-black";
         } else if (cleanStatuses.some(s => s === 'RE-VERIFICANDO')) {
             clientStatus = 'RE-VERIFICANDO';
             displayStatus = 'RE-VERIF.';
-            statusClass = "bg-blue-600 text-white";
+            statusClass = "bg-blue-600 text-white font-black";
         } else if (cleanStatuses.length > 0 && cleanStatuses.every(s => s === 'CONFIRMADO')) {
             clientStatus = 'CONFIRMADO';
             displayStatus = 'CONFIRMADO';
-            statusClass = "bg-green-600 text-white";
-        } else if (cleanStatuses.some(s => s === 'PARCIAL') || (cleanStatuses.some(s => s === 'CONFIRMADO') && cleanStatuses.some(s => s === 'PENDENTE' || s === 'AGUARDA PAGAMENTO'))) {
-            clientStatus = 'PARCIAL';
-            displayStatus = 'PARCIAL';
-            statusClass = "bg-yellow-500 text-white font-black";
+            statusClass = "bg-green-600 text-white font-black";
         } else if (cleanStatuses.some(s => s === 'PENDENTE')) {
             clientStatus = 'PENDENTE';
             displayStatus = 'PENDENTE';
             statusClass = "bg-yellow-400 text-black font-black";
+        } else if (cleanStatuses.some(s => s === 'PARCIAL') || (cleanStatuses.some(s => s === 'CONFIRMADO') && cleanStatuses.some(s => s === 'AGUARDA PAGAMENTO'))) {
+            clientStatus = 'PARCIAL';
+            displayStatus = 'PARCIAL';
+            statusClass = "bg-yellow-500 text-white font-black";
         } else {
             clientStatus = 'AGUARDA PAGAMENTO';
             displayStatus = 'AGUARDA PAG.';
-            statusClass = "bg-gray-100 text-gray-400";
+            statusClass = "bg-gray-100 text-gray-500 font-bold";
         }
         return { clientStatus, displayStatus, statusClass };
     };
+
+    // Se for o carregamento inicial de um CTR (sem o utilizador ter selecionado manualmente no dropdown)
+    // e o filtro estiver 'PENDENTE', mas este projeto não tiver nenhum cliente PENDENTE:
+    if (!isUserFilter && statusFilter === 'PENDENTE') {
+        const hasPending = groups.some(c => getClientStatusAndClass(c).clientStatus === 'PENDENTE');
+        if (!hasPending) {
+            const hasParcial = groups.some(c => getClientStatusAndClass(c).clientStatus === 'PARCIAL');
+            if (hasParcial) {
+                statusFilter = 'PARCIAL';
+            } else {
+                statusFilter = 'TODOS';
+            }
+        }
+    }
+
+    if (statusSelect && statusSelect.value !== statusFilter) {
+        statusSelect.value = statusFilter;
+    }
 
     // Aplicar Filtro de Busca de Texto para renderização visual
     if (filterText) {
@@ -2501,7 +2591,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
                 return clientStatus === 'PARCIAL';
             }
             if (targetCanonical === 'PENDENTE') {
-                return clientStatus === 'PENDENTE' || clientStatus === 'PARCIAL';
+                return clientStatus === 'PENDENTE';
             }
             if (targetCanonical === 'AGUARDA PAGAMENTO') {
                 return clientStatus === 'AGUARDA PAGAMENTO';
@@ -2523,7 +2613,7 @@ export function renderConfirmList(data, filterText = "", statusFilter = null) {
             } else if (targetCanonical === 'CONFIRMADO') {
                 isMatch = (rowCanonical === 'CONFIRMADO');
             } else if (targetCanonical === 'PENDENTE') {
-                isMatch = (rowCanonical === 'PENDENTE' || rowCanonical === 'PARCIAL');
+                isMatch = (rowCanonical === 'PENDENTE');
             } else if (targetCanonical === 'AGUARDA PAGAMENTO') {
                 isMatch = (rowCanonical === 'AGUARDA PAGAMENTO');
             } else {
@@ -3060,12 +3150,7 @@ export async function showConfirmDetail(client, clientIndex) {
                 packages, amtFreight, pdFreight, balFreight
             });
 
-            let rowStatus = String(rowData[statusIdx] || 'PENDENTE').trim();
-            if (rowStatus === '?') rowStatus = 'PENDENTE';
-            rowStatus = rowStatus.toUpperCase();
-            if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
-                rowStatus = 'PARCIAL';
-            }
+            const rowStatus = calculateRowStatus(rowData[statusIdx], balance, bankDuty, paid, dutyPrepaid);
 
             if (rowStatus !== 'CONFIRMADO') {
                 allConfirmed = false;
@@ -3103,7 +3188,7 @@ export async function showConfirmDetail(client, clientIndex) {
                     <td class="py-0.5 px-4 text-center">${bankSelectHtml}</td>
                     <td class="py-0.5 px-4 text-center">
                         <button onclick="event.stopPropagation(); window.onConfirmRow(${originalIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
-                            class="px-1.5 py-0.5 rounded font-normal text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}"
+                            class="px-1.5 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${getRowStatusButtonClass(rowStatus)}"
                             ${isLockedByOther ? 'disabled' : ''}>
                             ${isLockedByOther ? '🔒 ' : ''}${rowStatus}
                         </button>
@@ -4777,12 +4862,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
     }
     const bankDuty = getRaw(rowData, bankDutyIdx);
 
-    let rowStatus = String(rowData[statusIdx] || 'PENDENTE').trim();
-    if (rowStatus === '?') rowStatus = 'PENDENTE';
-    rowStatus = rowStatus.toUpperCase();
-    if (rowStatus === 'CONFIRMADO' && balance > 1.0) {
-        rowStatus = 'PARCIAL';
-    }
+    const rowStatus = calculateRowStatus(rowData[statusIdx], balance, bankDuty, paid, dutyPrepaid);
 
     const lockInfo = window.activeConfirmLocks && window.activeConfirmLocks[rowIndex];
     const isLockedByOther = lockInfo && lockInfo.userId !== pb.authStore.model?.id;
@@ -4805,7 +4885,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         </select>
     `;
 
-    const buttonClass = `px-1.5 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${rowStatus === 'PENDENTE' ? 'bg-white text-slate-400 border-slate-200 hover:bg-yellow-50 hover:border-yellow-400 hover:text-yellow-600' : (rowStatus === 'CONFIRMADO' ? 'bg-green-50 text-green-600 border-green-200 hover:bg-green-600 hover:text-white' : (rowStatus === 'PARCIAL' ? 'bg-yellow-50 text-yellow-600 border-yellow-200 hover:bg-yellow-600 hover:text-white' : 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-600 hover:text-white'))}`;
+    const buttonClass = `px-1.5 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${getRowStatusButtonClass(rowStatus)}`;
 
     // Atualiza os TDs individualmente para não perder referências
     tr.className = `row-hover transition-colors border-b border-slate-50 hover:bg-[#f1f5f9] cursor-pointer ${isLockedByOther ? 'opacity-50 pointer-events-none' : ''}`;
@@ -5726,9 +5806,17 @@ export async function applyBulkUpdate() {
                     if (effectiveStatus === 'CONFIRMADO') {
                         if (paidIdx !== -1) rowData[paidIdx] = amountDutyVal;
                         if (balanceIdx !== -1) rowData[balanceIdx] = 0;
+                        rowData[statusIdx] = 'CONFIRMADO';
                     } else if (effectiveStatus === 'PENDENTE') {
+                        if (paidIdx !== -1 && !rowData[paidIdx]) rowData[paidIdx] = amountDutyVal;
+                        if (balanceIdx !== -1) rowData[balanceIdx] = 0;
+                        rowData[statusIdx] = '?';
+                    } else if (effectiveStatus === 'AGUARDA PAGAMENTO') {
                         if (paidIdx !== -1) rowData[paidIdx] = '';
                         if (balanceIdx !== -1) rowData[balanceIdx] = amountDutyVal;
+                        rowData[statusIdx] = 'AGUARDA PAGAMENTO';
+                    } else {
+                        rowData[statusIdx] = effectiveStatus;
                     }
                 }
             }
@@ -6051,9 +6139,104 @@ export async function toggleMiniFilterDrive() {
     }
 }
 
+export function renderConfirmIntervalBar(totalCount, startItem, endItem, currentPage, totalPages, pageSize, isSearch) {
+    const intervalBar = document.getElementById('confirm-interval-bar');
+    if (!intervalBar) return;
+
+    if (totalCount === 0) {
+        intervalBar.innerHTML = '';
+        return;
+    }
+
+    let intervalOptionsHtml = '';
+    const numericSize = pageSize === 'all' ? 30 : (parseInt(pageSize, 10) || 30);
+    const intervalsCount = Math.max(1, Math.ceil(totalCount / numericSize));
+
+    for (let i = 1; i <= intervalsCount; i++) {
+        const s = (i - 1) * numericSize + 1;
+        const e = Math.min(i * numericSize, totalCount);
+        const label = i === 1 
+            ? `${s} - ${e} (Últimos Adicionados)` 
+            : `${s} - ${e}`;
+        const isSelected = (pageSize !== 'all' && currentPage === i);
+        intervalOptionsHtml += `<option value="${i}" ${isSelected ? 'selected' : ''}>${label}</option>`;
+    }
+    intervalOptionsHtml += `<option value="all" ${pageSize === 'all' ? 'selected' : ''}>Todas as CTRs (${totalCount})</option>`;
+
+    intervalBar.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-2xl border border-gray-100 shadow-sm">
+            <!-- Esquerda: Tag informativa e Salto Rápido por Intervalo -->
+            <div class="flex items-center flex-wrap gap-2.5">
+                <div class="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-50 border border-yellow-200/80 rounded-xl text-yellow-900 shadow-xs">
+                    <span class="text-xs">⚡</span>
+                    <span class="text-[10px] font-black uppercase tracking-wider">
+                        ${isSearch 
+                            ? `Pesquisa: ${totalCount} CTR(s) encontrada(s)` 
+                            : (currentPage === 1 && pageSize === 30 ? `Últimas 30 CTRs adicionadas` : `A exibir CTRs ${startItem}–${endItem} de ${totalCount}`)}
+                    </span>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                    <label class="text-[9px] font-bold text-gray-400 uppercase tracking-wider hidden sm:inline">Intervalo:</label>
+                    <select onchange="window.setConfirmProjectInterval(this.value)" 
+                            class="bg-gray-50 border border-gray-200 hover:border-black text-gray-800 text-[10px] font-bold uppercase rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-black cursor-pointer transition-all">
+                        ${intervalOptionsHtml}
+                    </select>
+                </div>
+            </div>
+
+            <!-- Direita: Tamanho do Intervalo e Navegação Anterior / Próximo -->
+            <div class="flex items-center flex-wrap gap-2">
+                <div class="flex items-center gap-1.5">
+                    <span class="text-[9px] font-bold text-gray-400 uppercase tracking-wider hidden md:inline">Por vez:</span>
+                    <select onchange="window.setConfirmProjectPageSize(this.value)"
+                            class="bg-gray-50 border border-gray-200 hover:border-black text-gray-800 text-[10px] font-bold uppercase rounded-xl px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-black cursor-pointer transition-all">
+                        <option value="30" ${pageSize === 30 || pageSize === '30' ? 'selected' : ''}>30 (Padrão)</option>
+                        <option value="50" ${pageSize === 50 || pageSize === '50' ? 'selected' : ''}>50</option>
+                        <option value="100" ${pageSize === 100 || pageSize === '100' ? 'selected' : ''}>100</option>
+                        <option value="all" ${pageSize === 'all' ? 'selected' : ''}>Todas (${totalCount})</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-1">
+                    <button onclick="window.prevConfirmProjectPage()" 
+                            ${currentPage <= 1 || pageSize === 'all' ? 'disabled' : ''}
+                            class="px-2.5 py-1.5 text-xs font-bold rounded-xl border border-gray-200 bg-gray-50 text-gray-700 hover:bg-black hover:text-white hover:border-black disabled:opacity-30 disabled:pointer-events-none transition-all active:scale-95 flex items-center gap-1"
+                            title="Intervalo Anterior">
+                        ‹ <span class="hidden sm:inline">Anterior</span>
+                    </button>
+                    <span class="text-[10px] font-black text-slate-700 uppercase px-2">
+                        ${pageSize === 'all' ? 'Todas' : `${currentPage} / ${totalPages}`}
+                    </span>
+                    <button onclick="window.nextConfirmProjectPage()" 
+                            ${currentPage >= totalPages || pageSize === 'all' ? 'disabled' : ''}
+                            class="px-2.5 py-1.5 text-xs font-bold rounded-xl border border-gray-200 bg-gray-50 text-gray-700 hover:bg-black hover:text-white hover:border-black disabled:opacity-30 disabled:pointer-events-none transition-all active:scale-95 flex items-center gap-1"
+                            title="Próximo Intervalo">
+                        <span class="hidden sm:inline">Próximo</span> ›
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+window.renderConfirmIntervalBar = renderConfirmIntervalBar;
+
 export function renderConfirmProjects(projects, isSearch = false) {
     const container = document.getElementById('confirm-projects-list');
+    const normalContainer = document.getElementById('confirm-normal-container');
+    const intervalBar = document.getElementById('confirm-interval-bar');
     if (!container) return;
+
+    // Se estiver no separador 'verify', assegurar que o container normal e a lista ficam estritamente ocultos
+    if (state.confirm?.dashboardTab === 'verify') {
+        if (normalContainer) normalContainer.classList.add('hidden');
+        container.classList.add('hidden');
+        if (intervalBar) intervalBar.classList.add('hidden');
+    } else {
+        if (normalContainer) normalContainer.classList.remove('hidden');
+        container.classList.remove('hidden');
+        if (intervalBar) intervalBar.classList.remove('hidden');
+    }
 
     const isProjAdmin = (pb.authStore.model?.role || 'USER') === 'ADMIN';
 
@@ -6066,15 +6249,52 @@ export function renderConfirmProjects(projects, isSearch = false) {
 
     container.innerHTML = '';
 
-    if (projects.length === 0) {
+    if (!projects || projects.length === 0) {
+        if (intervalBar) intervalBar.innerHTML = '';
         container.innerHTML = `
             <div class="col-span-full py-20 text-center bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
-                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">Nenhum projeto gravado.</p>
-                ${isProjAdmin ? `<button onclick="openConfirmProjectModal()" class="mt-4 text-blue-600 font-bold uppercase text-[10px] hover:underline">+ Adicionar Primeiro Projeto</button>` : ''}
+                <p class="text-xs font-bold text-gray-400 uppercase tracking-widest">${isSearch ? 'Nenhuma CTR encontrada para esta pesquisa.' : 'Nenhum projeto gravado.'}</p>
+                ${isProjAdmin && !isSearch ? `<button onclick="openConfirmProjectModal()" class="mt-4 text-blue-600 font-bold uppercase text-[10px] hover:underline">+ Adicionar Primeiro Projeto</button>` : ''}
             </div>
         `;
         return;
     }
+
+    // === GESTÃO DE INTERVALOS / PAGINAÇÃO DE CTRs ===
+    if (!state.confirm) state.confirm = {};
+    if (!state.confirm.projectPageSize) state.confirm.projectPageSize = 30;
+    if (!state.confirm.projectPage) state.confirm.projectPage = 1;
+
+    const pageSize = state.confirm.projectPageSize;
+    let currentPage = state.confirm.projectPage;
+    const totalCount = projects.length;
+
+    let totalPages = 1;
+    let paginatedProjects = projects;
+    let startItem = 1;
+    let endItem = totalCount;
+
+    if (pageSize !== 'all') {
+        const numericSize = parseInt(pageSize, 10) || 30;
+        totalPages = Math.max(1, Math.ceil(totalCount / numericSize));
+        if (currentPage > totalPages) {
+            currentPage = totalPages;
+            state.confirm.projectPage = totalPages;
+        }
+        if (currentPage < 1) {
+            currentPage = 1;
+            state.confirm.projectPage = 1;
+        }
+
+        const startIdx = (currentPage - 1) * numericSize;
+        const endIdx = Math.min(startIdx + numericSize, totalCount);
+        paginatedProjects = projects.slice(startIdx, endIdx);
+        startItem = totalCount > 0 ? startIdx + 1 : 0;
+        endItem = endIdx;
+    }
+
+    // Renderizar barra de intervalos no topo
+    renderConfirmIntervalBar(totalCount, startItem, endItem, currentPage, totalPages, pageSize, isSearch);
 
     // Sincronizar botões de modo de exibição de projetos
     const viewMode = state.confirm.projectViewMode || localStorage.getItem('confirm_project_view_mode') || 'grid';
@@ -6086,73 +6306,76 @@ export function renderConfirmProjects(projects, isSearch = false) {
     if (btnList) btnList.className = `p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
     if (btnTable) btnTable.className = `p-1.5 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
 
-    // === 2 - SEÇÃO DE ACESSO RÁPIDO A PROJETOS (RANKING) ===
-    const accessedProjects = projects
-        .map(p => ({ ...p, accessCount: getProjectAccessCount(p.sheetId) }))
-        .filter(p => p.accessCount > 0)
-        .sort((a, b) => b.accessCount - a.accessCount);
+    // === SEÇÃO DE ACESSO RÁPIDO A PROJETOS (RANKING) ===
+    // Exibir apenas na Página 1 e quando não for pesquisa
+    if (currentPage === 1 && !isSearch) {
+        const accessedProjects = projects
+            .map(p => ({ ...p, accessCount: getProjectAccessCount(p.sheetId) }))
+            .filter(p => p.accessCount > 0)
+            .sort((a, b) => b.accessCount - a.accessCount);
 
-    const topAccessed = accessedProjects.slice(0, 4);
+        const topAccessed = accessedProjects.slice(0, 4);
 
-    if (topAccessed.length > 0 && !isSearch) {
-        const rankingContainer = document.createElement('div');
-        rankingContainer.className = "col-span-full mb-2 bg-gradient-to-r from-yellow-50 to-amber-50/50 border border-yellow-100 rounded-2xl p-4 shadow-sm";
-        
-        rankingContainer.innerHTML = `
-            <div class="flex items-center gap-1.5 mb-3">
-                <span class="text-xs">⚡</span>
-                <h4 class="text-[9px] font-black uppercase tracking-wider text-yellow-800">Acesso Rápido (Projetos Mais Utilizados)</h4>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3"></div>
-        `;
-        
-        const cardsGrid = rankingContainer.querySelector('.grid');
-        topAccessed.forEach((p, rankIdx) => {
-            const card = document.createElement('div');
-            card.className = "bg-white/90 p-3 rounded-xl border border-yellow-100/70 flex items-center justify-between gap-2 hover:border-yellow-400 hover:bg-white cursor-pointer transition-all active:scale-[0.98]";
-            card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
+        if (topAccessed.length > 0) {
+            const rankingContainer = document.createElement('div');
+            rankingContainer.className = "col-span-full mb-2 bg-gradient-to-r from-yellow-50 to-amber-50/50 border border-yellow-100 rounded-2xl p-4 shadow-sm";
             
-            const medal = rankIdx === 0 ? '🥇' : rankIdx === 1 ? '🥈' : rankIdx === 2 ? '🥉' : '⭐';
-            
-            card.innerHTML = `
-                <div class="flex items-center gap-2 overflow-hidden w-full">
-                    <div class="bg-yellow-400 text-black w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm font-black text-xs">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                    </div>
-                    <div class="overflow-hidden w-full">
-                        <h5 class="text-xs font-black text-slate-800 truncate uppercase leading-tight">${p.name}</h5>
-                        <p class="text-[8px] text-slate-400 font-bold uppercase">${medal} Rank ${rankIdx + 1} (${p.accessCount} ${p.accessCount === 1 ? 'acesso' : 'acessos'})</p>
-                    </div>
+            rankingContainer.innerHTML = `
+                <div class="flex items-center gap-1.5 mb-3">
+                    <span class="text-xs">⚡</span>
+                    <h4 class="text-[9px] font-black uppercase tracking-wider text-yellow-800">Acesso Rápido (Projetos Mais Utilizados)</h4>
                 </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3"></div>
             `;
-            cardsGrid.appendChild(card);
-        });
-        container.appendChild(rankingContainer);
+            
+            const cardsGrid = rankingContainer.querySelector('.grid');
+            topAccessed.forEach((p, rankIdx) => {
+                const card = document.createElement('div');
+                card.className = "bg-white/90 p-3 rounded-xl border border-yellow-100/70 flex items-center justify-between gap-2 hover:border-yellow-400 hover:bg-white cursor-pointer transition-all active:scale-[0.98]";
+                card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
+                
+                const medal = rankIdx === 0 ? '🥇' : rankIdx === 1 ? '🥈' : rankIdx === 2 ? '🥉' : '⭐';
+                
+                card.innerHTML = `
+                    <div class="flex items-center gap-2.5 overflow-hidden w-full min-w-0">
+                        <div class="bg-yellow-400 text-black w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm font-black text-xs">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        </div>
+                        <div class="overflow-hidden w-full min-w-0">
+                            <h5 class="text-xs font-black text-slate-800 truncate uppercase leading-tight" title="${p.name}">${p.name}</h5>
+                            <p class="text-[8px] text-slate-400 font-bold uppercase truncate">${medal} Rank ${rankIdx + 1} (${p.accessCount} ${p.accessCount === 1 ? 'acesso' : 'acessos'})</p>
+                        </div>
+                    </div>
+                `;
+                cardsGrid.appendChild(card);
+            });
+            container.appendChild(rankingContainer);
+        }
     }
 
-    // === 1 - MODOS DE EXIBIÇÃO DE PROJETOS ===
+    // === MODOS DE EXIBIÇÃO DE PROJETOS (PAGINADOS) ===
     if (viewMode === 'grid') {
-        container.className = "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 px-4";
-        projects.forEach(p => {
+        container.className = "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-2.5 px-4";
+        paginatedProjects.forEach(p => {
             const card = document.createElement('div');
-            card.className = "bg-white p-2 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between group transition-all hover:shadow-md hover:border-black hover:bg-slate-50 cursor-pointer active:scale-[0.98]";
+            card.className = "bg-white px-2.5 py-2 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between group transition-all hover:shadow-md hover:border-black hover:bg-slate-50 cursor-pointer active:scale-[0.98]";
             card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
 
             card.innerHTML = `
-                <div class="flex items-center gap-3 overflow-hidden">
-                    <div class="bg-yellow-400 text-black w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm group-hover:scale-110 transition-transform">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                <div class="flex items-center gap-2 overflow-hidden min-w-0 flex-1">
+                    <div class="bg-yellow-400 text-black w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                     </div>
-                    <div class="overflow-hidden">
-                        <h3 class="text-sm font-black text-slate-800 tracking-tight leading-none truncate group-hover:text-black transition-colors">${p.name}</h3>
+                    <div class="overflow-hidden min-w-0 flex-1">
+                        <h3 class="text-xs font-black text-slate-800 tracking-tight leading-none truncate group-hover:text-black transition-colors" title="${p.name}">${p.name}</h3>
                     </div>
                 </div>
                 
                 ${isProjAdmin ? `
-                <div class="flex items-center gap-2 shrink-0">
+                <div class="flex items-center shrink-0 ml-1">
                     <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
-                        class="w-8 h-8 bg-slate-50 text-slate-300 rounded-lg flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        class="w-6 h-6 bg-slate-50 text-slate-300 rounded-lg flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90" title="Editar Projeto">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     </button>
                 </div>
                 ` : ''}
@@ -6162,7 +6385,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
     }
     else if (viewMode === 'list') {
         container.className = "flex flex-col gap-2.5 px-4 w-full col-span-full";
-        projects.forEach(p => {
+        paginatedProjects.forEach(p => {
             const card = document.createElement('div');
             card.className = "bg-white p-3 rounded-xl border border-gray-100 flex items-center justify-between group transition-all hover:border-black cursor-pointer hover:shadow-sm active:scale-[0.99]";
             card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
@@ -6182,7 +6405,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
                 <div class="flex items-center gap-2 shrink-0">
                     <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
                         class="w-7 h-7 bg-slate-50 text-slate-300 rounded-lg flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                     </button>
                 </div>
                 ` : ''}
@@ -6197,7 +6420,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
         wrapper.className = "bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm w-full";
         
         let tableRowsHtml = '';
-        projects.forEach(p => {
+        paginatedProjects.forEach(p => {
             const trId = `tr-proj-${p.id}`;
             tableRowsHtml += `
                 <tr id="${trId}" class="hover:bg-slate-50 border-b border-gray-100 transition-all cursor-pointer group">
@@ -6213,7 +6436,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
                     <td class="p-3 text-center">
                         <button onclick="event.stopPropagation(); openConfirmProjectModal('${p.id}')" 
                             class="w-7 h-7 bg-slate-50 text-slate-400 rounded-lg inline-flex items-center justify-center hover:bg-black hover:text-white transition-all border border-slate-100 active:scale-90 mx-auto">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                         </button>
                     </td>
                     ` : ''}
@@ -6240,14 +6463,22 @@ export function renderConfirmProjects(projects, isSearch = false) {
         container.appendChild(wrapper);
 
         // Atribuir manipuladores de cliques aos TRs
-        projects.forEach(p => {
+        paginatedProjects.forEach(p => {
             const tr = document.getElementById(`tr-proj-${p.id}`);
             if (tr) {
                 tr.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
             }
         });
     }
+
+    // Se estiver no modo verify, assegurar estritamente que permanece oculto
+    if (state.confirm?.dashboardTab === 'verify') {
+        if (normalContainer) normalContainer.classList.add('hidden');
+        container.classList.add('hidden');
+        if (intervalBar) intervalBar.classList.add('hidden');
+    }
 }
+window.renderConfirmProjects = renderConfirmProjects;
 
 function parseWhatsAppFormat(text) {
     if (!text) return "";
@@ -14224,6 +14455,7 @@ export function getAllProjectsClients() {
         const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
         const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
         const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
+        const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK DUTY', 'BANK', 'BANCO']);
         const phoneIdx = findCol(['PHONE NUMBER', 'TELEFONE', 'PHONE', 'CONTACTO', 'CONTACT']);
         const cargoIdx = columns.findIndex(c => {
             const h = cleanString(c);
@@ -14291,9 +14523,6 @@ export function getAllProjectsClients() {
 
             const client = groupedClients.get(groupId);
 
-            let rowStatus = String(row[statusIdx] || '').trim();
-            if (rowStatus === '?') rowStatus = 'PENDENTE';
-
             const rawPaid = paidIdx !== -1 ? row[paidIdx] : 0;
             const paidVal = parseFloat(String(rawPaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
@@ -14303,23 +14532,8 @@ export function getAllProjectsClients() {
             const rawBalance = balanceIdx !== -1 ? row[balanceIdx] : 0;
             const balanceVal = parseFloat(String(rawBalance || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
-            if (rowStatus === '' || rowStatus.toUpperCase() === 'PENDENTE') {
-                if (balanceVal === 0) {
-                    if (prepaidVal > 0) {
-                        rowStatus = 'CONFIRMADO';
-                    } else if (paidVal > 0) {
-                        rowStatus = 'PENDENTE';
-                    } else {
-                        rowStatus = 'PENDENTE';
-                    }
-                } else {
-                    rowStatus = 'AGUARDA PAGAMENTO';
-                }
-            }
-
-            if (rowStatus.toUpperCase() === 'CONFIRMADO' && balanceVal > 1.0) {
-                rowStatus = 'PARCIAL';
-            }
+            const rawBankDuty = bankDutyIdx !== -1 ? String(row[bankDutyIdx] || '').trim() : '';
+            const rowStatus = calculateRowStatus(row[statusIdx], balanceVal, rawBankDuty, paidVal, prepaidVal);
 
             if (rowStatus) {
                 client.statuses.push(rowStatus);
@@ -14343,10 +14557,15 @@ export function getAllProjectsClients() {
 }
 
 export function setConfirmDashboardTab(tab) {
+    if (!state.confirm) state.confirm = {};
+    state.confirm.dashboardTab = tab;
+
     const tabNormal = document.getElementById('tab-confirm-normal');
     const tabVerify = document.getElementById('tab-confirm-verify');
     
+    const normalContainer = document.getElementById('confirm-normal-container');
     const projectsList = document.getElementById('confirm-projects-list');
+    const intervalBar = document.getElementById('confirm-interval-bar');
     const verifyContainer = document.getElementById('confirm-verify-container');
     
     const searchBar = document.getElementById('input-confirm-project-search')?.parentElement?.parentElement;
@@ -14358,8 +14577,10 @@ export function setConfirmDashboardTab(tab) {
         tabVerify?.classList.remove('bg-white', 'shadow-sm', 'text-black');
         tabVerify?.classList.add('text-gray-500');
         
-        projectsList?.classList.remove('hidden');
-        verifyContainer?.classList.add('hidden');
+        if (normalContainer) normalContainer.classList.remove('hidden');
+        if (projectsList) projectsList.classList.remove('hidden');
+        if (intervalBar) intervalBar.classList.remove('hidden');
+        if (verifyContainer) verifyContainer.classList.add('hidden');
         
         if (searchBar) searchBar.classList.remove('hidden');
         if (btnNewProject) {
@@ -14372,8 +14593,10 @@ export function setConfirmDashboardTab(tab) {
         tabNormal?.classList.remove('bg-white', 'shadow-sm', 'text-black');
         tabNormal?.classList.add('text-gray-500');
         
-        projectsList?.classList.add('hidden');
-        verifyContainer?.classList.remove('hidden');
+        if (normalContainer) normalContainer.classList.add('hidden');
+        if (projectsList) projectsList.classList.add('hidden');
+        if (intervalBar) intervalBar.classList.add('hidden');
+        if (verifyContainer) verifyContainer.classList.remove('hidden');
         
         if (searchBar) searchBar.classList.add('hidden');
         if (btnNewProject) btnNewProject.style.display = 'none';
@@ -14430,14 +14653,13 @@ export function filterVerifyClients(resetLimit = false) {
         filtered = filtered.filter(c => c.projectId === projectFilter);
     }
 
-    // 2. Filtrar por Status
+    // 2. Filtrar por Status Estrito Canónico
     if (statusFilter !== 'TODOS') {
-        const targetClean = statusFilter.toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
+        const targetClean = getCanonicalStatus(statusFilter);
         filtered = filtered.filter(c => {
             return c.uniqueStatuses.some(s => {
-                const current = String(s || '').toUpperCase().replace(/[^A-Z0-9\s-]/g, '').trim();
-                if (targetClean === 'PENDENTE' && current.includes('PARCIAL')) return true;
-                return current.includes(targetClean) || targetClean.includes(current);
+                const current = getCanonicalStatus(s);
+                return current === targetClean;
             });
         });
     }
@@ -14474,14 +14696,17 @@ export function filterVerifyClients(resetLimit = false) {
         tr.className = "hover:bg-slate-50 transition-colors";
         
         const statusBadges = c.uniqueStatuses.map(s => {
+            const canon = getCanonicalStatus(s);
             let colorClass = "bg-slate-100 text-slate-700 border-slate-300";
-            if (s === 'PENDENTE') colorClass = "bg-amber-100 text-amber-800 border-amber-300";
-            else if (s === 'CONFIRMADO') colorClass = "bg-green-100 text-green-800 border-green-300";
-            else if (s === 'AGUARDA PAGAMENTO') colorClass = "bg-blue-100 text-blue-800 border-blue-300";
-            else if (s === 'PARCIAL') colorClass = "bg-yellow-100 text-yellow-800 border-yellow-300";
-            else if (s === 'VERIFICAR' || s === 'RE-VERIFICANDO') colorClass = "bg-rose-100 text-rose-800 border-rose-300";
+            if (canon === 'PENDENTE') colorClass = "bg-yellow-400 text-black border-yellow-500 font-black";
+            else if (canon === 'CONFIRMADO') colorClass = "bg-green-100 text-green-800 border-green-300 font-bold";
+            else if (canon === 'PARCIAL') colorClass = "bg-amber-100 text-amber-800 border-amber-300 font-bold";
+            else if (canon === 'RE-VERIFICANDO') colorClass = "bg-blue-100 text-blue-800 border-blue-300 font-bold";
+            else if (canon === 'SEM COMPROVATIVO') colorClass = "bg-orange-100 text-orange-800 border-orange-300 font-bold";
+            else if (canon === 'COMPROVATIVO ERRADO') colorClass = "bg-red-100 text-red-800 border-red-300 font-bold";
+            else if (canon === 'AGUARDA PAGAMENTO') colorClass = "bg-slate-100 text-slate-600 border-slate-300 font-bold";
             
-            return `<span class="px-2 py-0.5 border rounded-md text-[8px] font-bold uppercase shrink-0 ${colorClass}">${s}</span>`;
+            return `<span class="px-2 py-0.5 border rounded-md text-[8px] uppercase shrink-0 ${colorClass}">${s}</span>`;
         }).join(' ');
 
         tr.innerHTML = `
