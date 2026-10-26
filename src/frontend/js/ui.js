@@ -6159,8 +6159,8 @@ export async function toggleMiniFilterDrive() {
         // ABRIR
         side.classList.remove('w-0');
         side.classList.add('w-80');
-        container.classList.remove('max-w-3xl');
-        container.classList.add('max-w-6xl');
+        container.classList.remove('max-w-5xl');
+        container.classList.add('max-w-7xl');
 
         // Carregar conteúdo se houver uma pasta ativa
         if (state.confirm.activeClientFolderId) {
@@ -6179,8 +6179,8 @@ export async function toggleMiniFilterDrive() {
         // FECHAR
         side.classList.remove('w-80');
         side.classList.add('w-0');
-        container.classList.remove('max-w-6xl');
-        container.classList.add('max-w-3xl');
+        container.classList.remove('max-w-7xl');
+        container.classList.add('max-w-5xl');
     }
 }
 
@@ -7074,6 +7074,107 @@ export function setMiniFilterSearch(value) {
     }
 }
 
+export function setMiniFilterReference(refVal) {
+    const refInput = document.getElementById('mini-filter-reference');
+    if (refInput) {
+        refInput.value = refVal;
+        searchPaymentMiniFilter();
+    }
+}
+
+export function handleAmountModeChange() {
+    const mode = document.getElementById('mini-filter-amount-mode')?.value || 'exact';
+    const singleContainer = document.getElementById('mini-filter-amount-single-container');
+    const rangeContainer = document.getElementById('mini-filter-range-container');
+    
+    if (mode === 'range') {
+        if (singleContainer) singleContainer.classList.add('hidden');
+        if (rangeContainer) rangeContainer.classList.remove('hidden');
+    } else {
+        if (singleContainer) singleContainer.classList.remove('hidden');
+        if (rangeContainer) rangeContainer.classList.add('hidden');
+    }
+    searchPaymentMiniFilter();
+}
+
+export function setMiniFilterDatePreset(preset) {
+    const fromEl = document.getElementById('mini-filter-date-from');
+    const toEl = document.getElementById('mini-filter-date-to');
+    if (!fromEl || !toEl) return;
+
+    const today = new Date();
+    const formatYMD = (d) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    if (preset === 'today') {
+        const todayStr = formatYMD(today);
+        fromEl.value = todayStr;
+        toEl.value = todayStr;
+    } else if (preset === '3d') {
+        const d = new Date();
+        d.setDate(d.getDate() - 3);
+        fromEl.value = formatYMD(d);
+        toEl.value = formatYMD(today);
+    } else if (preset === '7d') {
+        const d = new Date();
+        d.setDate(d.getDate() - 7);
+        fromEl.value = formatYMD(d);
+        toEl.value = formatYMD(today);
+    } else if (preset === 'month') {
+        const d = new Date(today.getFullYear(), today.getMonth(), 1);
+        fromEl.value = formatYMD(d);
+        toEl.value = formatYMD(today);
+    } else if (preset === 'all') {
+        fromEl.value = '';
+        toEl.value = '';
+    }
+
+    searchPaymentMiniFilter();
+}
+
+export function resetPaymentMiniFilter() {
+    const bankSelect = document.getElementById('mini-filter-bank');
+    if (bankSelect) bankSelect.value = '';
+    
+    const ownerSelect = document.getElementById('mini-filter-owner');
+    if (ownerSelect) ownerSelect.value = '';
+
+    const modeSelect = document.getElementById('mini-filter-amount-mode');
+    if (modeSelect) modeSelect.value = 'exact';
+    handleAmountModeChange();
+
+    const amountInput = document.getElementById('mini-filter-amount');
+    if (amountInput) amountInput.value = currentMiniFilterExpectedAmount > 0 ? currentMiniFilterExpectedAmount.toFixed(2) : '';
+
+    const minInput = document.getElementById('mini-filter-amount-min');
+    if (minInput) minInput.value = '';
+    const maxInput = document.getElementById('mini-filter-amount-max');
+    if (maxInput) maxInput.value = '';
+
+    const refInput = document.getElementById('mini-filter-reference');
+    if (refInput) refInput.value = '';
+
+    const dateFrom = document.getElementById('mini-filter-date-from');
+    if (dateFrom) dateFrom.value = '';
+    const dateTo = document.getElementById('mini-filter-date-to');
+    if (dateTo) dateTo.value = '';
+
+    const channelSelect = document.getElementById('mini-filter-channel');
+    if (channelSelect) channelSelect.value = '';
+
+    const searchInput = document.getElementById('mini-filter-search');
+    if (searchInput) searchInput.value = '';
+
+    const usedCheckbox = document.getElementById('mini-filter-show-used');
+    if (usedCheckbox) usedCheckbox.checked = false;
+
+    searchPaymentMiniFilter();
+}
+
 export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmount = '', defaultTerm = '', clientName = '', phoneNumber = '', notaDuty = '') {
     if (defaultBank) {
         defaultBank = String(defaultBank).replace(' BOSS', '').replace(' JUPITER', '').trim();
@@ -7111,6 +7212,17 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
         expectedAmount = window.currentActiveClientState.targetAmount;
     }
     currentMiniFilterExpectedAmount = expectedAmount;
+
+    // Atualizar badge de saldo esperado
+    const expectedBadge = document.getElementById('mini-filter-expected-badge');
+    if (expectedBadge) {
+        if (expectedAmount > 0) {
+            expectedBadge.innerText = `Saldo: ${formatMZN(expectedAmount)}`;
+            expectedBadge.classList.remove('hidden');
+        } else {
+            expectedBadge.classList.add('hidden');
+        }
+    }
 
     // Atualizar info box do cliente
     const infoBox = document.getElementById('mini-filter-header-client-info');
@@ -7152,26 +7264,16 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
             const commentsContainer = document.getElementById('mini-filter-client-comments-container');
             const commentsEl = document.getElementById('mini-filter-client-comments');
             if (commentsContainer && commentsEl) {
-                console.log("[DEBUG-CONFIRM-NOTES] Abrindo payment-mini-filter para o cliente:", clientName);
-                console.log("[DEBUG-CONFIRM-NOTES] window.currentActiveClient:", window.currentActiveClient);
-                if (window.currentActiveClient && window.currentActiveClient.rows) {
-                    console.log("[DEBUG-CONFIRM-NOTES] Linhas do cliente:", window.currentActiveClient.rows.map(r => ({
-                        originalIndex: r.originalIndex,
-                        status: r.status,
-                        confirmNote: r.confirmNote
-                    })));
-                }
                 const rowsWithNotes = (window.currentActiveClient && window.currentActiveClient.rows)
                     ? window.currentActiveClient.rows.filter(r => r.confirmNote && r.confirmNote.trim() !== '')
                     : [];
-                console.log("[DEBUG-CONFIRM-NOTES] Linhas com notas encontradas:", rowsWithNotes.length);
 
                 if (rowsWithNotes.length > 0) {
                     const uniqueNotes = Array.from(new Set(rowsWithNotes.map(r => r.confirmNote.trim())));
                     let html = '';
                     uniqueNotes.forEach(noteText => {
                         html += `
-                            <div class="py-2 px-3 hover:bg-amber-100/30 rounded-lg transition-colors border-l-4 border-amber-400 bg-amber-50/20 font-bold text-[11px] leading-relaxed text-slate-700">
+                            <div class="py-1.5 px-2.5 hover:bg-amber-100/30 rounded-lg transition-colors border-l-4 border-amber-400 bg-amber-50/20 font-bold text-[11px] leading-relaxed text-slate-700">
                                 ${noteText}
                             </div>
                         `;
@@ -7191,14 +7293,44 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
 
     // Atualizar opções do banco (para aceitar qualquer valor além dos default)
     const bankSelect = document.getElementById('mini-filter-bank');
-    if (defaultBank && !Array.from(bankSelect.options).some(opt => opt.value === defaultBank)) {
+    if (bankSelect && defaultBank && !Array.from(bankSelect.options).some(opt => opt.value === defaultBank)) {
         const newOpt = new Option(defaultBank, defaultBank);
         bankSelect.add(newOpt);
     }
+    if (bankSelect) bankSelect.value = defaultBank;
 
-    bankSelect.value = defaultBank;
-    document.getElementById('mini-filter-amount').value = expectedAmount > 0 ? expectedAmount.toFixed(2) : defaultAmount;
-    document.getElementById('mini-filter-search').value = defaultTerm;
+    // Reset filtros adicionais
+    const ownerSelect = document.getElementById('mini-filter-owner');
+    if (ownerSelect) ownerSelect.value = '';
+
+    const modeSelect = document.getElementById('mini-filter-amount-mode');
+    if (modeSelect) modeSelect.value = 'exact';
+    handleAmountModeChange();
+
+    const amountInput = document.getElementById('mini-filter-amount');
+    if (amountInput) amountInput.value = expectedAmount > 0 ? expectedAmount.toFixed(2) : defaultAmount;
+
+    const minInput = document.getElementById('mini-filter-amount-min');
+    if (minInput) minInput.value = '';
+    const maxInput = document.getElementById('mini-filter-amount-max');
+    if (maxInput) maxInput.value = '';
+
+    const refInput = document.getElementById('mini-filter-reference');
+    if (refInput) refInput.value = '';
+
+    const dateFrom = document.getElementById('mini-filter-date-from');
+    if (dateFrom) dateFrom.value = '';
+    const dateTo = document.getElementById('mini-filter-date-to');
+    if (dateTo) dateTo.value = '';
+
+    const channelSelect = document.getElementById('mini-filter-channel');
+    if (channelSelect) channelSelect.value = '';
+
+    const searchInput = document.getElementById('mini-filter-search');
+    if (searchInput) searchInput.value = defaultTerm;
+
+    const usedCheckbox = document.getElementById('mini-filter-show-used');
+    if (usedCheckbox) usedCheckbox.checked = false;
 
     document.getElementById('mini-filter-results').innerHTML = '';
     document.getElementById('mini-filter-empty').classList.add('hidden');
@@ -7219,23 +7351,59 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
 }
 
 export async function searchPaymentMiniFilter() {
-    const bank = document.getElementById('mini-filter-bank').value.trim();
-    const amount = document.getElementById('mini-filter-amount').value.trim();
-    const term = document.getElementById('mini-filter-search').value.trim();
+    const bank = document.getElementById('mini-filter-bank')?.value.trim() || '';
+    const owner = document.getElementById('mini-filter-owner')?.value.trim() || '';
+    const amountMode = document.getElementById('mini-filter-amount-mode')?.value || 'exact';
+    const amount = document.getElementById('mini-filter-amount')?.value.trim() || '';
+    const amountMin = document.getElementById('mini-filter-amount-min')?.value.trim() || '';
+    const amountMax = document.getElementById('mini-filter-amount-max')?.value.trim() || '';
+    const reference = document.getElementById('mini-filter-reference')?.value.trim() || '';
+    const dateFrom = document.getElementById('mini-filter-date-from')?.value || '';
+    const dateTo = document.getElementById('mini-filter-date-to')?.value || '';
+    const channel = document.getElementById('mini-filter-channel')?.value || '';
+    const term = document.getElementById('mini-filter-search')?.value.trim() || '';
     const includeUsed = document.getElementById('mini-filter-show-used')?.checked || false;
 
     const tbody = document.getElementById('mini-filter-results');
     const emptyMsg = document.getElementById('mini-filter-empty');
+    const countBadge = document.getElementById('mini-filter-count-badge');
 
     clearTimeout(searchPaymentTimeout);
 
     searchPaymentTimeout = setTimeout(async () => {
         try {
-            tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-slate-400">A procurar...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400 font-bold text-xs"><span class="inline-block animate-pulse">A procurar pagamentos no banco...</span></td></tr>';
             emptyMsg.classList.add('hidden');
+            if (countBadge) countBadge.innerText = 'A procurar...';
 
-            const results = await searchPayments(bank, amount, term, includeUsed);
+            let amountTolerance = 0;
+            if (amountMode.startsWith('tol_')) {
+                amountTolerance = parseFloat(amountMode.replace('tol_', '')) || 0;
+            }
+
+            const searchParams = {
+                bank,
+                accountOwner: owner,
+                amount: amountMode !== 'range' ? amount : '',
+                amountTolerance,
+                amountMin: amountMode === 'range' ? amountMin : '',
+                amountMax: amountMode === 'range' ? amountMax : '',
+                reference,
+                dateFrom,
+                dateTo,
+                channel,
+                term,
+                includeReconciled: includeUsed,
+                limit: 150
+            };
+
+            const results = await searchPayments(searchParams);
             tbody.innerHTML = '';
+
+            const totalSum = results.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+            if (countBadge) {
+                countBadge.innerText = results.length + ' movimentos (' + formatMZN(totalSum) + ')';
+            }
 
             if (results.length === 0) {
                 emptyMsg.classList.remove('hidden');
@@ -7246,55 +7414,127 @@ export async function searchPaymentMiniFilter() {
                 const tr = document.createElement('tr');
                 const isSelected = selectedPaymentsForLink.some(p => p.id === rec.id);
                 const checkedAttr = isSelected ? 'checked' : '';
-                let rowClass = isSelected ? 'bg-blue-100 border-blue-200 font-bold' : 'hover:bg-blue-50';
+                let rowClass = isSelected ? 'bg-blue-100/80 border-blue-200 font-bold' : 'hover:bg-blue-50/70';
                 if (rec.reconciled && !isSelected) {
-                    rowClass = 'bg-slate-100 opacity-60 cursor-not-allowed';
+                    rowClass = 'bg-slate-100/70 opacity-60 cursor-not-allowed';
                 } else {
                     rowClass += ' cursor-pointer';
                 }
 
-                tr.className = `${rowClass} transition-colors border-b border-slate-50`;
+                tr.className = rowClass + ' transition-colors border-b border-slate-100';
                 tr.dataset.id = rec.id;
 
                 const refText = rec.reference || rec.description || '';
                 const bankDisplay = getPaymentBankDisplay(rec);
                 
-                // Apenas permitir clique na linha se não estiver reconciliado (usado)
+                // Permitir clique na linha se não estiver reconciliado (usado)
                 if (!rec.reconciled) {
                     tr.onclick = () => togglePaymentSelection(rec.id, rec.date, refText, rec.amount, bankDisplay, rec.account_owner || '');
                 }
 
-                // Formatar Data
-                const dateStr = rec.date ? rec.date.split(' ')[0] : '—';
-                const amountFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(rec.amount);
-
-                let descHtml = rec.description || rec.reference || '—';
-                
-                if (rec.reconciled) {
-                    const allocatedToInfo = rec.allocated_to ? ` Alocado a: ${rec.allocated_to}` : '';
-                    descHtml = `<span class="bg-slate-200 text-slate-600 px-1 py-0.5 rounded text-[8px] font-black mr-1 border border-slate-300" title="${rec.allocated_to || 'Já alocado'}">USADO</span>` + descHtml + `<div class="text-[9px] text-red-500 font-bold mt-0.5 truncate" title="${allocatedToInfo}">${allocatedToInfo}</div>`;
+                // 1. Data formatada DD/MM/AAAA
+                const dateRaw = rec.date ? rec.date.split(' ')[0] : '—';
+                let dateFormatted = dateRaw;
+                if (dateRaw && dateRaw.includes('-')) {
+                    const dp = dateRaw.split('-');
+                    if (dp.length === 3) dateFormatted = dp[2] + '/' + dp[1] + '/' + dp[0];
                 }
 
-                // Checkbox disabled se estiver reconciliado
+                // 2. Banco e Titular Badges
+                const rawBank = (Array.isArray(rec.bank) ? rec.bank[0] : (rec.bank || '')).toUpperCase();
+                let bankBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                if (rawBank.includes('BIM')) bankBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
+                else if (rawBank.includes('BCI')) bankBadgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
+                else if (rawBank.includes('STB') || rawBank.includes('STANDARD')) bankBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                else if (rawBank.includes('NEDBANK')) bankBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                else if (rawBank.includes('EMOLA') || rawBank.includes('MPESA')) bankBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
+
+                const ownerUpper = (rec.account_owner || '').toUpperCase();
+                let ownerBadge = '';
+                if (ownerUpper.includes('BOSS') || ownerUpper.includes('FILIPE')) {
+                    ownerBadge = '<span class="text-[8px] font-black text-amber-700 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">BOSS</span>';
+                } else if (ownerUpper.includes('JUPITER')) {
+                    ownerBadge = '<span class="text-[8px] font-black text-slate-600 bg-slate-100 px-1 py-0.5 rounded border border-slate-200">JUPITER</span>';
+                }
+
+                // 3. Referência / Documento
+                let displayRef = rec.reference || '';
+                if (!displayRef && rec.description) {
+                    const refM = rec.description.match(/Ref\.?\s*([0-9A-Z]+)/i);
+                    if (refM) displayRef = refM[0];
+                }
+                const cleanDisplayRef = displayRef ? displayRef.split(' (Ref Mestre:')[0] : '';
+
+                // 4. Canal e Descrição
+                const descUpper = (rec.description || '').toUpperCase();
+                let channelBadge = '';
+                if (descUpper.includes('MPESA') || descUpper.includes('M-PESA')) {
+                    channelBadge = '<span class="bg-amber-100 text-amber-800 text-[8px] font-black px-1.5 py-0.5 rounded mr-1">M-PESA</span>';
+                } else if (descUpper.includes('EMOLA') || descUpper.includes('E-MOLA')) {
+                    channelBadge = '<span class="bg-orange-100 text-orange-800 text-[8px] font-black px-1.5 py-0.5 rounded mr-1">E-MOLA</span>';
+                } else if (descUpper.includes('P24') || descUpper.includes('SIMO')) {
+                    channelBadge = '<span class="bg-purple-100 text-purple-800 text-[8px] font-black px-1.5 py-0.5 rounded mr-1">P24</span>';
+                } else if (descUpper.includes('ATM')) {
+                    channelBadge = '<span class="bg-blue-100 text-blue-800 text-[8px] font-black px-1.5 py-0.5 rounded mr-1">ATM</span>';
+                } else if (descUpper.includes('IZI')) {
+                    channelBadge = '<span class="bg-rose-100 text-rose-800 text-[8px] font-black px-1.5 py-0.5 rounded mr-1">IZI</span>';
+                } else if (descUpper.includes('INTERNET BANKING') || descUpper.includes(' SCI MB') || descUpper.includes('IB|')) {
+                    channelBadge = '<span class="bg-sky-100 text-sky-800 text-[8px] font-black px-1.5 py-0.5 rounded mr-1">IB</span>';
+                }
+
+                let descHtml = channelBadge + '<span class="text-slate-700">' + (rec.description || '—') + '</span>';
+                if (rec.reconciled) {
+                    const allocatedToInfo = rec.allocated_to ? (' Alocado a: ' + rec.allocated_to) : '';
+                    descHtml = '<span class="bg-slate-200 text-slate-600 px-1 py-0.5 rounded text-[8px] font-black mr-1 border border-slate-300" title="' + (rec.allocated_to || 'Já alocado') + '">USADO</span>' + descHtml + '<div class="text-[9px] text-red-500 font-bold mt-0.5 truncate" title="' + allocatedToInfo + '">' + allocatedToInfo + '</div>';
+                }
+
+                // 5. Montante Formatado
+                const amountFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(rec.amount);
                 const checkboxDisabled = rec.reconciled ? 'disabled' : '';
 
                 tr.innerHTML = `
-                    <td class="px-3 py-1 text-center" onclick="event.stopPropagation();">
-                        <input type="checkbox" ${checkedAttr} ${checkboxDisabled} onchange="ui.togglePaymentSelection('${rec.id}', '${rec.date}', '${refText.replace(/'/g, "\\'")}', parseFloat('${rec.amount}'), '${bankDisplay.replace(/'/g, "\\'")}', '${(rec.account_owner || '').replace(/'/g, "\\'")}')" class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 ${rec.reconciled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}">
+                    <td class="px-3 py-2 text-center" onclick="event.stopPropagation();">
+                        <input type="checkbox" ${checkedAttr} ${checkboxDisabled} class="mini-filter-chk w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 ${rec.reconciled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}">
                     </td>
-                    <td class="px-4 py-1 whitespace-nowrap">${dateStr}</td>
-                    <td class="px-4 py-1 font-normal text-slate-700">${bankDisplay}</td>
-                    <td class="px-4 py-1 text-slate-600 truncate max-w-[250px]" title="${(rec.description || rec.reference || '').replace(/"/g, '&quot;')}">${descHtml}</td>
-                    <td class="px-4 py-1 text-right font-normal text-green-600">${amountFormatted}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-xs font-semibold text-slate-600">${dateFormatted}</td>
+                    <td class="px-3 py-2 whitespace-nowrap">
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${bankBadgeClass}">${rawBank || '—'}</span>
+                            ${ownerBadge}
+                        </div>
+                    </td>
+                    <td class="px-3 py-2 text-xs font-mono font-bold text-slate-800 max-w-[150px] truncate" title="${cleanDisplayRef}">
+                        ${cleanDisplayRef ? '<span class="mini-filter-ref-btn cursor-pointer hover:text-blue-600 transition-colors" title="Clique para copiar e filtrar">' + cleanDisplayRef + '</span>' : '<span class="text-slate-300 font-normal">—</span>'}
+                    </td>
+                    <td class="px-3 py-2 text-xs text-slate-600 max-w-[280px] truncate" title="${(rec.description || '').replace(/"/g, '&quot;')}">${descHtml}</td>
+                    <td class="px-3 py-2 text-right font-black text-xs md:text-sm text-green-600 whitespace-nowrap">${amountFormatted} <span class="text-[9px] font-bold text-slate-400">MT</span></td>
                 `;
+
+                // Configurar eventos sem interpolação de strings no HTML
+                const chk = tr.querySelector('.mini-filter-chk');
+                if (chk) {
+                    chk.onchange = () => togglePaymentSelection(rec.id, rec.date, refText, parseFloat(rec.amount), bankDisplay, rec.account_owner || '');
+                }
+
+                const refBtn = tr.querySelector('.mini-filter-ref-btn');
+                if (refBtn) {
+                    refBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        if (window.copyToClipboard) window.copyToClipboard(cleanDisplayRef, 'Referência copiada!');
+                        setMiniFilterReference(cleanDisplayRef);
+                    };
+                }
+
                 tbody.appendChild(tr);
             });
         } catch (error) {
             console.error("Erro na pesquisa do mini-filtro:", error);
-            tbody.innerHTML = '<tr><td colspan="4" class="p-4 text-center text-red-400">Erro ao procurar pagamentos.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-red-500 font-bold text-xs">Erro ao procurar pagamentos. Verifique a ligação de rede.</td></tr>';
+            if (countBadge) countBadge.innerText = 'Erro';
         }
     }, 300);
 }
+
 
 export function checkMiniFilterStatus() {
     const allocated = parseFloat(document.getElementById('mini-filter-allocate-amount').value) || 0;
@@ -7948,8 +8188,8 @@ export function closePaymentMiniFilter() {
         side.classList.add('w-0');
     }
     if (container) {
-        container.classList.remove('max-w-6xl');
-        container.classList.add('max-w-3xl');
+        container.classList.remove('max-w-7xl');
+        container.classList.add('max-w-5xl');
     }
     if (modal) modal.classList.add('hidden');
     

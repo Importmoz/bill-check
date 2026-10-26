@@ -294,44 +294,123 @@ export async function listBankIncomes(filter = '', perPage = 5000) {
 }
 
 /**
- * Procura pagamentos no PocketBase
+ * Procura pagamentos no PocketBase com suporte a múltiplos filtros bancários
+ * Suporta tanto a chamada clássica (bank, amount, term, includeReconciled)
+ * quanto passagem de objeto rico { bank, accountOwner, amount, amountTolerance, amountMin, amountMax, reference, dateFrom, dateTo, channel, term, includeReconciled, limit }
  */
-export async function searchPayments(bank, amount, term, includeReconciled = false) {
+export async function searchPayments(bankOrOptions, amount, term, includeReconciled = false, extraOpts = {}) {
+    let opts = {};
+    if (typeof bankOrOptions === 'object' && bankOrOptions !== null) {
+        opts = { ...bankOrOptions };
+    } else {
+        opts = {
+            bank: bankOrOptions,
+            amount: amount,
+            term: term,
+            includeReconciled: includeReconciled,
+            ...extraOpts
+        };
+    }
+
     let conditions = [];
-    
-    // Se pesquisar por termo ou valor, assumimos que procura um movimento específico e mostramos tudo
-    const isSpecificSearch = (term && term.trim() !== '') || (amount && String(amount).trim() !== '');
-    
-    if (!includeReconciled && !isSpecificSearch) {
-        conditions.push(`reconciled != true`);
+
+    // Se o operador não quer ver usados, filtra estritamente reconciled != true
+    if (!opts.includeReconciled) {
+        conditions.push("reconciled != true");
     }
-    
-    if (bank) {
-        let cleanBank = bank.replace(' BOSS', '').replace(' JUPITER', '').trim();
-        conditions.push(`bank ~ "${cleanBank}"`);
-    }
-    
-    if (amount) {
-        let cleanAmount = String(amount).trim();
-        if (/^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/.test(cleanAmount)) {
-             cleanAmount = cleanAmount.replace(/\./g, '').replace(',', '.');
-        } else if (/^-?\d+(?:,\d+)?$/.test(cleanAmount)) { 
-             cleanAmount = cleanAmount.replace(',', '.');
-        }
-        
-        const numVal = parseFloat(cleanAmount);
-        if (!isNaN(numVal)) {
-            conditions.push(`amount = ${numVal}`);
+
+    // 1. Banco (BIM, BCI, STB, NEDBANK, EMOLA)
+    if (opts.bank) {
+        let cleanBank = String(opts.bank).replace(' BOSS', '').replace(' JUPITER', '').trim();
+        if (cleanBank) {
+            conditions.push(`bank ~ "${cleanBank}"`);
         }
     }
-    
-    if (term) {
-        const termFilter = buildSearchFilter(term);
+
+    // 2. Titular da Conta (JUPITER, FILIPE/BOSS)
+    if (opts.accountOwner) {
+        let owner = String(opts.accountOwner).trim();
+        if (owner) {
+            conditions.push(`account_owner ~ "${owner.replace(/"/g, '\\"')}"`);
+        }
+    }
+
+    // 3. Referência / Nº de Documento / Num. Operação (Standard Bank FT..., Nedbank FT..., BCI Doc#, BIM Ref)
+    if (opts.reference) {
+        let cleanRef = String(opts.reference).trim().replace(/"/g, '\\"');
+        if (cleanRef) {
+            conditions.push(`(reference ~ "${cleanRef}" || description ~ "${cleanRef}")`);
+        }
+    }
+
+    // 4. Valor (Exato, com Tolerância ±MT ou Intervalo Min-Max)
+    const parseNum = (v) => {
+        if (v === undefined || v === null || v === '') return NaN;
+        let s = String(v).trim();
+        if (/^-?\d{1,3}(?:\.\d{3})*(?:,\d+)?$/.test(s)) {
+            s = s.replace(/\./g, '').replace(',', '.');
+        } else if (/^-?\d+(?:,\d+)?$/.test(s)) {
+            s = s.replace(',', '.');
+        }
+        return parseFloat(s);
+    };
+
+    const minVal = parseNum(opts.amountMin);
+    const maxVal = parseNum(opts.amountMax);
+    const baseVal = parseNum(opts.amount);
+    const tolVal = parseNum(opts.amountTolerance);
+
+    if (!isNaN(minVal) && !isNaN(maxVal)) {
+        conditions.push(`amount >= ${minVal} && amount <= ${maxVal}`);
+    } else if (!isNaN(minVal)) {
+        conditions.push(`amount >= ${minVal}`);
+    } else if (!isNaN(maxVal)) {
+        conditions.push(`amount <= ${maxVal}`);
+    } else if (!isNaN(baseVal)) {
+        if (!isNaN(tolVal) && tolVal > 0) {
+            const low = Math.max(0, baseVal - tolVal);
+            const high = baseVal + tolVal;
+            conditions.push(`amount >= ${low.toFixed(2)} && amount <= ${high.toFixed(2)}`);
+        } else {
+            conditions.push(`amount = ${baseVal}`);
+        }
+    }
+
+    // 5. Intervalo de Datas (Data Movimento / Data Valor)
+    if (opts.dateFrom) {
+        conditions.push(`date >= "${opts.dateFrom} 00:00:00"`);
+    }
+    if (opts.dateTo) {
+        conditions.push(`date <= "${opts.dateTo} 23:59:59"`);
+    }
+
+    // 6. Canal / Meio de Pagamento (P24, MPESA, EMOLA, IB, IZI, TRF)
+    if (opts.channel) {
+        const ch = String(opts.channel).toUpperCase().trim();
+        if (ch === 'MPESA') {
+            conditions.push('(description ~ "MPESA" || description ~ "M-PESA" || description ~ "CARTEIRAS")');
+        } else if (ch === 'EMOLA') {
+            conditions.push('(description ~ "EMOLA" || description ~ "E-MOLA" || bank ~ "EMOLA")');
+        } else if (ch === 'P24' || ch === 'ATM' || ch === 'SIMO') {
+            conditions.push('(description ~ "P24" || description ~ "ATM" || description ~ "SIMO")');
+        } else if (ch === 'IB') {
+            conditions.push('(description ~ "INTERNET BANKING" || description ~ " IB" || description ~ "IB|" || description ~ "SCI MB")');
+        } else if (ch === 'IZI') {
+            conditions.push('(description ~ "IZI")');
+        } else if (ch === 'TRF') {
+            conditions.push('(description ~ "TRF" || description ~ "TRANSF")');
+        }
+    }
+
+    // 7. Termo Geral de Busca Livre
+    if (opts.term) {
+        const termFilter = buildSearchFilter(opts.term);
         if (termFilter) conditions.push(`(${termFilter})`);
     }
-    
+
     const filter = conditions.join(" && ");
-    return await listBankIncomes(filter, 100);
+    const limit = opts.limit || 150;
+    return await listBankIncomes(filter, limit);
 }
 
 export async function getPaymentsByAllocatedTo(allocatedTo) {
