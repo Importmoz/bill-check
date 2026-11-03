@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, unallocatePayment, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
 import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js';
 import { JUPITER_LOGO_DATA_URL } from './logoData.js';
 import { printService } from './printService.js';
@@ -2522,14 +2522,14 @@ export function renderConfirmList(data, filterText = "", statusFilter = null, is
             clientStatus = 'CONFIRMADO';
             displayStatus = 'CONFIRMADO';
             statusClass = "bg-green-600 text-white font-black";
+        } else if (cleanStatuses.some(s => s === 'PARCIAL') || (cleanStatuses.some(s => s === 'CONFIRMADO') && cleanStatuses.some(s => s === 'PENDENTE' || s === 'AGUARDA PAGAMENTO'))) {
+            clientStatus = 'PARCIAL';
+            displayStatus = 'PARCIAL';
+            statusClass = "bg-yellow-500 text-white font-black";
         } else if (cleanStatuses.some(s => s === 'PENDENTE')) {
             clientStatus = 'PENDENTE';
             displayStatus = 'PENDENTE';
             statusClass = "bg-yellow-400 text-black font-black";
-        } else if (cleanStatuses.some(s => s === 'PARCIAL') || (cleanStatuses.some(s => s === 'CONFIRMADO') && cleanStatuses.some(s => s === 'AGUARDA PAGAMENTO'))) {
-            clientStatus = 'PARCIAL';
-            displayStatus = 'PARCIAL';
-            statusClass = "bg-yellow-500 text-white font-black";
         } else {
             clientStatus = 'AGUARDA PAGAMENTO';
             displayStatus = 'AGUARDA PAG.';
@@ -2912,11 +2912,15 @@ export async function showConfirmDetail(client, clientIndex) {
     window.currentActiveClient = client;
     window.currentActiveClientIndex = clientIndex;
 
+    // Inicialmente ocultar botão de auditoria até verificar se existem registos
+    setAuditHistoryButtonVisible(false);
+
     // Carregar metadados de auditoria recentes do cliente (armazém, guia)
+    let auditLogs = [];
     try {
         const sheetId = state.confirm?.sheetId || '';
         if (sheetId && client.no) {
-            const auditLogs = await getClientAuditLogs(sheetId, client.no);
+            auditLogs = await getClientAuditLogs(sheetId, client.no);
             if (auditLogs && auditLogs.length > 0) {
                 const lastSave = auditLogs.find(l => l.type === 'AUDIT_ARMAZEM_GRAVADO' || l.type === 'AUDIT_ARMAZEM_ENTREGUE');
                 if (lastSave) {
@@ -2933,6 +2937,8 @@ export async function showConfirmDetail(client, clientIndex) {
     } catch (auditFetchErr) {
         console.warn('[Audit] Erro ao carregar logs preliminares do cliente:', auditFetchErr);
     }
+    client.auditLogs = auditLogs;
+    setAuditHistoryButtonVisible(Boolean(auditLogs && auditLogs.length > 0));
     const nameEl = document.getElementById('confirm-client-detail-name');
     const idEl = document.getElementById('confirm-client-detail-id');
     const breadcrumbEl = document.getElementById('confirm-breadcrumb');
@@ -3080,6 +3086,9 @@ export async function showConfirmDetail(client, clientIndex) {
     let totalAmountDuty = 0;
     let totalGSheetBalance = 0;
     let allConfirmed = true;
+    let payments = [];
+    let freightPayments = [];
+    let isFullyPrepaid = false;
     
     // Novas Variáveis Armazém
     let totalPackages = 0;
@@ -3232,7 +3241,7 @@ export async function showConfirmDetail(client, clientIndex) {
             }
         }
 
-        const isFullyPrepaid = totalAmountDuty > 0 && Math.abs(totalAmountDuty - totalDutyPrepaid) < 0.01;
+        isFullyPrepaid = totalAmountDuty > 0 && Math.abs(totalAmountDuty - totalDutyPrepaid) < 0.01;
         let targetAmount = totalAmountDuty - totalDutyPrepaid;
         if (isFullyPrepaid) {
             targetAmount = totalDutyPrepaid; // Se for totalmente prepaid, o alvo é o prepaid
@@ -3241,8 +3250,8 @@ export async function showConfirmDetail(client, clientIndex) {
         }
 
         // Buscar todos os pagamentos já alocados a este cliente
-        const payments = await getPaymentsByAllocatedTo(combinedInfo);
-        const freightPayments = await getPaymentsByAllocatedTo(`FRETE - ${combinedInfo}`);
+        payments = await getPaymentsByAllocatedTo(combinedInfo);
+        freightPayments = await getPaymentsByAllocatedTo(`FRETE - ${combinedInfo}`);
         
         let totalAllocated = 0;
         let pbHtml = '';
@@ -3250,6 +3259,8 @@ export async function showConfirmDetail(client, clientIndex) {
         // FUNÇÃO AUXILIAR PARA GERAR O HTML DE RECONCILIAÇÃO E BUSCAR SIBLINGS
         const renderReconciliationBlock = (pmts, title, color) => {
             if (!pmts || pmts.length === 0) return '';
+            const userRole = pb.authStore.model?.role || 'USER';
+            const canUnallocate = (userRole !== 'USER' && userRole !== 'USER_L1');
             
             let html = `
                 <div class="mb-4 p-4 border border-${color}-100 bg-${color}-50 rounded-xl shadow-inner">
@@ -3290,6 +3301,17 @@ export async function showConfirmDetail(client, clientIndex) {
                                 ${vinculadoEm ? `<span class="text-[9px] text-${color}-700 font-mono italic">${vinculadoEm}</span>` : ''}
                             </div>
                         ` : ''}
+                        <div class="col-span-2 flex items-center justify-between pt-1 mt-1 border-t border-${color}-100/70">
+                            <span class="text-[9px] text-${color}-600/70 font-mono">ID: ${payment.id}</span>
+                            ${canUnallocate ? `
+                                <button type="button" onclick="event.stopPropagation(); window.confirmUnallocatePayment('${payment.id}', ${payment.amount}, '${displayRef.replace(/'/g, "\\'")}', '${title.includes('FRETE') ? 'FRETE' : 'DUTY'}')"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg transition-all shadow-2xs active:scale-95 cursor-pointer"
+                                    title="Desalocar este pagamento para que volte a ficar LIVRE no banco de dados">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>
+                                    <span>Desalocar Movimento</span>
+                                </button>
+                            ` : ''}
+                        </div>
                         <div class="col-span-2" id="siblings-${payment.id}"></div>
                     </div>
                 `;
@@ -3505,23 +3527,23 @@ export async function showConfirmDetail(client, clientIndex) {
     // Configurar e limpar seletores em massa
     const role = pb.authStore.model?.role || 'USER';
     const isL1 = role === 'USER' || role === 'USER_L1';
-    const bulkBankSelect = document.getElementById('bulk-bank');
-    const bulkStatusSelect = document.getElementById('bulk-status');
-    if (bulkBankSelect) {
-        bulkBankSelect.value = '';
-    }
-    if (bulkStatusSelect) {
-        bulkStatusSelect.value = '';
-        if (isL1) {
-            bulkStatusSelect.disabled = true;
-            bulkStatusSelect.classList.add('bg-slate-100', 'cursor-not-allowed', 'opacity-60');
-            bulkStatusSelect.classList.remove('bg-white', 'cursor-pointer');
+    const isAdmin = role === 'ADMIN';
+
+    // Botão Adicionar Artigo (Apenas Administrador)
+    const addArticleBtn = document.getElementById('btn-add-confirm-article');
+    if (addArticleBtn) {
+        if (isAdmin) {
+            addArticleBtn.classList.remove('hidden');
         } else {
-            bulkStatusSelect.disabled = false;
-            bulkStatusSelect.classList.remove('bg-slate-100', 'cursor-not-allowed', 'opacity-60');
-            bulkStatusSelect.classList.add('bg-white', 'cursor-pointer');
+            addArticleBtn.classList.add('hidden');
         }
     }
+
+    // Botão de Histórico de Auditoria (Apenas se existirem registos)
+    setAuditHistoryButtonVisible(Boolean(auditLogs && auditLogs.length > 0));
+
+    closeBulkActionsPanel();
+    resetBulkDropdownsUI(isL1);
     // Atualizar UI do Armazém
     const pkgEl = document.getElementById('armazem-total-packages');
     const cbmEl = document.getElementById('armazem-total-volume');
@@ -3530,7 +3552,7 @@ export async function showConfirmDetail(client, clientIndex) {
     if (cbmEl) cbmEl.innerText = formatValue(totalCbm);
 
     // Renderizar tabela e controlo de entrega do Armazém
-    renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed);
+    await renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed);
 
     // Botão Mini de Frete na aba Confirm
     const miniFreightBtn = document.getElementById('btn-confirm-freight-mini');
@@ -3542,12 +3564,21 @@ export async function showConfirmDetail(client, clientIndex) {
             if (totalAmountFreight > 0 && (totalBalanceFreight <= 0 || totalPaidFreight >= totalAmountFreight)) {
                 miniFreightStatus.innerText = 'PAGO';
                 miniFreightStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-green-100 text-green-700';
+                miniFreightBtn.title = 'Frete totalmente pago';
+                miniFreightBtn.classList.remove('cursor-pointer', 'active:scale-95');
+                miniFreightBtn.classList.add('cursor-default');
             } else if (totalPaidFreight > 0 && totalBalanceFreight > 0) {
                 miniFreightStatus.innerText = 'PARCIAL';
                 miniFreightStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-yellow-100 text-yellow-700';
+                miniFreightBtn.title = 'Clique para atualizar frete (Saldo Pendente)';
+                miniFreightBtn.classList.add('cursor-pointer', 'active:scale-95');
+                miniFreightBtn.classList.remove('cursor-default');
             } else {
                 miniFreightStatus.innerText = 'PENDENTE';
                 miniFreightStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-red-100 text-red-700';
+                miniFreightBtn.title = 'Clique para atualizar frete (Pendente)';
+                miniFreightBtn.classList.add('cursor-pointer', 'active:scale-95');
+                miniFreightBtn.classList.remove('cursor-default');
             }
         } else {
             miniFreightBtn.dataset.hasFreight = 'false';
@@ -3555,10 +3586,54 @@ export async function showConfirmDetail(client, clientIndex) {
         }
     }
 
+    // Regras de Visibilidade da Aba Armazém:
+    // Ocultar quando o valor ainda não estiver vinculado e com o frete não pago
+    const isDutySettled = (payments && payments.length > 0) || allConfirmed || isFullyPrepaid || (totalAmountDuty <= 0);
+    const isFreightPaid = (totalAmountFreight <= 0) || (totalBalanceFreight <= 0) || (totalPaidFreight >= totalAmountFreight) || (freightPayments && freightPayments.length > 0);
+    
+    const motivoIsencaoColIdx = findColumnIndex(columns, ['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO', 'MOTIVO']);
+    const isExtraordinaria = client.rows?.some(r => {
+        const raw = motivoIsencaoColIdx !== -1 ? String(r.originalRow[motivoIsencaoColIdx] || '') : '';
+        return raw.toUpperCase().includes('[EXTRAORDINÁRIA]') || raw.toUpperCase().includes('[EXTRAORDINARIA]');
+    }) || false;
+
+    const isArmazemAllowed = isExtraordinaria || (isDutySettled && isFreightPaid);
+    window.currentClientArmazemAllowed = isArmazemAllowed;
+
+    const armazemTab = document.getElementById('btn-tab-armazem');
+    if (armazemTab) {
+        if (isArmazemAllowed) {
+            armazemTab.classList.remove('hidden');
+            armazemTab.style.display = '';
+        } else {
+            armazemTab.classList.add('hidden');
+            armazemTab.style.display = 'none';
+        }
+    }
+
+    // Botão Mini / Card de Armazenagem na aba Confirm
+    // Quando o armazém for igual a 0 (ou isento), não mostrar o card ARMAZEM
+    const miniStorageBtn = document.getElementById('btn-confirm-storage-mini');
+    const miniStorageStatus = document.getElementById('confirm-storage-mini-status');
+    const stInfo = window.currentClientStorageInfo;
+    if (miniStorageBtn && miniStorageStatus) {
+        if (!stInfo || stInfo.cost <= 0 || stInfo.isExempt) {
+            miniStorageBtn.classList.add('hidden');
+        } else {
+            miniStorageBtn.classList.remove('hidden');
+            if (!stInfo.isPaid) {
+                miniStorageStatus.innerText = `PENDENTE (${formatMZN(stInfo.cost)})`;
+                miniStorageStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 font-extrabold animate-pulse';
+            } else {
+                miniStorageStatus.innerText = `PAGO (${formatMZN(stInfo.cost)})`;
+                miniStorageStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-bold';
+            }
+        }
+    }
+
     // Restaurar/manter a aba ativa correspondente
     let activeTab = 'confirm';
-    if (isSameClient) {
-        const armazemTab = document.getElementById('btn-tab-armazem');
+    if (isSameClient && isArmazemAllowed) {
         if (armazemTab && armazemTab.classList.contains('bg-white')) {
             activeTab = 'armazem';
         }
@@ -3682,8 +3757,91 @@ export async function replyToConfirmationNote(note) {
         toast('Erro ao gravar dados no GSheet: ' + err.message, 'error');
     } finally {
         setLoader(false);
+        closeBulkActionsPanel();
     }
 }
+
+/**
+ * Confirma e executa a desalocação de um pagamento bancário no PocketBase.
+ * Liberta o movimento para ficar disponível novamente para o cliente correto.
+ */
+export async function confirmUnallocatePayment(paymentId, amount, ref, type = 'DUTY') {
+    const role = pb.authStore.model?.role || 'USER';
+    if (role === 'USER' || role === 'USER_L1') {
+        alert("Acesso Negado: A desalocação de pagamentos exige nível de permissão Nível 2 ou Administrador.");
+        return;
+    }
+
+    const formattedAmount = formatMZN(amount);
+    const clientNo = window.currentActiveClient?.no || '';
+    const clientName = window.currentActiveClient?.displayName || window.currentActiveClient?.name || '';
+    const sheetId = state.confirm?.sheetId || '';
+
+    const confirmMsg = `Tem a certeza que deseja desalocar este movimento bancário de ${formattedAmount} deste cliente?\n\n` +
+        `• O movimento voltará a ficar LIVRE no sistema e poderá ser atribuído ao cliente correto.\n` +
+        `• Se foi uma divisão (split), o valor será reintegrado ao movimento mestre se este estiver livre.\n\n` +
+        `Confirmar desalocação?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        if (typeof showLoader === 'function') showLoader();
+
+        const res = await unallocatePayment(paymentId);
+
+        // Registar auditoria detalhada
+        try {
+            await logConfirmAudit(sheetId, clientNo, clientName, 'PAGAMENTO_DESALOCADO', {
+                paymentId,
+                amount,
+                ref,
+                tipo: type,
+                mergedWithMaster: Boolean(res.mergedWithMaster),
+                masterId: res.masterId || ''
+            });
+        } catch (auditErr) {
+            console.warn('[Audit] Erro ao registar auditoria de desalocação:', auditErr);
+        }
+
+        const successMsg = `Movimento de ${formattedAmount} desalocado com sucesso! O pagamento está agora LIVRE.`;
+        if (typeof toast === 'function') {
+            toast(successMsg, "success");
+        } else if (typeof ui.toast === 'function') {
+            ui.toast(successMsg, "success");
+        } else {
+            alert(successMsg);
+        }
+
+        // Atualizar os detalhes do cliente se estiver aberto
+        if (window.currentActiveClient) {
+            await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+        }
+
+        // Se a lista de movimentos bancários estiver visível ou aberta, atualizar
+        if (typeof renderBankIncomes === 'function' && state.bank && state.bank.incomes) {
+            const item = state.bank.incomes.find(b => b.id === paymentId);
+            if (item) {
+                item.reconciled = false;
+                item.allocated_to = '';
+            }
+            renderBankIncomes();
+        }
+
+        // Se o mini filtro de pagamentos estiver aberto, atualizar a pesquisa
+        const miniFilterModal = document.getElementById('payment-mini-filter');
+        if (miniFilterModal && !miniFilterModal.classList.contains('hidden')) {
+            if (typeof searchPaymentMiniFilter === 'function') {
+                searchPaymentMiniFilter();
+            }
+        }
+    } catch (err) {
+        console.error("Erro ao desalocar pagamento:", err);
+        alert("Erro ao desalocar pagamento: " + (err.message || err));
+    } finally {
+        if (typeof hideLoader === 'function') hideLoader();
+    }
+}
+window.confirmUnallocatePayment = confirmUnallocatePayment;
 
 /**
  * Abre o modal que lista mercadorias pendentes no armazém, 
@@ -3860,9 +4018,6 @@ export function openWarehouseStatusModal() {
         if (dDate && targetEndDate) {
             const timeDiff = targetEndDate.getTime() - dDate.getTime();
             daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
-            if (daysDiff > 0) {
-                daysDiff -= 1;
-            }
         }
 
         // Regra de cálculo de armazenagem
@@ -3885,7 +4040,7 @@ export function openWarehouseStatusModal() {
 
         const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
         const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? String(client.rows[0]?.[motivoIsencaoIdx] || '').trim() : '';
-        const storageInfo = parseStorageInfo(storagePaidVal, storageCost, motivoIsencaoVal);
+        const storageInfo = parseStorageInfo(storagePaidVal, storageCost, motivoIsencaoVal, false);
         storageCost = storageInfo.cost;
         const isStoragePaid = storageInfo.isPaid;
 
@@ -4305,8 +4460,14 @@ window.openClientFromWarehouse = function(groupId) {
         closeModal('modal-warehouse-status');
         
         setTimeout(async () => {
-            await showConfirmDetail(client, client.no || '—');
-            setLoader(false);
+            try {
+                await showConfirmDetail(client, client.no || '—');
+            } catch (err) {
+                console.error('[CONFIRM] Erro ao carregar detalhes do cliente:', err);
+                toast('Erro ao abrir cliente: ' + (err.message || err), 'error');
+            } finally {
+                setLoader(false);
+            }
         }, 50);
     } else {
         toast('Não foi possível carregar os detalhes do cliente.', 'error');
@@ -4319,8 +4480,14 @@ window.openClientWithLoader = function(groupId) {
     if (client) {
         setLoader(true, 'A carregar cliente...');
         setTimeout(async () => {
-            await showConfirmDetail(client, client.no || '—');
-            setLoader(false);
+            try {
+                await showConfirmDetail(client, client.no || '—');
+            } catch (err) {
+                console.error('[CONFIRM] Erro ao carregar detalhes do cliente:', err);
+                toast('Erro ao abrir cliente: ' + (err.message || err), 'error');
+            } finally {
+                setLoader(false);
+            }
         }, 50);
     } else {
         toast('Não foi possível carregar os detalhes do cliente.', 'error');
@@ -4770,24 +4937,42 @@ export function toggleConfirmArmazem(mode) {
     const bulkContent = document.getElementById('confirm-bulk-actions-panel');
     const summaryCards = document.getElementById('summary-cards');
     const miniFreightBtn = document.getElementById('btn-confirm-freight-mini');
+    const miniStorageBtn = document.getElementById('btn-confirm-storage-mini');
     const mainCol = document.getElementById('confirm-main-content-col');
     const sideSuportes = document.getElementById('confirm-side-suportes');
-    const reconciliationPanel = document.getElementById('btn-toggle-reconciliation');
     const paymentInfoContainer = document.getElementById('payment-info-container');
 
     if (mode === 'confirm') {
         confirmTab.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
         confirmTab.classList.remove('bg-transparent', 'text-slate-400');
-        armazemTab.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
-        armazemTab.classList.add('bg-transparent', 'text-slate-400');
+        if (armazemTab) {
+            armazemTab.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+            armazemTab.classList.add('bg-transparent', 'text-slate-400');
+        }
 
         confirmContent.classList.remove('hidden');
         armazemContent.classList.add('hidden');
         if (bulkPanel) bulkPanel.style.display = '';
-        if (reconciliationPanel) reconciliationPanel.style.display = '';
+        closeBulkActionsPanel();
+        if (paymentInfoContainer) paymentInfoContainer.classList.remove('hidden');
+        const role = pb.authStore.model?.role || 'USER';
+        const isAdmin = role === 'ADMIN';
+        const addArticleBtn = document.getElementById('btn-add-confirm-article');
+        if (addArticleBtn) {
+            if (isAdmin) addArticleBtn.classList.remove('hidden');
+            else addArticleBtn.classList.add('hidden');
+        }
         if (summaryCards) summaryCards.style.display = '';
         if (miniFreightBtn && miniFreightBtn.dataset.hasFreight === 'true') {
             miniFreightBtn.classList.remove('hidden');
+        }
+        if (miniStorageBtn) {
+            const stInfo = window.currentClientStorageInfo;
+            if (stInfo && stInfo.cost > 0 && !stInfo.isExempt) {
+                miniStorageBtn.classList.remove('hidden');
+            } else {
+                miniStorageBtn.classList.add('hidden');
+            }
         }
         const badgeResponded = document.getElementById('badge-client-responded');
         if (badgeResponded) {
@@ -4812,19 +4997,26 @@ export function toggleConfirmArmazem(mode) {
             mainCol.classList.add('lg:col-span-3');
         }
     } else {
-        armazemTab.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
-        armazemTab.classList.remove('bg-transparent', 'text-slate-400');
+        if (armazemTab) {
+            armazemTab.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+            armazemTab.classList.remove('bg-transparent', 'text-slate-400');
+        }
         confirmTab.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
         confirmTab.classList.add('bg-transparent', 'text-slate-400');
 
         confirmContent.classList.add('hidden');
         armazemContent.classList.remove('hidden');
         if (bulkPanel) bulkPanel.style.display = 'none';
-        if (bulkContent) bulkContent.classList.add('hidden');
-        if (reconciliationPanel) reconciliationPanel.style.display = 'none';
+        if (bulkContent) {
+            bulkContent.classList.add('hidden');
+            bulkContent.classList.remove('flex');
+        }
         if (paymentInfoContainer) paymentInfoContainer.classList.add('hidden');
+        const addArticleBtn = document.getElementById('btn-add-confirm-article');
+        if (addArticleBtn) addArticleBtn.classList.add('hidden');
         if (summaryCards) summaryCards.style.display = 'none';
         if (miniFreightBtn) miniFreightBtn.classList.add('hidden');
+        if (miniStorageBtn) miniStorageBtn.classList.add('hidden');
         const badgeResponded = document.getElementById('badge-client-responded');
         if (badgeResponded) badgeResponded.classList.add('hidden');
 
@@ -5331,7 +5523,7 @@ export function getPaymentCardHtml(client, stateObj) {
     // O card deve estar visível se o cliente não estiver totalmente confirmado
     // e possuir dados a regularizar na planilha ou pagamentos vinculados
     const isBalanceZero = totalGSheetBalance !== undefined && Math.abs(totalGSheetBalance) < 0.01;
-    const isAllConfirmed = allConfirmed === true;
+    const isAllConfirmed = allConfirmed === true && (remainingToPay === undefined || remainingToPay <= 0.01) && (totalGSheetBalance === undefined || totalGSheetBalance <= 0.01);
     const hasRemainingBalance = totalGSheetBalance !== undefined && totalGSheetBalance > 0.01;
     const hasPaidAmount = totalPaid !== undefined && totalPaid > 0.01;
     const hasPaymentsLinked = payments && payments.length > 0;
@@ -5390,14 +5582,17 @@ export function getPaymentCardHtml(client, stateObj) {
         cardCursor = "cursor-pointer hover:shadow-xl hover:translate-y-[-2px] transition-all";
 
         // Se houver valor pago na planilha OU saldo pendente menor que o total OU pagamentos no PocketBase
-        const isPartialOnGSheet = (totalGSheetBalance > 0.01 && targetAmount > totalGSheetBalance) || (totalPaid > 0 && remainingToPay > 0 && remainingToPay < targetAmount);
-        const isPartialOnPocketBase = payments && payments.length > 0 && remainingToPay > 0 && remainingToPay < targetAmount;
+        const isPartialOnGSheet = (totalGSheetBalance > 0.01 && targetAmount > totalGSheetBalance) || (totalPaid > 0 && remainingToPay > 0.01);
+        const isPartialOnPocketBase = payments && payments.length > 0 && remainingToPay > 0.01;
+        const isPartial = isPartialOnGSheet || isPartialOnPocketBase || (totalPaid > 0 && totalPaid < targetAmount);
 
-        if (isPartialOnGSheet || isPartialOnPocketBase) {
+        if (isPartial) {
+            cardBorder = "border-amber-400 bg-amber-50/20";
+            textColor = "text-amber-600";
             displayValueHtml = `
-                <div class="text-[12px] text-gray-500 mb-1 font-semibold uppercase">Falta Pagar</div>
+                <div class="text-[12px] text-amber-700 mb-1 font-black uppercase">Falta Pagar</div>
                 ${formatValue(remainingToPay)}
-                <div class="text-[10px] text-blue-500 mt-2 font-semibold">Total Esperado: ${formatValue(targetAmount)}${totalPaid > 0 ? ` | Já Pago na Folha: ${formatValue(totalPaid)}` : ''}</div>
+                <div class="text-[10px] text-slate-500 mt-2 font-bold">Total Esperado: ${formatValue(targetAmount)}${totalPaid > 0 ? ` | Já Pago na Folha: ${formatValue(totalPaid)}` : ''}</div>
             `;
             titleLabel = "Pagamento Parcial Pendente";
         } else {
@@ -5721,6 +5916,156 @@ export async function verifyConfirmSecretKey() {
 }
 window.verifyConfirmSecretKey = verifyConfirmSecretKey;
 
+export function toggleBulkDropdown(type, event) {
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    if (type === 'status') {
+        const role = pb.authStore.model?.role || 'USER';
+        const isL1 = role === 'USER' || role === 'USER_L1';
+        if (isL1) {
+            toast("Apenas Nível 2 ou superior pode alterar o estado em massa.", "warning");
+            return;
+        }
+    }
+    const targetList = document.getElementById(`list-dropdown-bulk-${type}`);
+    const otherType = type === 'bank' ? 'status' : 'bank';
+    const otherList = document.getElementById(`list-dropdown-bulk-${otherType}`);
+    const targetArrow = document.getElementById(`arrow-bulk-${type}`);
+    const otherArrow = document.getElementById(`arrow-bulk-${otherType}`);
+
+    if (otherList) otherList.classList.add('hidden');
+    if (otherArrow) otherArrow.classList.remove('rotate-180');
+
+    if (targetList) {
+        const isClosed = targetList.classList.contains('hidden');
+        if (isClosed) {
+            targetList.classList.remove('hidden');
+            if (targetArrow) targetArrow.classList.add('rotate-180');
+        } else {
+            targetList.classList.add('hidden');
+            if (targetArrow) targetArrow.classList.remove('rotate-180');
+        }
+    }
+}
+window.toggleBulkDropdown = toggleBulkDropdown;
+
+export function closeAllBulkDropdowns() {
+    const bankList = document.getElementById('list-dropdown-bulk-bank');
+    const statusList = document.getElementById('list-dropdown-bulk-status');
+    const bankArrow = document.getElementById('arrow-bulk-bank');
+    const statusArrow = document.getElementById('arrow-bulk-status');
+    if (bankList) bankList.classList.add('hidden');
+    if (statusList) statusList.classList.add('hidden');
+    if (bankArrow) bankArrow.classList.remove('rotate-180');
+    if (statusArrow) statusArrow.classList.remove('rotate-180');
+}
+window.closeAllBulkDropdowns = closeAllBulkDropdowns;
+
+export function selectBulkOption(type, value, displayLabel) {
+    const select = document.getElementById(`bulk-${type}`);
+    const label = document.getElementById(`label-bulk-${type}`);
+    const btn = document.getElementById(`btn-dropdown-bulk-${type}`);
+
+    if (select) {
+        select.value = value;
+    }
+
+    if (label) {
+        if (!value) {
+            label.textContent = type === 'bank' ? 'Banco...' : 'Estado...';
+        } else {
+            label.textContent = displayLabel || value;
+        }
+    }
+
+    if (btn) {
+        if (value) {
+            btn.classList.add('border-blue-400', 'text-blue-700', 'bg-blue-50/50');
+            btn.classList.remove('border-slate-200', 'text-slate-700', 'bg-white');
+        } else {
+            btn.classList.remove('border-blue-400', 'text-blue-700', 'bg-blue-50/50');
+            btn.classList.add('border-slate-200', 'text-slate-700', 'bg-white');
+        }
+    }
+
+    const options = document.querySelectorAll(`.bulk-${type}-opt`);
+    options.forEach(opt => {
+        if (opt.getAttribute('data-val') === value) {
+            opt.classList.add('bg-blue-50', 'text-blue-700');
+        } else {
+            opt.classList.remove('bg-blue-50', 'text-blue-700');
+        }
+    });
+
+    closeAllBulkDropdowns();
+}
+window.selectBulkOption = selectBulkOption;
+
+export function resetBulkDropdownsUI(isL1 = false) {
+    const bankSelect = document.getElementById('bulk-bank');
+    const statusSelect = document.getElementById('bulk-status');
+    const labelBank = document.getElementById('label-bulk-bank');
+    const labelStatus = document.getElementById('label-bulk-status');
+    const btnBank = document.getElementById('btn-dropdown-bulk-bank');
+    const btnStatus = document.getElementById('btn-dropdown-bulk-status');
+
+    if (bankSelect) bankSelect.value = '';
+    if (statusSelect) statusSelect.value = '';
+    if (labelBank) labelBank.textContent = 'Banco...';
+    if (labelStatus) labelStatus.textContent = 'Estado...';
+
+    if (btnBank) {
+        btnBank.classList.remove('border-blue-400', 'text-blue-700', 'bg-blue-50/50');
+        btnBank.classList.add('border-slate-200', 'text-slate-700', 'bg-white');
+    }
+
+    if (btnStatus) {
+        btnStatus.classList.remove('border-blue-400', 'text-blue-700', 'bg-blue-50/50');
+        if (isL1) {
+            btnStatus.disabled = true;
+            btnStatus.classList.add('bg-slate-100', 'cursor-not-allowed', 'opacity-60', 'pointer-events-none');
+            btnStatus.classList.remove('bg-white', 'cursor-pointer');
+            btnStatus.title = 'Apenas Nível 2 ou superior pode alterar estado em massa';
+        } else {
+            btnStatus.disabled = false;
+            btnStatus.classList.remove('bg-slate-100', 'cursor-not-allowed', 'opacity-60', 'pointer-events-none');
+            btnStatus.classList.add('bg-white', 'cursor-pointer', 'border-slate-200', 'text-slate-700');
+            btnStatus.title = 'Selecionar Estado';
+        }
+    }
+
+    document.querySelectorAll('.bulk-bank-opt').forEach(opt => opt.classList.remove('bg-blue-50', 'text-blue-700'));
+    document.querySelectorAll('.bulk-status-opt').forEach(opt => opt.classList.remove('bg-blue-50', 'text-blue-700'));
+
+    closeAllBulkDropdowns();
+}
+window.resetBulkDropdownsUI = resetBulkDropdownsUI;
+
+export function openBulkActionsPanel() {
+    const btn = document.getElementById('btn-toggle-bulk-actions');
+    const panel = document.getElementById('confirm-bulk-actions-panel');
+    if (btn) btn.classList.add('hidden');
+    if (panel) {
+        panel.classList.remove('hidden');
+        panel.classList.add('flex');
+    }
+}
+window.openBulkActionsPanel = openBulkActionsPanel;
+
+export function closeBulkActionsPanel() {
+    const btn = document.getElementById('btn-toggle-bulk-actions');
+    const panel = document.getElementById('confirm-bulk-actions-panel');
+    if (panel) {
+        panel.classList.add('hidden');
+        panel.classList.remove('flex');
+    }
+    if (btn) btn.classList.remove('hidden');
+    resetBulkDropdownsUI();
+}
+window.closeBulkActionsPanel = closeBulkActionsPanel;
+
 export async function applyBulkUpdate() {
     const role = pb.authStore.model?.role || 'USER';
     const isL1 = role === 'USER' || role === 'USER_L1';
@@ -5974,9 +6319,9 @@ export async function applyBulkUpdate() {
             toast(`${skippedCount} ordens ignoradas por estarem a ser editadas por outros utilizadores.`, "warning");
         }
 
-        // Resetar selects
-        bulkBankSelect.value = "";
-        bulkStatusSelect.value = "";
+        // Resetar selects e painel
+        resetBulkDropdownsUI(isL1);
+        closeBulkActionsPanel();
 
         // Reprocessar agrupamentos
         const filterText = document.getElementById('input-confirm-search')?.value || '';
@@ -7016,6 +7361,15 @@ export function renderBankIncomes() {
                 </td>
                 <td class="py-3 px-4 text-center">
                     <span class="px-2 py-1 rounded-full text-[8px] font-normal ${statusClass}">${statusText}</span>
+                    ${item.allocated_to ? `<div class="text-[8px] text-gray-500 font-bold mt-1 truncate max-w-[120px]" title="Alocado a: ${item.allocated_to}">Alocado a: ${item.allocated_to}</div>` : ''}
+                    ${(item.reconciled && pb.authStore.model?.role !== 'USER' && pb.authStore.model?.role !== 'USER_L1') ? `
+                        <div>
+                            <button onclick="event.stopPropagation(); window.confirmUnallocatePayment('${item.id}', ${item.amount}, '${(item.reference || '').replace(/'/g, "\\'")}', 'BANCO')" 
+                                class="mt-1 inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 rounded transition-all shadow-2xs cursor-pointer" title="Desalocar pagamento">
+                                <span>Desalocar</span>
+                            </button>
+                        </div>
+                    ` : ''}
                 </td>
             </tr>
         `;
@@ -7198,22 +7552,40 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
 
     document.getElementById('payment-mini-filter').classList.remove('hidden');
 
-    // 1. Fonte Primária: Saldo da Planilha Google Sheets
+    // 1. Fonte Primária: Saldo e Totais para Duty ou Frete
+    const isFreight = window.paymentReconciliationContext === 'FREIGHT';
+    const clientRows = window.currentClientRows || window.currentActiveClient?.rows || [];
+
+    let totalExpected = 0;
+    let alreadyPaid = 0;
     let expectedAmount = 0;
-    if (window.currentActiveClientState && window.currentActiveClientState.totalGSheetBalance > 0) {
-        expectedAmount = window.currentActiveClientState.totalGSheetBalance;
-    } else if (parseFloat(defaultAmount) > 0) {
-        expectedAmount = parseFloat(defaultAmount);
-    } else if (window.currentActiveClientState && window.currentActiveClientState.trueRemaining > 0) {
-        expectedAmount = window.currentActiveClientState.trueRemaining;
-    } else if (window.currentActiveClientState && window.currentActiveClientState.remainingToPay > 0) {
-        expectedAmount = window.currentActiveClientState.remainingToPay;
-    } else if (window.currentActiveClientState && window.currentActiveClientState.targetAmount > 0) {
-        expectedAmount = window.currentActiveClientState.targetAmount;
+
+    if (isFreight) {
+        totalExpected = clientRows.reduce((sum, r) => sum + (parseFloat(r.amtFreight) || 0), 0);
+        alreadyPaid = clientRows.reduce((sum, r) => sum + (parseFloat(r.pdFreight) || 0), 0);
+        const freightBal = clientRows.reduce((sum, r) => sum + (parseFloat(r.balFreight) || 0), 0);
+        expectedAmount = freightBal > 0 ? freightBal : (parseFloat(defaultAmount) || Math.max(0, totalExpected - alreadyPaid));
+    } else {
+        totalExpected = window.currentActiveClientState?.targetAmount || clientRows.reduce((sum, r) => sum + (parseFloat(r.amountDuty) || 0), 0);
+        const totalPrepaid = window.currentActiveClientState?.totalDutyPrepaid || clientRows.reduce((sum, r) => sum + (parseFloat(r.dutyPrepaid) || 0), 0);
+        alreadyPaid = window.currentActiveClientState?.totalPaid || clientRows.reduce((sum, r) => sum + (parseFloat(r.paid) || 0), 0);
+        
+        if (window.currentActiveClientState && window.currentActiveClientState.trueRemaining > 0) {
+            expectedAmount = window.currentActiveClientState.trueRemaining;
+        } else if (window.currentActiveClientState && window.currentActiveClientState.totalGSheetBalance > 0) {
+            expectedAmount = window.currentActiveClientState.totalGSheetBalance;
+        } else if (parseFloat(defaultAmount) > 0) {
+            expectedAmount = parseFloat(defaultAmount);
+        } else if (window.currentActiveClientState && window.currentActiveClientState.remainingToPay > 0) {
+            expectedAmount = window.currentActiveClientState.remainingToPay;
+        } else {
+            const rawBal = clientRows.reduce((sum, r) => sum + (parseFloat(r.balance) || 0), 0);
+            expectedAmount = rawBal > 0 ? rawBal : Math.max(0, totalExpected - totalPrepaid - alreadyPaid);
+        }
     }
     currentMiniFilterExpectedAmount = expectedAmount;
 
-    // Atualizar badge de saldo esperado
+    // Atualizar badge e resumo financeiro do modal
     const expectedBadge = document.getElementById('mini-filter-expected-badge');
     if (expectedBadge) {
         if (expectedAmount > 0) {
@@ -7222,6 +7594,23 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
         } else {
             expectedBadge.classList.add('hidden');
         }
+    }
+
+    const summaryExpectedEl = document.getElementById('mini-filter-summary-expected');
+    if (summaryExpectedEl) {
+        summaryExpectedEl.innerText = formatMZN(totalExpected > 0 ? totalExpected : expectedAmount);
+    }
+    const summaryAlreadyPaidEl = document.getElementById('mini-filter-summary-already-paid');
+    if (summaryAlreadyPaidEl) {
+        summaryAlreadyPaidEl.innerText = formatMZN(alreadyPaid);
+    }
+    const summaryAllocatingEl = document.getElementById('mini-filter-summary-allocating');
+    if (summaryAllocatingEl) {
+        summaryAllocatingEl.innerText = formatMZN(0);
+    }
+    const diffValEl = document.getElementById('mini-filter-difference-val');
+    if (diffValEl) {
+        diffValEl.innerText = formatMZN(expectedAmount);
     }
 
     // Atualizar info box do cliente
@@ -7346,6 +7735,8 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
     }
 
     selectedPaymentsForLink = [];
+
+    checkMiniFilterStatus();
 
     searchPaymentMiniFilter();
 }
@@ -7485,7 +7876,23 @@ export async function searchPaymentMiniFilter() {
                 let descHtml = channelBadge + '<span class="text-slate-700">' + (rec.description || '—') + '</span>';
                 if (rec.reconciled) {
                     const allocatedToInfo = rec.allocated_to ? (' Alocado a: ' + rec.allocated_to) : '';
-                    descHtml = '<span class="bg-slate-200 text-slate-600 px-1 py-0.5 rounded text-[8px] font-black mr-1 border border-slate-300" title="' + (rec.allocated_to || 'Já alocado') + '">USADO</span>' + descHtml + '<div class="text-[9px] text-red-500 font-bold mt-0.5 truncate" title="' + allocatedToInfo + '">' + allocatedToInfo + '</div>';
+                    descHtml = `
+                        <div class="flex flex-col gap-1">
+                            <div>
+                                <span class="bg-slate-200 text-slate-600 px-1 py-0.5 rounded text-[8px] font-black mr-1 border border-slate-300" title="${rec.allocated_to || 'Já alocado'}">USADO</span>
+                                ${descHtml}
+                            </div>
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="text-[9px] text-red-600 font-bold truncate max-w-[200px]" title="${allocatedToInfo}">
+                                    Alocado a: <strong class="text-red-700">${rec.allocated_to || 'Outro Cliente'}</strong>
+                                </span>
+                                <button type="button" class="mini-filter-reassign-btn inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black text-amber-800 bg-amber-50 hover:bg-amber-100 hover:text-amber-900 border border-amber-300 shadow-2xs transition-all cursor-pointer whitespace-nowrap active:scale-95" title="Desalocar deste cliente e selecionar para o cliente atual">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"></path><path d="M4 20L21 3"></path><path d="M21 16v5h-5"></path><path d="M15 15l6 6"></path><path d="M4 4l5 5"></path></svg>
+                                    <span>⇄ Desalocar e Usar Aqui</span>
+                                </button>
+                            </div>
+                        </div>
+                    `;
                 }
 
                 // 5. Montante Formatado
@@ -7525,6 +7932,14 @@ export async function searchPaymentMiniFilter() {
                     };
                 }
 
+                const reassignBtn = tr.querySelector('.mini-filter-reassign-btn');
+                if (reassignBtn) {
+                    reassignBtn.onclick = async (e) => {
+                        e.stopPropagation();
+                        await reassignPaymentToCurrent(rec, refText, bankDisplay);
+                    };
+                }
+
                 tbody.appendChild(tr);
             });
         } catch (error) {
@@ -7537,20 +7952,70 @@ export async function searchPaymentMiniFilter() {
 
 
 export function checkMiniFilterStatus() {
-    const allocated = parseFloat(document.getElementById('mini-filter-allocate-amount').value) || 0;
+    const allocated = parseFloat(document.getElementById('mini-filter-allocate-amount')?.value) || 0;
     const statusSelect = document.getElementById('mini-filter-status');
     const commentContainer = document.getElementById('mini-filter-comment-container');
-    if (statusSelect) {
-        if (allocated > 0 && currentMiniFilterExpectedAmount > 0 && allocated < (currentMiniFilterExpectedAmount - 1.0)) {
-            if (statusSelect.value !== 'PARCIAL') {
-                statusSelect.value = 'PARCIAL';
-            }
-            if (commentContainer) commentContainer.classList.remove('hidden');
-        } else if (allocated > 0 && (currentMiniFilterExpectedAmount <= 0 || allocated >= (currentMiniFilterExpectedAmount - 1.0))) {
-            if (statusSelect.value === 'PARCIAL' || statusSelect.value === 'PENDENTE') {
-                statusSelect.value = 'CONFIRMADO';
-            }
-            if (commentContainer) commentContainer.classList.add('hidden');
+    
+    // Atualizar "A Alocar Agora" no resumo financeiro
+    const summaryAllocatingEl = document.getElementById('mini-filter-summary-allocating');
+    if (summaryAllocatingEl) {
+        summaryAllocatingEl.innerText = formatMZN(allocated);
+    }
+
+    // Calcular diferença / falta pagar
+    const diff = Math.max(0, currentMiniFilterExpectedAmount - allocated);
+    const diffValEl = document.getElementById('mini-filter-difference-val');
+    const diffLabelEl = document.getElementById('mini-filter-difference-label');
+    const statusPill = document.getElementById('mini-filter-status-pill');
+
+    if (diffValEl) diffValEl.innerText = formatMZN(diff);
+
+    if (allocated > 0 && currentMiniFilterExpectedAmount > 0 && diff > 0.05) {
+        // PARCIAL
+        if (statusSelect && statusSelect.value !== 'PARCIAL') {
+            statusSelect.value = 'PARCIAL';
+        }
+        if (statusPill) {
+            statusPill.innerText = 'PARCIAL';
+            statusPill.className = 'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 shadow-sm';
+        }
+        if (diffLabelEl) {
+            diffLabelEl.innerText = 'Falta Pagar';
+            diffLabelEl.className = 'text-[9px] font-black uppercase text-amber-600 tracking-wider block';
+        }
+        if (diffValEl) {
+            diffValEl.className = 'font-black text-amber-600 text-xs md:text-sm';
+        }
+        if (commentContainer) commentContainer.classList.remove('hidden');
+    } else if (allocated > 0 && (currentMiniFilterExpectedAmount <= 0 || diff <= 0.05)) {
+        // CONFIRMADO
+        if (statusSelect && (statusSelect.value === 'PARCIAL' || statusSelect.value === 'PENDENTE')) {
+            statusSelect.value = 'CONFIRMADO';
+        }
+        if (statusPill) {
+            statusPill.innerText = 'CONFIRMADO';
+            statusPill.className = 'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm';
+        }
+        if (diffLabelEl) {
+            diffLabelEl.innerText = 'Total Coberto';
+            diffLabelEl.className = 'text-[9px] font-black uppercase text-emerald-600 tracking-wider block';
+        }
+        if (diffValEl) {
+            diffValEl.className = 'font-black text-emerald-600 text-xs md:text-sm';
+        }
+        if (commentContainer) commentContainer.classList.add('hidden');
+    } else {
+        // Sem valor selecionado para alocação (allocated === 0)
+        if (statusPill) {
+            statusPill.innerText = diff > 0.05 ? 'A RECONCILIAR' : 'COBERTO';
+            statusPill.className = 'px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-300 shadow-sm';
+        }
+        if (diffLabelEl) {
+            diffLabelEl.innerText = 'A Regularizar';
+            diffLabelEl.className = 'text-[9px] font-black uppercase text-slate-500 tracking-wider block';
+        }
+        if (diffValEl) {
+            diffValEl.className = 'font-black text-slate-700 text-xs md:text-sm';
         }
     }
 }
@@ -7608,6 +8073,79 @@ export function selectPaymentResult(id, date, ref, trElement, fullAmount) {
     togglePaymentSelection(id, date, ref, fullAmount);
 }
 
+/**
+ * Desaloca um pagamento que já estava alocado a outro cliente e seleciona-o imediatamente para o cliente atual
+ */
+export async function reassignPaymentToCurrent(rec, refText, bankDisplay) {
+    const role = pb.authStore.model?.role || 'USER';
+    if (role === 'USER' || role === 'USER_L1') {
+        alert("Acesso Negado: A desalocação e reatribuição de pagamentos exige nível de permissão Nível 2 ou Administrador.");
+        return;
+    }
+
+    const combinedInfo = document.getElementById('mini-filter-combined-info')?.value || '';
+    const clientName = window.currentActiveClient?.displayName || window.currentActiveClient?.name || '';
+    const clientNo = window.currentActiveClient?.no || '';
+    const sheetId = state.confirm?.sheetId || '';
+
+    const formattedAmount = formatMZN(rec.amount);
+    const allocatedTo = rec.allocated_to || 'outro cliente';
+    const targetLabel = `${clientNo ? '#' + clientNo + ' ' : ''}${clientName || combinedInfo}`;
+
+    const confirmMsg = `Este movimento bancário no valor de ${formattedAmount} está atualmente alocado a:\n\n` +
+        `"${allocatedTo}"\n\n` +
+        `Deseja desalocá-lo desse cliente e selecioná-lo imediatamente para o cliente atual (${targetLabel})?`;
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        if (typeof showLoader === 'function') showLoader();
+
+        // 1. Desalocar o pagamento no PocketBase mantendo o registo individual (sem fundir split)
+        await unallocatePayment(rec.id, { mergeSplit: false });
+
+        // 2. Registar auditoria de transferência
+        try {
+            await logConfirmAudit(sheetId, clientNo, clientName, 'PAGAMENTO_TRANSFERIDO', {
+                paymentId: rec.id,
+                amount: rec.amount,
+                ref: rec.reference || rec.description || '',
+                de: allocatedTo,
+                para: combinedInfo || clientName
+            });
+        } catch (auditErr) {
+            console.warn('[Audit] Erro ao registar auditoria de reatribuição:', auditErr);
+        }
+
+        // 3. Atualizar estado local do registo
+        rec.reconciled = false;
+        rec.allocated_to = '';
+
+        // 4. Selecionar automaticamente o movimento para o cliente atual se ainda não estiver selecionado
+        if (!selectedPaymentsForLink.some(p => p.id === rec.id)) {
+            togglePaymentSelection(rec.id, rec.date, refText, parseFloat(rec.amount), bankDisplay, rec.account_owner || '');
+        }
+
+        // 5. Atualizar os resultados da pesquisa do mini-filtro para refletir a nova seleção
+        await searchPaymentMiniFilter();
+
+        const successMsg = `Movimento desalocado de "${allocatedTo}" e selecionado com sucesso!`;
+        if (typeof toast === 'function') {
+            toast(successMsg, "success");
+        } else if (typeof ui.toast === 'function') {
+            ui.toast(successMsg, "success");
+        } else {
+            alert(successMsg);
+        }
+    } catch (err) {
+        console.error("Erro ao desalocar e reatribuir pagamento:", err);
+        alert("Erro ao desalocar o pagamento: " + (err.message || err));
+    } finally {
+        if (typeof hideLoader === 'function') hideLoader();
+    }
+}
+window.reassignPaymentToCurrent = reassignPaymentToCurrent;
+
 export async function confirmPaymentSelection() {
     let status = document.getElementById('mini-filter-status').value;
     const combinedInfo = document.getElementById('mini-filter-combined-info').value;
@@ -7633,7 +8171,7 @@ export async function confirmPaymentSelection() {
     }
 
     // Se o valor alocado for menor que o esperado, forçar status para PARCIAL
-    if (allocatedAmount > 0 && currentMiniFilterExpectedAmount > 0 && allocatedAmount < (currentMiniFilterExpectedAmount - 1.0)) {
+    if (allocatedAmount > 0 && currentMiniFilterExpectedAmount > 0 && allocatedAmount < (currentMiniFilterExpectedAmount - 0.05)) {
         if (status === 'CONFIRMADO') {
             status = 'PARCIAL';
             const statusSelect = document.getElementById('mini-filter-status');
@@ -7862,8 +8400,7 @@ export async function confirmPaymentSelection() {
                             } else if (newPaid > 0 || allocatedForThisRow > 0) {
                                 newStatus = 'PARCIAL';
                             } else if (filterStatus === 'PARCIAL') {
-                                const rawCur = String(rawRow[statusIdx] || 'PENDENTE').trim().toUpperCase();
-                                newStatus = (rawCur === 'CONFIRMADO') ? 'PENDENTE' : (rawCur || 'PENDENTE');
+                                newStatus = 'PARCIAL';
                             } else {
                                 const rawCur = String(rawRow[statusIdx] || 'PENDENTE').trim().toUpperCase();
                                 newStatus = (rawCur === 'CONFIRMADO' || rawCur === 'PARCIAL') ? 'PENDENTE' : (rawCur || 'PENDENTE');
@@ -9524,11 +10061,37 @@ window.updateRowDOM = function(item) {
 
     const hsInput = tr.querySelector('.input-hscode');
     if (hsInput) {
-        hsInput.classList.remove('text-indigo-700', 'text-emerald-600', 'text-red-500');
+        hsInput.classList.remove('text-indigo-700', 'text-emerald-600', 'text-red-500', 'font-bold', 'cursor-pointer');
+        const hasValidPauta = !!(item.pauta && item.hsCode && item.hsCode.length === 8);
         if (item.hsCode && item.hsCode.length === 8) {
-            hsInput.classList.add(item.pauta ? 'text-emerald-600' : 'text-red-500');
+            if (item.pauta) {
+                hsInput.classList.add('text-emerald-600', 'font-bold', 'cursor-pointer');
+                hsInput.setAttribute('title', 'Código válido na Pauta. Clique no ícone para ver estrutura e localização.');
+            } else {
+                hsInput.classList.add('text-red-500');
+                hsInput.removeAttribute('title');
+            }
         } else {
             hsInput.classList.add('text-indigo-700');
+            hsInput.removeAttribute('title');
+        }
+
+        const cellContainer = hsInput.parentElement;
+        if (cellContainer) {
+            let inspectBtn = cellContainer.querySelector('.btn-pauta-inspect');
+            if (hasValidPauta) {
+                if (!inspectBtn) {
+                    inspectBtn = document.createElement('button');
+                    inspectBtn.type = 'button';
+                    inspectBtn.className = 'btn-pauta-inspect text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/80 p-0.5 rounded transition-all shrink-0 cursor-pointer shadow-2xs';
+                    inspectBtn.title = 'Ver artigo, estrutura e posição na Pauta Aduaneira';
+                    inspectBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>';
+                    cellContainer.appendChild(inspectBtn);
+                }
+                inspectBtn.onclick = () => window.openPautaInspector(item.hsCode, item.id);
+            } else if (inspectBtn) {
+                inspectBtn.remove();
+            }
         }
     }
 };
@@ -9772,8 +10335,15 @@ window.renderQuoteItemsTable = function() {
             <td class="p-0 border-b border-r border-gray-100">
                 <input type="text" class="input-desc w-full text-xs py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6" value="${item.description}" onchange="window.updateQuoteRow(${item.id}, 'description', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Descrição">
             </td>
-            <td class="p-0 border-b border-r border-gray-100">
-                <input type="text" maxlength="8" class="input-hscode w-full text-xs ${hsColorClass} py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 text-center" value="${item.hsCode}" oninput="this.value = this.value.replace(/[^0-9]/g, ''); window.updateQuoteRow(${item.id}, 'hsCode', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="Ex: 8703">
+            <td class="p-0 border-b border-r border-gray-100 relative">
+                <div class="flex items-center justify-between w-full h-full px-1">
+                    <input type="text" maxlength="8" class="input-hscode flex-1 text-xs ${hsColorClass} py-0.5 px-0.5 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 text-center ${item.pauta ? 'cursor-pointer' : ''}" value="${item.hsCode}" oninput="this.value = this.value.replace(/[^0-9]/g, ''); window.updateQuoteRow(${item.id}, 'hsCode', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" ondblclick="if(this.value.length === 8) window.openPautaInspector(this.value, ${item.id})" placeholder="Ex: 8703" title="${item.pauta ? 'Código válido na Pauta. Clique no botão ao lado para ver estrutura e localização.' : 'Ex: 8703'}">
+                    ${item.pauta ? `
+                    <button type="button" onclick="window.openPautaInspector('${item.hsCode}', ${item.id})" class="btn-pauta-inspect text-emerald-600 hover:text-emerald-800 hover:bg-emerald-100/80 p-0.5 rounded transition-all shrink-0 cursor-pointer shadow-2xs" title="Ver artigo, estrutura e posição na Pauta Aduaneira">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" /></svg>
+                    </button>
+                    ` : ''}
+                </div>
             </td>
             <td class="p-0 border-b border-r border-gray-100">
                 <input type="text" class="input-qty w-full text-xs text-center py-0.5 px-1 border-none hover:bg-white focus:ring-0 outline-none rounded bg-transparent h-6 placeholder-gray-300" value="${item.qty}" oninput="this.value = this.value.replace(/[^0-9.,]/g, ''); window.updateQuoteRow(${item.id}, 'qty', this.value)" onkeydown="window.handleQuoteInputKeydown(event, this)" placeholder="0">
@@ -10038,6 +10608,13 @@ window.loadSavedQuote = function(id) {
 export function openFreightModal() {
     const totalBal = (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || 0), 0);
     const totalFrt = (window.currentClientRows || []).reduce((acc, r) => acc + (r.amtFreight || 0), 0);
+    const totalPaid = (window.currentClientRows || []).reduce((acc, r) => acc + (r.pdFreight || 0), 0);
+
+    // Se o frete estiver totalmente pago, não abrir o popup
+    if (totalFrt > 0 && (totalBal <= 0 || totalPaid >= totalFrt)) {
+        toast("O frete deste cliente já se encontra totalmente pago.", "info");
+        return;
+    }
 
     const modal = document.getElementById('modal-freight-update');
     if (modal) {
@@ -10276,10 +10853,10 @@ export async function saveFreightModal() {
  * Verifica e cria colunas de Armazém em falta no GSheet
  */
 
-export function parseStorageInfo(storagePaidStr, calculatedCost, motivoIsencaoStr) {
+export function parseStorageInfo(storagePaidStr, calculatedCost, motivoIsencaoStr, isDelivered = false) {
     const rawPaid = String(storagePaidStr || '').trim().toUpperCase();
     const rawMotivo = String(motivoIsencaoStr || '').trim();
-    const isExempt = !!rawMotivo && !rawMotivo.includes('[EXTRAORDINÁRIA]');
+    const isExempt = (!!rawMotivo && !rawMotivo.includes('[EXTRAORDINÁRIA]')) || rawPaid === 'ISENTO';
 
     if (isExempt) {
         return {
@@ -10292,26 +10869,35 @@ export function parseStorageInfo(storagePaidStr, calculatedCost, motivoIsencaoSt
         };
     }
 
+    // Identificar se a string é apenas um valor numérico por defeito da folha (ex: "0", "0.00", "0,00", "-", "—", "")
+    const isRawNumericDefault = /^(0|0\.00?|0,00?|-|—)?$/.test(rawPaid);
+
     let negotiatedAmount = null;
-    const match = rawPaid.match(/(?:PAGO|PENDENTE|SIM)?\s*\(?\s*([0-9.,]+)\s*(?:MT|MZN)?/i);
-    if (match && match[1]) {
-        let clean = match[1].trim();
-        if (clean.includes('.') && clean.includes(',')) {
-            clean = clean.replace(/\./g, '').replace(',', '.');
-        } else if (clean.includes('.')) {
-            if (/^\d{1,3}\.\d{3}$/.test(clean)) {
-                clean = clean.replace(/\./g, '');
+    if (!isRawNumericDefault) {
+        // Formato com parênteses: "(1500 MT)", "(1500)", "PAGO (1500 MT)", "PENDENTE (1500 MT)"
+        const parenMatch = rawPaid.match(/\(\s*([0-9.,]+)\s*(?:MT|MZN)?\s*\)/i);
+        if (parenMatch && parenMatch[1]) {
+            let clean = parenMatch[1].trim();
+            if (clean.includes('.') && clean.includes(',')) clean = clean.replace(/\./g, '').replace(',', '.');
+            else if (clean.includes(',') && !/^\d{1,3},\d{3}$/.test(clean)) clean = clean.replace(',', '.');
+            else clean = clean.replace(/,/g, '');
+            const parsed = parseFloat(clean);
+            if (!isNaN(parsed) && parsed >= 0) {
+                negotiatedAmount = parsed;
             }
-        } else if (clean.includes(',')) {
-            if (/^\d{1,3},\d{3}$/.test(clean)) {
-                clean = clean.replace(/,/g, '');
-            } else {
-                clean = clean.replace(',', '.');
+        } else {
+            // Formato com sufixo monetário explícito: "1500 MT", "PAGO 1500 MT", "PENDENTE 1500 MZN"
+            const mtMatch = rawPaid.match(/(?:PAGO|PENDENTE)?\s*([0-9.,]+)\s*(?:MT|MZN)/i);
+            if (mtMatch && mtMatch[1]) {
+                let clean = mtMatch[1].trim();
+                if (clean.includes('.') && clean.includes(',')) clean = clean.replace(/\./g, '').replace(',', '.');
+                else if (clean.includes(',') && !/^\d{1,3},\d{3}$/.test(clean)) clean = clean.replace(',', '.');
+                else clean = clean.replace(/,/g, '');
+                const parsed = parseFloat(clean);
+                if (!isNaN(parsed) && parsed >= 0) {
+                    negotiatedAmount = parsed;
+                }
             }
-        }
-        const parsed = parseFloat(clean);
-        if (!isNaN(parsed) && parsed >= 0) {
-            negotiatedAmount = parsed;
         }
     }
 
@@ -10321,12 +10907,19 @@ export function parseStorageInfo(storagePaidStr, calculatedCost, motivoIsencaoSt
     let isPaid = false;
     if (effectiveCost === 0) {
         isPaid = true;
-    } else if (rawPaid.includes('SIM') || rawPaid.includes('PAGO') || rawPaid.includes('LIVRE') || rawPaid.includes('OK') || rawPaid.includes('ISENTO')) {
-        isPaid = true;
-    } else if (rawPaid.includes('NAO') || rawPaid.includes('PENDENTE')) {
-        isPaid = false;
-    } else if (negotiatedAmount !== null && !rawPaid.includes('PENDENTE') && !rawPaid.includes('NAO')) {
-        isPaid = true;
+    } else {
+        if (rawPaid.includes('PAGO') && !rawPaid.includes('PENDENTE')) {
+            isPaid = true;
+        } else if (rawPaid === 'SIM' || rawPaid === 'OK') {
+            isPaid = true;
+        } else if (rawPaid.includes('SIM') && !rawPaid.includes('NAO') && !rawPaid.includes('PENDENTE')) {
+            isPaid = true;
+        } else if (rawPaid.includes('LIVRE')) {
+            // "LIVRE" só é pago se o custo calculado for 0 ou se já foi entregue dentro do prazo
+            isPaid = isDelivered || calculatedCost === 0;
+        } else {
+            isPaid = false;
+        }
     }
 
     return {
@@ -10335,7 +10928,7 @@ export function parseStorageInfo(storagePaidStr, calculatedCost, motivoIsencaoSt
         isExempt: false,
         isNegotiated: isNegotiated,
         isPaid: isPaid,
-        statusText: isPaid ? 'PAGO' : 'PENDENTE'
+        statusText: isPaid ? (effectiveCost === 0 ? 'LIVRE' : 'PAGO') : 'PENDENTE'
     };
 }
 window.parseStorageInfo = parseStorageInfo;
@@ -10639,7 +11232,6 @@ export function updateArmazemCalculations() {
     if (dDate && targetEndDate) {
         const timeDiff = targetEndDate.getTime() - dDate.getTime();
         daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
-        if (daysDiff > 0) daysDiff -= 1;
     }
 
     const isAnticipated = client.isAnticipated !== undefined ? client.isAnticipated : false;
@@ -10665,7 +11257,7 @@ export function updateArmazemCalculations() {
         if (motivoSelect) motivoSelect.disabled = false;
         if (motivoInput) motivoInput.disabled = false;
 
-        if (storagePaymentSection) storagePaymentSection.classList.add('opacity-50', 'pointer-events-none');
+        if (storagePaymentSection) storagePaymentSection.classList.add('hidden');
         if (storagePayAmountInput) {
             storagePayAmountInput.value = '0';
             storagePayAmountInput.disabled = true;
@@ -10675,6 +11267,14 @@ export function updateArmazemCalculations() {
             storagePaidSelect.disabled = true;
         }
         if (storageNegotiateBadge) storageNegotiateBadge.classList.add('hidden');
+
+        if (window.currentClientStorageInfo) {
+            window.currentClientStorageInfo.cost = 0;
+            window.currentClientStorageInfo.isPaid = true;
+            window.currentClientStorageInfo.isExempt = true;
+        }
+        const miniStorageBtn = document.getElementById('btn-confirm-storage-mini');
+        if (miniStorageBtn) miniStorageBtn.classList.add('hidden');
 
         if (badgeStorage) {
             badgeStorage.innerHTML = `Armazenagem: <strong class="ml-1 font-extrabold text-emerald-800">0,00 MT (Isento ✅)</strong>`;
@@ -10698,8 +11298,16 @@ export function updateArmazemCalculations() {
         if (storagePayAmountInput && (!storagePayAmountInput.value || parseFloat(storagePayAmountInput.value) === 0)) {
             storagePayAmountInput.value = '0';
         }
-        if (storagePaidSelect) storagePaidSelect.value = 'SIM';
         if (storageNegotiateBadge) storageNegotiateBadge.classList.add('hidden');
+        if (storagePaymentSection) storagePaymentSection.classList.add('hidden');
+
+        if (window.currentClientStorageInfo) {
+            window.currentClientStorageInfo.cost = 0;
+            window.currentClientStorageInfo.isPaid = true;
+            window.currentClientStorageInfo.isExempt = false;
+        }
+        const miniStorageBtn = document.getElementById('btn-confirm-storage-mini');
+        if (miniStorageBtn) miniStorageBtn.classList.add('hidden');
 
         if (badgeStorage) {
             badgeStorage.innerHTML = `Armazenagem: <strong class="ml-1 font-extrabold text-emerald-800">0,00 MT (Livre ✅)</strong>`;
@@ -10729,6 +11337,34 @@ export function updateArmazemCalculations() {
     const isPaid = storagePaidSelect && storagePaidSelect.value === 'SIM';
     const statusText = isPaid ? 'Pago' : 'Pendente';
     const statusColor = isPaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse';
+
+    if (storagePaymentSection) storagePaymentSection.classList.remove('hidden');
+
+    if (window.currentClientStorageInfo) {
+        window.currentClientStorageInfo.cost = payAmount;
+        window.currentClientStorageInfo.isPaid = isPaid;
+        window.currentClientStorageInfo.isExempt = false;
+        window.currentClientStorageInfo.isNegotiated = isNegotiated;
+    }
+    const miniStorageBtn = document.getElementById('btn-confirm-storage-mini');
+    const miniStorageStatus = document.getElementById('confirm-storage-mini-status');
+    if (miniStorageBtn && miniStorageStatus) {
+        if (payAmount <= 0) {
+            miniStorageBtn.classList.add('hidden');
+        } else {
+            const confirmTab = document.getElementById('btn-tab-confirm');
+            if (confirmTab && confirmTab.classList.contains('bg-white')) {
+                miniStorageBtn.classList.remove('hidden');
+            }
+            if (!isPaid) {
+                miniStorageStatus.innerText = `PENDENTE (${formatMZN(payAmount)})`;
+                miniStorageStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 font-extrabold animate-pulse';
+            } else {
+                miniStorageStatus.innerText = `PAGO (${formatMZN(payAmount)})`;
+                miniStorageStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 font-bold';
+            }
+        }
+    }
 
     if (badgeStorage) {
         badgeStorage.innerHTML = `Armazenagem: <strong class="ml-1 font-extrabold">${formatMZN(payAmount)} (${statusText}${isNegotiated ? ' - Negociado' : ''})</strong>`;
@@ -10931,11 +11567,6 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         if (dDate && targetEndDate) {
             const timeDiff = targetEndDate.getTime() - dDate.getTime();
             daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
-            
-            // Regra: O dia de levantamento/hoje não deve ser cobrado como dia de armazenagem
-            if (daysDiff > 0) {
-                daysDiff -= 1;
-            }
         }
 
         client.isAnticipated = isAnticipated;
@@ -10949,11 +11580,13 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             }
         }
 
-        const storageInfo = parseStorageInfo(storagePaidVal, standardStorageCost, motivoIsencaoVal);
+        const storageInfo = parseStorageInfo(storagePaidVal, standardStorageCost, motivoIsencaoVal, isDelivered);
+        window.currentClientStorageInfo = storageInfo;
         const isExempt = storageInfo.isExempt;
         const isNegotiated = storageInfo.isNegotiated;
         const storageCost = storageInfo.cost;
         const isStoragePaid = storageInfo.isPaid;
+        const isStorageBlocked = storageCost > 0 && !isStoragePaid && !isExempt;
 
         const hasDeliveryInfoSaved = totalDelivered > 0 && 
                                      String(deliverDateVal).trim() !== '' && 
@@ -10963,8 +11596,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                                      String(contactoVal).trim() !== '' && 
                                      String(contactoVal).trim() !== '—';
 
-        const canEmitGuia = allowDelivery;
-        const isEditable = !isDelivered && (!hasDeliveryInfoSaved || isAdmin);
+        const canEmitGuia = allowDelivery && !isStorageBlocked;
+        const isEditable = !isDelivered;
 
         const formatDateForDisplay = (dateStr) => {
             if (!dateStr) return '';
@@ -11014,25 +11647,25 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                 `;
             } else if (hasDeliveryInfoSaved) {
                 bannerHtml = `
-                    <div class="bg-green-50 border border-green-200 text-green-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-green-500">
-                        <div class="p-2 bg-green-100 rounded-xl text-green-600 flex-shrink-0">
+                    <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-emerald-500">
+                        <div class="p-2 bg-emerald-100 rounded-xl text-emerald-600 flex-shrink-0">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                         </div>
                         <div>
-                            <h4 class="font-black text-xs uppercase tracking-wider text-green-900">Entrega Autorizada — Guia Dupla Pronta ✅</h4>
-                            <p class="text-[11px] text-green-700 font-semibold mt-1">Dados operacionais registados. A <strong>Guia Dupla em Folha Única</strong> (1ª Via para Armazém e 2ª Via para Portaria) está pronta para emissão.</p>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-emerald-900">Dados Gravados — Pronto para Entrega ✅</h4>
+                            <p class="text-[11px] text-emerald-700 font-semibold mt-1">Dados operacionais registados com sucesso. Clique em <strong>Entregue</strong> para confirmar a entrega e desbloquear a Guia Dupla.</p>
                         </div>
                     </div>
                 `;
             } else {
                 bannerHtml = `
-                    <div class="bg-green-50 border border-green-200 text-green-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-green-500">
-                        <div class="p-2 bg-green-100 rounded-xl text-green-600 flex-shrink-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                    <div class="bg-blue-50 border border-blue-200 text-blue-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-blue-500">
+                        <div class="p-2 bg-blue-100 rounded-xl text-blue-600 flex-shrink-0">
+                            <svg class="w-5 h-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                         </div>
                         <div>
-                            <h4 class="font-black text-xs uppercase tracking-wider text-green-900">Entrega Autorizada — Guia Dupla Pronta ✅</h4>
-                            <p class="text-[11px] text-green-700 font-semibold mt-1">Duty, Frete e Armazenagem estão regularizados. Pode emitir a <strong>Guia Dupla em Folha Única</strong> (1ª Via para Armazém e 2ª Via para Portaria) com os campos para preenchimento manual no terreno.</p>
+                            <h4 class="font-black text-xs uppercase tracking-wider text-blue-900">Preenchimento de Armazém</h4>
+                            <p class="text-[11px] text-blue-700 font-semibold mt-1">Preencha os dados operacionais da carga e clique em <strong>Gravar</strong> para avançar para a confirmação de entrega.</p>
                         </div>
                     </div>
                 `;
@@ -11065,109 +11698,69 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         }
 
         let buttonsHtml = '';
-        const btnSpan = storageCost === 0 ? 'md:col-span-3' : 'md:col-span-2';
+        const btnSpan = (storageCost === 0 && !isNegotiated) ? 'md:col-span-3' : 'md:col-span-2';
         
         if (isDelivered) {
-            if (isAdmin) {
-                buttonsHtml = `
-                    <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
+            // Passo 3: Entregue confirmado -> Aparece a Guia Dupla e apenas ela fica ativa
+            buttonsHtml = `
+                <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
+                    ${isAdmin ? `
                         <button onclick="ui.reopenDelivery(${firstRowIndex}, this)" 
-                            class="flex-1 py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Reabrir edição da entrega">
+                            class="py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Reabrir edição da entrega">
                             <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
                             Reabrir
                         </button>
-                        <button onclick="ui.printDeliveryNote()" 
-                            class="flex-1 py-2 px-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia Dupla (Pré-visualização Oficial)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Guia Dupla
-                        </button>
-                        <button onclick="ui.directPrintDeliveryNote()" 
-                            class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                            ⚡ Direto
-                        </button>
+                    ` : ''}
+                    <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: A entrega não está autorizada.\', \'warning\')'}" 
+                        class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Armazém e Portaria)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
+                        Guia Dupla
+                    </button>
+                    ${isAdmin ? `
                         <button onclick="ui.openQuickPrinterModal()" 
                             class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                         </button>
-                    </div>
-                `;
-            } else {
-                buttonsHtml = `
-                    <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
-                        <button onclick="ui.printDeliveryNote()" 
-                            class="flex-1 py-2 px-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Emitir Guia Dupla (Pré-visualização Oficial)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Guia Dupla
-                        </button>
-                        <button onclick="ui.directPrintDeliveryNote()" 
-                            class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                            ⚡ Direto
-                        </button>
-                        <button onclick="ui.openQuickPrinterModal()" 
-                            class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                        </button>
-                    </div>
-                `;
-            }
+                    ` : ''}
+                </div>
+            `;
         } else {
             if (!hasDeliveryInfoSaved) {
+                // Passo 1: Não gravado / Inicial -> Apenas o botão Gravar
                 buttonsHtml = `
                     <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
                         <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
-                            class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]">
+                            class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Gravar dados operacionais de armazém">
                             <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                             Gravar
                         </button>
-                        <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: A entrega não está autorizada.\', \'warning\')'}" 
-                            class="flex-1 py-2 px-2.5 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Pré-visualização Oficial)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Guia Dupla
-                        </button>
-                        ${canEmitGuia ? `
-                        <button onclick="ui.directPrintDeliveryNote()" 
-                            class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                            ⚡ Direto
-                        </button>
-                        <button onclick="ui.openQuickPrinterModal()" 
-                            class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                        </button>
+                        ${isAdmin ? `
+                            <button onclick="ui.openQuickPrinterModal()" 
+                                class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                            </button>
                         ` : ''}
                     </div>
                 `;
             } else {
+                // Passo 2: Tudo gravado -> Aparece o botão Entregue
                 buttonsHtml = `
                     <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
-                        ${isAdmin ? `
-                            <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
-                                class="flex-1 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Atualizar dados operacionais">
-                                Actualizar
-                            </button>
-                        ` : ''}
                         <button onclick="ui.confirmDelivery(${firstRowIndex}, this)" 
                             class="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Confirmar entrega da carga e encerrar edição">
                             <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
                             Entregue
                         </button>
-                        <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: A entrega não está autorizada.\', \'warning\')'}" 
-                            class="flex-1 py-2 px-2.5 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Pré-visualização Oficial)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                            Guia Dupla
+                        <button onclick="ui.saveArmazemRow(${firstRowIndex}, this)" 
+                            class="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer h-[38px]" title="Atualizar dados operacionais">
+                            <svg class="w-3.5 h-3.5 text-slate-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                            Actualizar
                         </button>
-                        ${canEmitGuia ? `
-                        <button onclick="ui.directPrintDeliveryNote()" 
-                            class="flex-1 py-2 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1 active:scale-95 cursor-pointer h-[38px]" title="Imprimir diretamente no computador do Armazém (192.168.88.10)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                            ⚡ Direto
-                        </button>
-                        <button onclick="ui.openQuickPrinterModal()" 
-                            class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                        </button>
+                        ${isAdmin ? `
+                            <button onclick="ui.openQuickPrinterModal()" 
+                                class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                            </button>
                         ` : ''}
                     </div>
                 `;
@@ -11176,8 +11769,9 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
 
         // Badges de Armazenagem
         const dischargeDateBadge = `
-            <span class="text-slate-400 font-bold uppercase text-[9px] bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200">
-                Descarga: <strong class="text-amber-900 ml-1 font-extrabold">${dischargeDateStr ? formatDateForDisplay(dischargeDateStr) : 'NÃO DEFINIDA'}</strong>
+            <span onclick="window.promptSetProjectDischargeDate()" class="text-slate-400 font-bold uppercase text-[9px] bg-amber-50 hover:bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200 cursor-pointer transition-all active:scale-95 inline-flex items-center gap-1 select-none" title="Clique para alterar ou definir a Data de Descarga do projeto">
+                Descarga: <strong class="text-amber-900 font-extrabold">${dischargeDateStr ? formatDateForDisplay(dischargeDateStr) : 'NÃO DEFINIDA ⚠️'}</strong>
+                <svg class="w-3 h-3 text-amber-600 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
             </span>
         `;
 
@@ -11342,7 +11936,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         </div>
                     </div>
 
-                    <div id="storage-payment-section" class="col-span-1 md:col-span-3 ${isExempt ? 'opacity-50 pointer-events-none' : ''}">
+                    <div id="storage-payment-section" class="col-span-1 md:col-span-3 ${isExempt || (storageCost === 0 && !isNegotiated) ? 'hidden' : ''}">
                         <div class="flex items-center justify-between mb-1.5">
                             <label class="block text-[9px] font-black uppercase text-slate-400">Armazenagem (MZN)</label>
                             <span id="storage-negotiate-badge" class="text-[8px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 ${isNegotiated ? '' : 'hidden'}">
@@ -11487,7 +12081,8 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     if (isIsencaoChecked) {
         storagePaidVal = 'ISENTO';
     } else if (standardCost === 0) {
-        storagePaidVal = 'SIM';
+        const isDeliveredNow = (deliverVal && deliverDateVal) || (container.querySelector('input[name="delivered"]')?.value === 'SIM');
+        storagePaidVal = isDeliveredNow ? 'LIVRE' : 'NAO';
     } else {
         const paidStatus = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
         const isPaid = paidStatus === 'SIM';
@@ -11727,6 +12322,18 @@ export async function confirmDelivery(originalIndex, buttonEl) {
     }
     if (!contactoVal) {
         toast('Erro: Introduza o contacto de quem recebeu.', 'warning');
+        return;
+    }
+
+    // Verificar se há armazenagem pendente antes de confirmar entrega
+    const isExemptCheck = container.querySelector('#check-has-isencao')?.checked;
+    const storagePaidSelectCheck = container.querySelector('select[name="storagePaid"]');
+    const isStoragePaidCheck = storagePaidSelectCheck && storagePaidSelectCheck.value === 'SIM';
+    const storagePayAmountInputCheck = container.querySelector('#input-storage-pay-amount');
+    const storageAmountCheck = storagePayAmountInputCheck ? (parseFloat(storagePayAmountInputCheck.value) || 0) : 0;
+    
+    if (storageAmountCheck > 0 && !isStoragePaidCheck && !isExemptCheck) {
+        toast(`Erro: Armazenagem de ${formatMZN(storageAmountCheck)} pendente. Registar pagamento de armazenagem antes de confirmar a entrega.`, 'error');
         return;
     }
 
@@ -15444,6 +16051,20 @@ window.openVerifyClientProject = function(sheetId, folderId, projectName, client
 /**
  * Abre o modal de auditoria e linha do tempo do cliente ativo
  */
+export function setAuditHistoryButtonVisible(visible) {
+    const auditBtn = document.getElementById('btn-toggle-audit-history');
+    if (auditBtn) {
+        if (visible) {
+            auditBtn.classList.remove('hidden');
+            auditBtn.classList.add('flex');
+        } else {
+            auditBtn.classList.add('hidden');
+            auditBtn.classList.remove('flex');
+        }
+    }
+}
+window.setAuditHistoryButtonVisible = setAuditHistoryButtonVisible;
+
 export async function openClientAuditModal() {
     const client = window.currentActiveClient;
     if (!client) {
@@ -15538,6 +16159,8 @@ export async function openClientAuditModal() {
             'AUDIT_DOC_UPLOAD': { label: 'Documento Carregado', color: 'bg-blue-500', icon: '📄' },
             'AUDIT_DOC_DELETE': { label: 'Documento Eliminado', color: 'bg-red-500', icon: '🗑️' },
             'AUDIT_PAGAMENTO_VINCULADO': { label: 'Pagamento Reconciliado', color: 'bg-emerald-500', icon: '💳' },
+            'AUDIT_PAGAMENTO_DESALOCADO': { label: 'Pagamento Desalocado', color: 'bg-rose-500', icon: '🔄' },
+            'AUDIT_PAGAMENTO_TRANSFERIDO': { label: 'Pagamento Reatribuído', color: 'bg-amber-500', icon: '⇄' },
             'AUDIT_ESTADO_ALTERADO': { label: 'Estado Alterado', color: 'bg-amber-500', icon: '🔄' },
             'AUDIT_ATUALIZACAO_EM_MASSA': { label: 'Atualização em Massa', color: 'bg-indigo-500', icon: '⚡' },
             'AUDIT_ARMAZEM_GRAVADO': { label: 'Armazém Atualizado', color: 'bg-purple-500', icon: '📦' },
@@ -15565,6 +16188,18 @@ export async function openClientAuditModal() {
                     <div>Tipo: <strong class="text-slate-800">${p.tipo || 'Duty'}</strong> | Valor: <strong class="text-emerald-700">${formatMZN(p.allocatedAmount || 0)}</strong></div>
                     ${p.payments && p.payments.length ? `<div class="text-[10px] text-slate-500 mt-0.5">Refs: ${p.payments.map(x => x.ref).filter(Boolean).join(', ')}</div>` : ''}
                     ${p.comment ? `<div class="text-[10px] text-amber-700 italic mt-0.5">Nota: "${p.comment}"</div>` : ''}
+                `;
+            } else if (item.type === 'AUDIT_PAGAMENTO_DESALOCADO') {
+                detailHtml = `
+                    <div>Movimento desalocado: <strong class="text-rose-700">${formatMZN(p.amount || 0)}</strong> ${p.tipo ? `(${p.tipo})` : ''}</div>
+                    ${p.ref ? `<div class="text-[10px] text-slate-500 mt-0.5 font-mono">Ref: ${p.ref}</div>` : ''}
+                    ${p.mergedWithMaster ? `<div class="text-[9px] text-emerald-600 font-bold mt-0.5">Reintegrado ao movimento mestre</div>` : ''}
+                `;
+            } else if (item.type === 'AUDIT_PAGAMENTO_TRANSFERIDO') {
+                detailHtml = `
+                    <div>Movimento transferido: <strong class="text-amber-700">${formatMZN(p.amount || 0)}</strong></div>
+                    <div class="text-[10px] text-slate-600 mt-0.5">De: <strong class="text-slate-800">${p.de || '—'}</strong> ➔ Para: <strong class="text-emerald-700">${p.para || '—'}</strong></div>
+                    ${p.ref ? `<div class="text-[10px] text-slate-500 mt-0.5 font-mono">Ref: ${p.ref}</div>` : ''}
                 `;
             } else if (item.type === 'AUDIT_ARMAZEM_GRAVADO' || item.type === 'AUDIT_ARMAZEM_ENTREGUE') {
                 detailHtml = `
@@ -15624,3 +16259,757 @@ export async function openClientAuditModal() {
     }
 }
 window.openClientAuditModal = openClientAuditModal;
+
+
+// =====================================================================
+// --- MÓDULO PAUTA INSPECTOR (ESTRUTURA EM ESCADA COLAPSÁVEL) ---
+// =====================================================================
+
+window.pautaInspectorState = {
+    activeCode: '',
+    targetRowId: null,
+    data: null,
+    viewMode: 'staircase',
+    expandedSteps: {
+        section: true,
+        chapter: true,
+        heading: true,
+        activeSubposition: true
+    },
+    expandedOtherSubpositions: false,
+    expandedSubpositionsMap: {},
+    searchTimeout: null
+};
+
+window.openPautaInspector = async function(code = null, targetRowId = null) {
+    if (!code && targetRowId) {
+        const targetItem = window.quoteEditorState.items.find(i => i.id === targetRowId);
+        if (targetItem && targetItem.hsCode) code = targetItem.hsCode;
+    }
+    if (!code) {
+        const firstWithCode = window.quoteEditorState.items.find(i => i.hsCode && i.hsCode.length >= 4);
+        if (firstWithCode) {
+            code = firstWithCode.hsCode;
+            if (!targetRowId) targetRowId = firstWithCode.id;
+        }
+    }
+    if (!code) code = '87032390';
+
+    window.pautaInspectorState.activeCode = String(code).replace(/[^0-9]/g, '');
+    window.pautaInspectorState.targetRowId = targetRowId;
+    window.pautaInspectorState.expandedSteps = {
+        section: true,
+        chapter: true,
+        heading: true,
+        activeSubposition: true
+    };
+    window.pautaInspectorState.expandedOtherSubpositions = false;
+    window.pautaInspectorState.expandedSubpositionsMap = {};
+
+    const modal = document.getElementById('modal-pauta-inspector');
+    if (!modal) return;
+    openModal('modal-pauta-inspector');
+
+    const loadingEl = document.getElementById('pauta-inspector-loading');
+    const contentEl = document.getElementById('pauta-inspector-content');
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (contentEl) contentEl.classList.add('hidden');
+
+    const searchInput = document.getElementById('pauta-inspector-search');
+    if (searchInput) searchInput.value = '';
+    const resultsContainer = document.getElementById('pauta-inspector-search-results');
+    if (resultsContainer) resultsContainer.classList.add('hidden');
+
+    try {
+        const data = await api.getPautaHierarchy(window.pautaInspectorState.activeCode);
+        window.pautaInspectorState.data = data;
+        window.renderPautaInspector(data);
+    } catch (err) {
+        console.error('[PAUTA INSPECTOR] Erro ao carregar dados:', err);
+        if (loadingEl) {
+            loadingEl.innerHTML = '<div class="text-center p-8"><p class="text-sm font-bold text-red-500">Erro ao carregar artigo na Pauta.</p><p class="text-xs text-slate-400 mt-1">' + (err.message || 'Verifique a ligação ou o código inserido.') + '</p><button type="button" onclick="window.closePautaInspector()" class="mt-4 px-4 py-2 bg-slate-200 text-slate-700 text-xs font-bold rounded-xl">Fechar</button></div>';
+        }
+    }
+};
+
+window.inspectPautaCode = async function(code) {
+    if (!code) return;
+    window.pautaInspectorState.activeCode = String(code).replace(/[^0-9]/g, '');
+    
+    const loadingEl = document.getElementById('pauta-inspector-loading');
+    const contentEl = document.getElementById('pauta-inspector-content');
+    if (loadingEl) loadingEl.classList.remove('hidden');
+    if (contentEl) contentEl.classList.add('hidden');
+
+    try {
+        const data = await api.getPautaHierarchy(window.pautaInspectorState.activeCode);
+        window.pautaInspectorState.data = data;
+        window.pautaInspectorState.expandedSteps.activeSubposition = true;
+        window.renderPautaInspector(data);
+    } catch (err) {
+        console.error('[PAUTA INSPECTOR] Erro ao inspecionar código:', err);
+        toast('Erro ao buscar artigo ' + code, 'error');
+        if (loadingEl) loadingEl.classList.add('hidden');
+        if (contentEl) contentEl.classList.remove('hidden');
+    }
+};
+
+window.setPautaInspectorViewMode = function(mode) {
+    window.pautaInspectorState.viewMode = mode;
+    const btnStaircase = document.getElementById('btn-pauta-tab-staircase');
+    const btnTable = document.getElementById('btn-pauta-tab-table');
+    const viewStaircase = document.getElementById('pauta-view-staircase');
+    const viewTable = document.getElementById('pauta-view-table');
+
+    if (mode === 'staircase') {
+        if (btnStaircase) {
+            btnStaircase.className = 'px-2.5 py-1 rounded-lg transition-all bg-white text-slate-900 shadow-xs flex items-center gap-1.5';
+        }
+        if (btnTable) {
+            btnTable.className = 'px-2.5 py-1 rounded-lg transition-all text-slate-600 hover:text-slate-900 flex items-center gap-1.5';
+        }
+        if (viewStaircase) viewStaircase.classList.remove('hidden');
+        if (viewTable) viewTable.classList.add('hidden');
+    } else {
+        if (btnTable) {
+            btnTable.className = 'px-2.5 py-1 rounded-lg transition-all bg-white text-slate-900 shadow-xs flex items-center gap-1.5';
+        }
+        if (btnStaircase) {
+            btnStaircase.className = 'px-2.5 py-1 rounded-lg transition-all text-slate-600 hover:text-slate-900 flex items-center gap-1.5';
+        }
+        if (viewTable) viewTable.classList.remove('hidden');
+        if (viewStaircase) viewStaircase.classList.add('hidden');
+
+        setTimeout(() => {
+            const activeRow = document.getElementById('pauta-sibling-row-' + window.pautaInspectorState.activeCode);
+            if (activeRow) activeRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+    }
+};
+
+window.togglePautaStaircaseStep = function(stepName) {
+    window.pautaInspectorState.expandedSteps[stepName] = !window.pautaInspectorState.expandedSteps[stepName];
+    const isExpanded = window.pautaInspectorState.expandedSteps[stepName];
+    
+    const bodyEl = document.getElementById('pauta-step-body-' + stepName);
+    const chevronEl = document.getElementById('pauta-step-chevron-' + stepName);
+    
+    if (bodyEl) {
+        if (isExpanded) bodyEl.classList.remove('hidden');
+        else bodyEl.classList.add('hidden');
+    }
+    if (chevronEl) {
+        chevronEl.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
+    }
+};
+
+window.togglePautaOtherSubpositions = function() {
+    window.pautaInspectorState.expandedOtherSubpositions = !window.pautaInspectorState.expandedOtherSubpositions;
+    const isExpanded = window.pautaInspectorState.expandedOtherSubpositions;
+    const bodyEl = document.getElementById('pauta-other-subpositions-body');
+    const chevronEl = document.getElementById('pauta-other-subpositions-chevron');
+    if (bodyEl) {
+        if (isExpanded) bodyEl.classList.remove('hidden');
+        else bodyEl.classList.add('hidden');
+    }
+    if (chevronEl) {
+        chevronEl.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
+    }
+};
+
+window.togglePautaSiblingSubposition = function(subCode) {
+    const current = !window.pautaInspectorState.expandedSubpositionsMap[subCode];
+    window.pautaInspectorState.expandedSubpositionsMap[subCode] = !current;
+    const isExpanded = !current;
+    const bodyEl = document.getElementById('pauta-sub-body-' + subCode);
+    const chevronEl = document.getElementById('pauta-sub-chevron-' + subCode);
+    if (bodyEl) {
+        if (isExpanded) bodyEl.classList.remove('hidden');
+        else bodyEl.classList.add('hidden');
+    }
+    if (chevronEl) {
+        chevronEl.style.transform = isExpanded ? 'rotate(90deg)' : 'rotate(0deg)';
+    }
+};
+
+window.expandAllPautaStaircase = function() {
+    window.pautaInspectorState.expandedSteps = {
+        section: true,
+        chapter: true,
+        heading: true,
+        activeSubposition: true
+    };
+    window.pautaInspectorState.expandedOtherSubpositions = true;
+    if (window.pautaInspectorState.data && window.pautaInspectorState.data.subpositions) {
+        window.pautaInspectorState.data.subpositions.forEach(s => {
+            window.pautaInspectorState.expandedSubpositionsMap[s.code] = true;
+        });
+    }
+    if (window.pautaInspectorState.data) {
+        window.renderPautaInspector(window.pautaInspectorState.data);
+    }
+};
+
+window.collapseAllPautaStaircase = function() {
+    window.pautaInspectorState.expandedSteps = {
+        section: true,
+        chapter: false,
+        heading: false,
+        activeSubposition: false
+    };
+    window.pautaInspectorState.expandedOtherSubpositions = false;
+    window.pautaInspectorState.expandedSubpositionsMap = {};
+    if (window.pautaInspectorState.data) {
+        window.renderPautaInspector(window.pautaInspectorState.data);
+    }
+};
+
+window.renderPautaInspector = function(data) {
+    const loadingEl = document.getElementById('pauta-inspector-loading');
+    const contentEl = document.getElementById('pauta-inspector-content');
+    if (loadingEl) loadingEl.classList.add('hidden');
+    if (contentEl) contentEl.classList.remove('hidden');
+
+    const h = data.hierarchy;
+    const item = data.item || {};
+    const subpositions = data.subpositions || [];
+    const activeSubCode = h.subheading.code;
+    const activeSub = subpositions.find(s => s.code === activeSubCode) || {
+        code: activeSubCode,
+        formatted: h.subheading.formatted,
+        label: h.subheading.label,
+        items: data.siblings.filter(s => s.code.startsWith(activeSubCode))
+    };
+    const otherSubs = subpositions.filter(s => s.code !== activeSubCode);
+
+    const daRate = getRateFromPauta(item, ['Direitos', 'Aduaneiros']);
+    const ivaRate = getRateFromPauta(item, ['IVA', 'Valor Acrescentado']);
+    const tsaRate = getRateFromPauta(item, ['Sobretaxa']);
+    const iceComplex = getComplexRateFromPauta(item, ['consumo', 'ice']);
+
+    let iceFormatted = '0.00%';
+    if (iceComplex) {
+        if (iceComplex.raw) iceFormatted = iceComplex.raw;
+        else if (iceComplex.adValorem > 0) iceFormatted = (iceComplex.adValorem * 100).toFixed(2) + '%';
+        else if (iceComplex.specificAmount > 0) iceFormatted = iceComplex.specificAmount + ' MZN / ' + iceComplex.specificUnit;
+    }
+
+    const extraDuties = (item.duties || []).filter(d => {
+        const name = (d['Nome da Taxa'] || '').toLowerCase();
+        return !name.includes('direitos') && !name.includes('iva') && !name.includes('consumo') && !name.includes('ice') && !name.includes('sobretaxa');
+    });
+
+    const targetRowId = window.pautaInspectorState.targetRowId;
+    const targetRowIndex = window.quoteEditorState.items.findIndex(i => i.id === targetRowId);
+    const st = window.pautaInspectorState.expandedSteps;
+
+    // --- VISTA 1: ESCADA COLAPSÁVEL SEGUINDO A HIERARQUIA ---
+    const staircaseContainer = document.getElementById('pauta-view-staircase');
+    if (staircaseContainer) {
+        staircaseContainer.innerHTML = [
+            '<!-- DEGRAU 1: SECÇÃO (I a XXI) -->',
+            '<div class="staircase-step bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden transition-all">',
+            '    <div onclick="window.togglePautaStaircaseStep(\'section\')" class="p-3 sm:p-4 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-800 text-white flex items-center justify-between cursor-pointer hover:bg-slate-850 transition-colors">',
+            '        <div class="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0 pr-2">',
+            '            <span id="pauta-step-chevron-section" class="w-5 h-5 flex items-center justify-center text-slate-400 transition-transform duration-200 text-xs shrink-0" style="transform: ' + (st.section ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>',
+            '            <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2.5 min-w-0">',
+            '                <span class="px-2 py-0.5 rounded-lg bg-slate-700/80 text-slate-100 font-black text-[10px] uppercase tracking-wider shrink-0 border border-slate-600/60 shadow-2xs">Secção (I a XXI)</span>',
+            '                <h4 class="text-xs sm:text-sm font-black truncate text-white tracking-tight"><strong class="text-emerald-400">' + h.section.roman + ':</strong> ' + h.section.name + '</h4>',
+            '            </div>',
+            '        </div>',
+            '        <span class="text-[10px] font-bold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-lg border border-slate-700 shrink-0 hidden sm:inline">Nível 1 da Pauta</span>',
+            '    </div>',
+            '',
+            '    <!-- CORPO DO DEGRAU 1: CONTÉM O DEGRAU 2 (CAPÍTULO) INDENTADO COM LINHA GUIA -->',
+            '    <div id="pauta-step-body-section" class="' + (st.section ? '' : 'hidden') + ' p-3 sm:p-4 pt-2 sm:pt-3 bg-slate-50/50">',
+            '        <div class="border-l-2 border-indigo-300 ml-2 sm:ml-4 pl-3 sm:pl-5 space-y-3">',
+            '',
+            '            <!-- DEGRAU 2: CAPÍTULO (01 a 97) -->',
+            '            <div class="staircase-step bg-white rounded-2xl border border-indigo-200 shadow-xs overflow-hidden transition-all">',
+            '                <div onclick="window.togglePautaStaircaseStep(\'chapter\')" class="p-3 sm:p-3.5 bg-gradient-to-r from-indigo-900 via-indigo-850 to-indigo-800 text-white flex items-center justify-between cursor-pointer hover:bg-indigo-850 transition-colors">',
+            '                    <div class="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0 pr-2">',
+            '                        <span id="pauta-step-chevron-chapter" class="w-5 h-5 flex items-center justify-center text-indigo-300 transition-transform duration-200 text-xs shrink-0" style="transform: ' + (st.chapter ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>',
+            '                        <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2.5 min-w-0">',
+            '                            <span class="px-2 py-0.5 rounded-lg bg-indigo-700 text-indigo-100 font-black text-[10px] uppercase tracking-wider shrink-0 border border-indigo-600 shadow-2xs">Capítulo (01 a 97)</span>',
+            '                            <h4 class="text-xs sm:text-sm font-black truncate text-white tracking-tight"><strong class="text-indigo-200">' + h.chapter.label + ':</strong> ' + h.chapter.name + '</h4>',
+            '                        </div>',
+            '                    </div>',
+            '                    <span class="text-[10px] font-bold text-indigo-200 bg-indigo-800/80 px-2 py-0.5 rounded-lg border border-indigo-700 shrink-0 hidden sm:inline">Capítulo ' + h.chapter.code + '</span>',
+            '                </div>',
+            '',
+            '                <!-- CORPO DO DEGRAU 2: CONTÉM O DEGRAU 3 (POSIÇÃO) INDENTADO COM LINHA GUIA -->',
+            '                <div id="pauta-step-body-chapter" class="' + (st.chapter ? '' : 'hidden') + ' p-3 sm:p-4 pt-2 sm:pt-3 bg-indigo-50/20">',
+            '                    <div class="border-l-2 border-blue-300 ml-2 sm:ml-4 pl-3 sm:pl-5 space-y-3">',
+            '',
+            '                        <!-- DEGRAU 3: POSIÇÃO (4 DÍGITOS) -->',
+            '                        <div class="staircase-step bg-white rounded-2xl border border-blue-200 shadow-xs overflow-hidden transition-all">',
+            '                            <div onclick="window.togglePautaStaircaseStep(\'heading\')" class="p-3 sm:p-3.5 bg-gradient-to-r from-blue-900 via-blue-850 to-blue-800 text-white flex items-center justify-between cursor-pointer hover:bg-blue-850 transition-colors">',
+            '                                <div class="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0 pr-2">',
+            '                                    <span id="pauta-step-chevron-heading" class="w-5 h-5 flex items-center justify-center text-blue-300 transition-transform duration-200 text-xs shrink-0" style="transform: ' + (st.heading ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>',
+            '                                    <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2.5 min-w-0">',
+            '                                        <span class="px-2 py-0.5 rounded-lg bg-blue-700 text-blue-100 font-black text-[10px] uppercase tracking-wider shrink-0 border border-blue-600 shadow-2xs">Posição (4 dígitos)</span>',
+            '                                        <h4 class="text-xs sm:text-sm font-black truncate text-white tracking-tight"><strong class="text-blue-200">' + h.heading.label + ':</strong> ' + h.heading.name + '</h4>',
+            '                                    </div>',
+            '                                </div>',
+            '                                <span class="text-[10px] font-bold text-blue-200 bg-blue-800/80 px-2 py-0.5 rounded-lg border border-blue-700 shrink-0 whitespace-nowrap">' + data.totalInHeading + ' artigos • ' + subpositions.length + ' subposições</span>',
+            '                            </div>',
+            '',
+            '                            <!-- CORPO DO DEGRAU 3: CONTÉM O DEGRAU 4 (SUBPOSIÇÃO) INDENTADO COM LINHA GUIA -->',
+            '                            <div id="pauta-step-body-heading" class="' + (st.heading ? '' : 'hidden') + ' p-3 sm:p-4 pt-2 sm:pt-3 bg-blue-50/20 space-y-3">',
+            '                                <div class="border-l-2 border-purple-300 ml-2 sm:ml-4 pl-3 sm:pl-5 space-y-3">',
+            '',
+            '                                    <!-- DEGRAU 4: SUBPOSIÇÃO ATIVA (6 DÍGITOS) -->',
+            '                                    <div class="staircase-step bg-white rounded-2xl border-2 border-purple-300 shadow-xs overflow-hidden transition-all">',
+            '                                        <div onclick="window.togglePautaStaircaseStep(\'activeSubposition\')" class="p-3 sm:p-3.5 bg-gradient-to-r from-purple-900 via-purple-850 to-purple-800 text-white flex items-center justify-between cursor-pointer hover:bg-purple-850 transition-colors">',
+            '                                            <div class="flex items-center gap-2.5 sm:gap-3 flex-1 min-w-0 pr-2">',
+            '                                                <span id="pauta-step-chevron-activeSubposition" class="w-5 h-5 flex items-center justify-center text-purple-300 transition-transform duration-200 text-xs shrink-0" style="transform: ' + (st.activeSubposition ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>',
+            '                                                <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2.5 min-w-0">',
+            '                                                    <span class="px-2 py-0.5 rounded-lg bg-purple-700 text-purple-100 font-black text-[10px] uppercase tracking-wider shrink-0 border border-purple-600 shadow-2xs">Subposição (6 dígitos)</span>',
+            '                                                    <h4 class="text-xs sm:text-sm font-black truncate text-white tracking-tight"><strong class="text-purple-200">' + activeSub.label + '</strong></h4>',
+            '                                                </div>',
+            '                                            </div>',
+            '                                            <span class="text-[10px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 shrink-0 whitespace-nowrap">★ Subposição Atual (' + activeSub.items.length + ' artigos)</span>',
+            '                                        </div>',
+            '',
+            '                                        <!-- CORPO DO DEGRAU 4: CONTÉM O DEGRAU 5 (CÓDIGO / LINHA PAUTAL DE 8 DÍGITOS) -->',
+            '                                        <div id="pauta-step-body-activeSubposition" class="' + (st.activeSubposition ? '' : 'hidden') + ' p-3 sm:p-4 pt-2 sm:pt-3 bg-purple-50/20 space-y-3">',
+            '                                            <div class="border-l-2 border-emerald-400 ml-2 sm:ml-4 pl-3 sm:pl-5 space-y-3">',
+            '',
+            '                                                <!-- DEGRAU 5: CÓDIGO / LINHA PAUTAL (8 DÍGITOS) - ARTIGO SELECIONADO -->',
+            '                                                <div class="staircase-step bg-white rounded-2xl border-2 border-emerald-500 shadow-md overflow-hidden">',
+            '                                                    <div class="p-3 sm:p-4 bg-gradient-to-r from-emerald-700 via-emerald-600 to-teal-700 text-white flex flex-col md:flex-row md:items-center justify-between gap-3">',
+            '                                                        <div class="flex items-center gap-2.5 sm:gap-3 flex-wrap">',
+            '                                                            <span class="px-2 py-0.5 rounded-lg bg-emerald-900/90 text-emerald-100 font-black text-[10px] uppercase tracking-wider border border-emerald-500/60 shadow-2xs">Código / Linha Pautal (8 dígitos)</span>',
+            '                                                            <span class="font-mono font-black text-lg sm:text-xl text-emerald-950 bg-white px-3 py-0.5 rounded-xl border border-emerald-200 shadow-xs tracking-tight">' + data.formattedCode + '</span>',
+            '                                                            <button type="button" onclick="window.copyInspectedHsCode()" class="text-[11px] font-bold text-emerald-100 hover:text-white bg-emerald-800/80 hover:bg-emerald-800 border border-emerald-500/80 px-2 py-0.5 rounded-lg transition-colors flex items-center gap-1 shadow-2xs" title="Copiar Código">',
+            '                                                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>',
+            '                                                                <span id="btn-copy-code-text">Copiar</span>',
+            '                                                            </button>',
+            '                                                        </div>',
+            '                                                        <div class="flex items-center gap-2 shrink-0">',
+            '                                                            <button type="button" onclick="window.applyInspectedPautaToQuote()" class="btn-action-scale px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-black uppercase rounded-xl shadow-md flex items-center gap-2 transition-all">',
+            '                                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>',
+            '                                                                <span>' + (targetRowIndex >= 0 ? 'Aplicar à Linha #' + (targetRowIndex + 1) : 'Aplicar à Cotação') + '</span>',
+            '                                                            </button>',
+            '                                                        </div>',
+            '                                                    </div>',
+            '',
+            '                                                    <!-- Descrição e Taxas Oficiais -->',
+            '                                                    <div class="p-4 sm:p-5 bg-gradient-to-b from-emerald-50/30 to-white space-y-3">',
+            '                                                        <div>',
+            '                                                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Descrição Oficial da Mercadoria:</span>',
+            '                                                            <h3 class="text-sm sm:text-base font-black text-slate-900 leading-snug mt-0.5">' + (item.description || 'Sem descrição oficial cadastrada.') + '</h3>',
+            '                                                        </div>',
+            '',
+            '                                                        <!-- Grid de Taxas Aduaneiras Oficiais -->',
+            '                                                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">',
+            '                                                            <div class="p-3 rounded-2xl bg-blue-50/90 border border-blue-200/90 flex flex-col justify-between shadow-2xs">',
+            '                                                                <span class="text-[10px] font-bold uppercase tracking-wider text-blue-600">Direitos Aduaneiros (D.A.)</span>',
+            '                                                                <span class="text-lg font-black text-blue-950 mt-1">' + (daRate * 100).toFixed(2) + '%</span>',
+            '                                                            </div>',
+            '                                                            <div class="p-3 rounded-2xl bg-emerald-50/90 border border-emerald-200/90 flex flex-col justify-between shadow-2xs">',
+            '                                                                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600">IVA</span>',
+            '                                                                <span class="text-lg font-black text-emerald-950 mt-1">' + (ivaRate * 100).toFixed(2) + '%</span>',
+            '                                                            </div>',
+            '                                                            <div class="p-3 rounded-2xl bg-amber-50/90 border border-amber-200/90 flex flex-col justify-between shadow-2xs">',
+            '                                                                <span class="text-[10px] font-bold uppercase tracking-wider text-amber-600">ICE (Consumo Específico)</span>',
+            '                                                                <span class="text-xs sm:text-sm font-black text-amber-950 mt-1 truncate" title="' + iceFormatted.replace(/"/g, '&quot;') + '">' + iceFormatted + '</span>',
+            '                                                            </div>',
+            '                                                            <div class="p-3 rounded-2xl bg-purple-50/90 border border-purple-200/90 flex flex-col justify-between shadow-2xs">',
+            '                                                                <span class="text-[10px] font-bold uppercase tracking-wider text-purple-600">Sobretaxa Aduaneira</span>',
+            '                                                                <span class="text-lg font-black text-purple-950 mt-1">' + (tsaRate * 100).toFixed(2) + '%</span>',
+            '                                                            </div>',
+            '                                                            ' + (extraDuties.length > 0 ? [
+                                                                            '<div class="col-span-2 sm:col-span-4 p-2.5 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-between text-xs text-slate-700">',
+                                                                            '    <span class="font-bold text-[11px] text-slate-500 uppercase">Outras Taxas / Regras Oficiais:</span>',
+                                                                            '    <span class="font-bold text-[11px] text-slate-800">' + extraDuties.map(e => (e['Nome da Taxa'] || 'Taxa') + ': <strong>' + (e['Taxa'] || e['Value'] || '') + '</strong>').join(' • ') + '</span>',
+                                                                            '</div>'
+                                                                        ].join('') : ''),
+            '                                                        </div>',
+            '                                                    </div>',
+            '                                                </div>',
+            '',
+            '                                                <!-- Outros Artigos Desta Mesma Subposição (' + activeSub.code + ') -->',
+            '                                                <div class="bg-white rounded-2xl border border-purple-200 overflow-hidden shadow-2xs">',
+            '                                                    <div class="p-2.5 px-3 bg-purple-50/80 border-b border-purple-100 flex items-center justify-between">',
+            '                                                        <span class="text-[11px] font-black uppercase text-purple-900 tracking-tight">Artigos da ' + activeSub.label + ' (' + activeSub.items.length + ' artigos)</span>',
+            '                                                        <span class="text-[10px] font-bold text-purple-600">Selecione para inspecionar ou usar</span>',
+            '                                                    </div>',
+            '                                                    <div class="divide-y divide-slate-100 text-xs">',
+            activeSub.items.map(subItem => {
+                const isSelected = subItem.code === data.code;
+                const itDa = getRateFromPauta(subItem, ['Direitos', 'Aduaneiros']);
+                const itIva = getRateFromPauta(subItem, ['IVA', 'Valor Acrescentado']);
+                return [
+                    '                                                        <div class="p-2.5 px-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 ' + (isSelected ? 'bg-emerald-50/80 font-bold border-l-4 border-emerald-500' : 'hover:bg-slate-50') + ' transition-colors">',
+                    '                                                            <div class="flex items-start sm:items-center gap-2 flex-1 min-w-0">',
+                    '                                                                <span class="font-mono font-bold text-xs ' + (isSelected ? 'text-emerald-900 font-black' : 'text-slate-800') + '">' + subItem.formattedCode + '</span>',
+                    isSelected ? '<span class="text-[9px] font-black bg-emerald-200 text-emerald-900 px-1.5 py-0.2 rounded-full uppercase">Atual</span>' : '',
+                    '                                                                <span class="text-xs ' + (isSelected ? 'text-emerald-950 font-black' : 'text-slate-700') + ' truncate" title="' + subItem.description.replace(/"/g, '&quot;') + '">' + subItem.description + '</span>',
+                    '                                                            </div>',
+                    '                                                            <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">',
+                    '                                                                <span class="text-[10px] text-slate-400 font-bold">D.A.: ' + (itDa * 100).toFixed(0) + '% | IVA: ' + (itIva * 100).toFixed(0) + '%</span>',
+                    isSelected ? '<span class="text-[10px] font-black text-emerald-700 bg-emerald-100/90 px-2 py-0.5 rounded-lg border border-emerald-200">Selecionado</span>' : (
+                        '<button type="button" onclick="window.inspectPautaCode(\'' + subItem.code + '\')" class="px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shadow-2xs">Ver</button>' +
+                        '<button type="button" onclick="window.applySiblingPauta(\'' + subItem.code + '\')" class="px-2 py-0.5 text-[10px] font-bold text-emerald-700 hover:text-white bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 hover:border-emerald-600 rounded-lg transition-colors shadow-2xs">Usar</button>'
+                    ),
+                    '                                                            </div>',
+                    '                                                        </div>'
+                ].join('');
+            }).join(''),
+            '                                                    </div>',
+            '                                                </div>',
+            '                                            </div>',
+            '                                        </div>',
+            '                                    </div>',
+            '',
+            '                                    <!-- OUTRAS SUBPOSIÇÕES DA POSIÇÃO ' + h.heading.formatted + ' -->',
+            otherSubs.length > 0 ? [
+                '                                    <div class="staircase-step bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xs">',
+                '                                        <div onclick="window.togglePautaOtherSubpositions()" class="p-2.5 sm:p-3 bg-slate-100 hover:bg-slate-200/80 cursor-pointer flex items-center justify-between transition-colors">',
+                '                                            <div class="flex items-center gap-2 text-xs font-bold text-slate-700">',
+                '                                                <span id="pauta-other-subpositions-chevron" class="w-4 h-4 flex items-center justify-center text-slate-500 text-xs transition-transform duration-200" style="transform: ' + (window.pautaInspectorState.expandedOtherSubpositions ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>',
+                '                                                <span>Outras Subposições da ' + h.heading.label + ' (' + otherSubs.length + ' restantes)</span>',
+                '                                            </div>',
+                '                                            <span class="text-[10px] font-bold text-slate-500">Clique para explorar outras subposições</span>',
+                '                                        </div>',
+                '                                        <div id="pauta-other-subpositions-body" class="' + (window.pautaInspectorState.expandedOtherSubpositions ? '' : 'hidden') + ' divide-y divide-slate-100 p-2 sm:p-3 space-y-2 bg-slate-50/40">',
+                otherSubs.map(os => {
+                    const isSubExp = !!window.pautaInspectorState.expandedSubpositionsMap[os.code];
+                    return [
+                        '                                            <div class="bg-white rounded-xl border border-slate-200/80 overflow-hidden">',
+                        '                                                <div onclick="window.togglePautaSiblingSubposition(\'' + os.code + '\')" class="p-2 px-3 hover:bg-purple-50/50 cursor-pointer flex items-center justify-between text-xs transition-colors">',
+                        '                                                    <div class="flex items-center gap-2">',
+                        '                                                        <span id="pauta-sub-chevron-' + os.code + '" class="w-3.5 h-3.5 flex items-center justify-center text-slate-400 text-[10px] transition-transform duration-200" style="transform: ' + (isSubExp ? 'rotate(90deg)' : 'rotate(0deg)') + ';">▶</span>',
+                        '                                                        <span class="font-mono font-bold text-purple-900">' + os.label + '</span>',
+                        '                                                    </div>',
+                        '                                                    <span class="text-[10px] font-bold text-slate-400">' + os.items.length + ' artigos</span>',
+                        '                                                </div>',
+                        '                                                <div id="pauta-sub-body-' + os.code + '" class="' + (isSubExp ? '' : 'hidden') + ' divide-y divide-slate-100 p-2 pl-6 bg-slate-50/60 text-xs">',
+                        os.items.map(oItem => [
+                            '                                                    <div class="p-1.5 flex items-center justify-between gap-2 hover:bg-white rounded transition-colors">',
+                            '                                                        <div class="flex items-center gap-2 truncate">',
+                            '                                                            <span class="font-mono font-bold text-slate-800">' + oItem.formattedCode + '</span>',
+                            '                                                            <span class="text-slate-600 truncate">' + oItem.description + '</span>',
+                            '                                                        </div>',
+                            '                                                        <div class="flex items-center gap-1 shrink-0">',
+                            '                                                            <button type="button" onclick="window.inspectPautaCode(\'' + oItem.code + '\')" class="px-2 py-0.5 text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded">Ver</button>',
+                            '                                                            <button type="button" onclick="window.applySiblingPauta(\'' + oItem.code + '\')" class="px-2 py-0.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-600 hover:text-white border border-emerald-200 rounded">Usar</button>',
+                            '                                                        </div>',
+                            '                                                    </div>'
+                        ].join('')).join(''),
+                        '                                                </div>',
+                        '                                            </div>'
+                    ].join('');
+                }).join(''),
+                '                                        </div>',
+                '                                    </div>'
+            ].join('') : '',
+            '',
+            '                                </div>',
+            '                            </div>',
+            '                        </div>',
+            '                    </div>',
+            '                </div>',
+            '            </div>',
+            '        </div>',
+            '    </div>',
+            '</div>'
+        ].join('');
+    }
+
+    // --- VISTA 2: TABELA GERAL DA POSIÇÃO (ALTERNATIVA) ---
+    const headingTitleEl = document.getElementById('pauta-inspector-heading-title');
+    if (headingTitleEl) headingTitleEl.innerText = h.heading.label + ': ' + h.heading.name;
+
+    const headingCountEl = document.getElementById('pauta-inspector-heading-count');
+    if (headingCountEl) headingCountEl.innerText = data.totalInHeading + ' artigos na Pauta';
+
+    const siblingsTbody = document.getElementById('pauta-inspector-siblings-tbody');
+    if (siblingsTbody) {
+        if (!data.siblings || data.siblings.length === 0) {
+            siblingsTbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400 font-bold">Nenhum artigo encontrado nesta posição.</td></tr>';
+        } else {
+            siblingsTbody.innerHTML = data.siblings.map(s => {
+                const isSelected = (s.code === data.code);
+                const da = getRateFromPauta(s, ['Direitos', 'Aduaneiros']);
+                const iva = getRateFromPauta(s, ['IVA', 'Valor Acrescentado']);
+                const iceC = getComplexRateFromPauta(s, ['consumo', 'ice']);
+                let iceLabel = '0%';
+                if (iceC) {
+                    if (iceC.raw) iceLabel = iceC.raw;
+                    else if (iceC.adValorem > 0) iceLabel = (iceC.adValorem * 100).toFixed(0) + '%';
+                    else if (iceC.specificAmount > 0) iceLabel = iceC.specificAmount + ' MZN';
+                }
+
+                const actionHtml = isSelected
+                    ? '<span class="text-[10px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-1 rounded-lg border border-emerald-200">Selecionado</span>'
+                    : ('<div class="flex items-center justify-center gap-1">' +
+                       '<button type="button" class="btn-inspect-sib px-2 py-1 text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors shadow-2xs" data-code="' + s.code + '" title="Ver estrutura e taxas">Ver</button>' +
+                       '<button type="button" class="btn-use-sib px-2 py-1 text-[10px] font-bold text-emerald-700 hover:text-white bg-emerald-50 hover:bg-emerald-600 border border-emerald-200 hover:border-emerald-600 rounded-lg transition-colors shadow-2xs" data-code="' + s.code + '" title="Aplicar este código à cotação">Usar</button>' +
+                       '</div>');
+
+                return [
+                    '<tr id="pauta-sibling-row-' + s.code + '" class="' + (isSelected ? 'bg-emerald-50/90 border-l-4 border-emerald-500 font-medium' : 'hover:bg-slate-50') + ' transition-colors h-9">',
+                    '<td class="py-2 px-3 text-center text-[10px] text-slate-400 ' + (isSelected ? 'font-black text-emerald-700' : '') + '">' + s.index + '</td>',
+                    '<td class="py-2 px-3 whitespace-nowrap">',
+                    '<div class="flex items-center gap-1.5">',
+                    '<span class="font-mono font-bold text-xs ' + (isSelected ? 'text-emerald-800 font-black' : 'text-slate-800') + '">' + s.formattedCode + '</span>',
+                    isSelected ? '<span class="text-[9px] font-black bg-emerald-200 text-emerald-900 px-1.5 py-0.2 rounded-full uppercase">Atual</span>' : '',
+                    '</div>',
+                    '</td>',
+                    '<td class="py-2 px-3 text-xs ' + (isSelected ? 'text-emerald-950 font-bold' : 'text-slate-700') + '">' + s.description + '</td>',
+                    '<td class="py-2 px-3 text-center text-xs font-bold ' + (da > 0 ? 'text-blue-700' : 'text-slate-400') + '">' + (da * 100).toFixed(0) + '%</td>',
+                    '<td class="py-2 px-3 text-center text-xs font-bold ' + (iva > 0 ? 'text-emerald-700' : 'text-slate-400') + '">' + (iva * 100).toFixed(0) + '%</td>',
+                    '<td class="py-2 px-3 text-center text-[11px] font-bold ' + (iceLabel !== '0%' ? 'text-amber-700' : 'text-slate-400') + ' truncate max-w-[120px]" title="' + iceLabel.replace(/"/g, '&quot;') + '">' + iceLabel + '</td>',
+                    '<td class="py-2 px-3 text-center whitespace-nowrap">' + actionHtml + '</td>',
+                    '</tr>'
+                ].join('');
+            }).join('');
+
+            siblingsTbody.querySelectorAll('.btn-inspect-sib').forEach(btn => {
+                btn.addEventListener('click', () => window.inspectPautaCode(btn.getAttribute('data-code')));
+            });
+            siblingsTbody.querySelectorAll('.btn-use-sib').forEach(btn => {
+                btn.addEventListener('click', () => window.applySiblingPauta(btn.getAttribute('data-code')));
+            });
+        }
+    }
+
+    setTimeout(() => {
+        if (window.pautaInspectorState.viewMode === 'staircase') {
+            const activeStep = document.getElementById('pauta-step-body-activeSubposition');
+            if (activeStep) {
+                activeStep.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }, 150);
+};
+
+window.applySiblingPauta = async function(siblingCode) {
+    if (!siblingCode) return;
+    try {
+        const data = await api.getPautaHierarchy(siblingCode);
+        window.pautaInspectorState.activeCode = siblingCode;
+        window.pautaInspectorState.data = data;
+        window.applyInspectedPautaToQuote();
+    } catch (e) {
+        console.error('[PAUTA] Erro ao aplicar irmão:', e);
+        toast('Erro ao selecionar artigo da pauta.', 'error');
+    }
+};
+
+window.applyInspectedPautaToQuote = function() {
+    const data = window.pautaInspectorState.data;
+    if (!data || !data.item) {
+        toast('Nenhum artigo selecionado para aplicar.', 'warning');
+        return;
+    }
+
+    let targetRowId = window.pautaInspectorState.targetRowId;
+    let item = null;
+
+    if (targetRowId) {
+        item = window.quoteEditorState.items.find(i => i.id === targetRowId);
+    }
+
+    if (!item && window.quoteEditorState.items.length > 0) {
+        item = window.quoteEditorState.items.find(i => !i.hsCode || i.hsCode.length < 8) || window.quoteEditorState.items[0];
+    }
+
+    if (!item) {
+        window.addQuoteRow();
+        item = window.quoteEditorState.items[window.quoteEditorState.items.length - 1];
+    }
+
+    if (item) {
+        item.hsCode = data.code;
+        item.pauta = data.item;
+        if (!item.description || item.description === 'Múltiplos Artigos' || item.description.trim() === '') {
+            item.description = data.item.description || '';
+        }
+        window.updateRowDOM(item);
+        window.calculateFullInvoice();
+        toast('Artigo ' + data.formattedCode + ' aplicado com sucesso!', 'success');
+        window.closePautaInspector();
+    }
+};
+
+window.copyInspectedHsCode = function() {
+    const data = window.pautaInspectorState.data;
+    const code = (data && data.code) || window.pautaInspectorState.activeCode;
+    if (!code) return;
+
+    navigator.clipboard.writeText(code).then(() => {
+        const btnText = document.getElementById('btn-copy-code-text');
+        if (btnText) {
+            btnText.innerText = 'Copiado!';
+            setTimeout(() => { btnText.innerText = 'Copiar'; }, 2000);
+        }
+        toast('Código ' + code + ' copiado!', 'success');
+    }).catch(() => {
+        toast('Código: ' + code);
+    });
+};
+
+window.closePautaInspector = function() {
+    closeModal('modal-pauta-inspector');
+    window.pautaInspectorState.targetRowId = null;
+    const resultsContainer = document.getElementById('pauta-inspector-search-results');
+    if (resultsContainer) resultsContainer.classList.add('hidden');
+};
+
+window.handlePautaInspectorSearch = function(query) {
+    const clearBtn = document.getElementById('btn-pauta-clear-search');
+    if (clearBtn) {
+        if (query && query.trim()) clearBtn.classList.remove('hidden');
+        else clearBtn.classList.add('hidden');
+    }
+
+    if (window.pautaInspectorState.searchTimeout) {
+        clearTimeout(window.pautaInspectorState.searchTimeout);
+    }
+
+    const trimmed = (query || '').trim();
+    const resultsContainer = document.getElementById('pauta-inspector-search-results');
+    if (!resultsContainer) return;
+
+    if (!trimmed || trimmed.length < 2) {
+        resultsContainer.innerHTML = '';
+        resultsContainer.classList.add('hidden');
+        return;
+    }
+
+    window.pautaInspectorState.searchTimeout = setTimeout(async () => {
+        try {
+            const results = await api.searchPauta(trimmed, 10);
+            if (!results || results.length === 0) {
+                resultsContainer.innerHTML = '<div class="p-4 text-center text-xs text-slate-400 font-bold">Nenhum artigo encontrado para "' + trimmed.replace(/"/g, '&quot;') + '".</div>';
+                resultsContainer.classList.remove('hidden');
+                return;
+            }
+
+            resultsContainer.innerHTML = results.map(r => [
+                '<div class="search-item p-2.5 px-3 hover:bg-emerald-50 cursor-pointer transition-colors flex items-center justify-between gap-3" data-code="' + r.code + '">',
+                '<div class="flex-1 min-w-0">',
+                '<div class="flex items-center gap-2">',
+                '<span class="font-mono font-bold text-xs text-emerald-800 bg-emerald-100/70 px-1.5 py-0.2 rounded">' + r.code + '</span>',
+                '<span class="text-xs font-semibold text-slate-800 truncate">' + r.description + '</span>',
+                '</div>',
+                '</div>',
+                '<span class="text-[10px] font-bold text-slate-400 shrink-0">Ver ↗</span>',
+                '</div>'
+            ].join('')).join('');
+
+            resultsContainer.querySelectorAll('.search-item').forEach(itemEl => {
+                itemEl.addEventListener('click', () => {
+                    const code = itemEl.getAttribute('data-code');
+                    window.clearPautaInspectorSearch();
+                    window.inspectPautaCode(code);
+                });
+            });
+
+            resultsContainer.classList.remove('hidden');
+        } catch (e) {
+            console.error('[PAUTA SEARCH] Erro:', e);
+        }
+    }, 200);
+};
+
+window.clearPautaInspectorSearch = function() {
+    const input = document.getElementById('pauta-inspector-search');
+    if (input) input.value = '';
+    const clearBtn = document.getElementById('btn-pauta-clear-search');
+    if (clearBtn) clearBtn.classList.add('hidden');
+    const resultsContainer = document.getElementById('pauta-inspector-search-results');
+    if (resultsContainer) {
+        resultsContainer.innerHTML = '';
+        resultsContainer.classList.add('hidden');
+    }
+};
+
+window.selectPautaSearchResult = function(code) {
+    window.clearPautaInspectorSearch();
+    window.inspectPautaCode(code);
+};
+
+
+
+
+/**
+ * Permite a qualquer operador definir ou alterar rapidamente a data de descarga do projeto ativo
+ */
+export async function promptSetProjectDischargeDate() {
+    const current = state.confirm?.dischargeDate || '';
+    const newDateStr = prompt(
+        'Introduza a Data de Descarga para este projeto (formato DD/MM/AAAA ou AAAA-MM-DD):\n(Deixar em branco para remover)',
+        current
+    );
+    if (newDateStr === null) return; // cancelado pelo utilizador
+    
+    const cleanDate = newDateStr.trim();
+    let formattedDate = cleanDate;
+    if (cleanDate) {
+        const parsed = parseDate(cleanDate);
+        if (!parsed) {
+            toast('Data inválida. Por favor use DD/MM/AAAA ou AAAA-MM-DD.', 'error');
+            return;
+        }
+        const yyyy = parsed.getFullYear();
+        const mm = String(parsed.getMonth() + 1).padStart(2, '0');
+        const dd = String(parsed.getDate()).padStart(2, '0');
+        formattedDate = `${yyyy}-${mm}-${dd}`;
+    }
+
+    try {
+        setLoader(true, 'A gravar data de descarga...');
+        state.confirm.dischargeDate = formattedDate;
+
+        // Gravar no PocketBase se existir projectId
+        if (state.confirm.projectId) {
+            try {
+                await pb.collection('confirm_projects').update(state.confirm.projectId, {
+                    dischargeDate: formattedDate
+                });
+            } catch (pbErr) {
+                console.warn('[PROJECT] Erro ao gravar dischargeDate no PocketBase:', pbErr);
+            }
+        }
+
+        // Gravar na nota da planilha para redundância
+        if (state.confirm.sheetId) {
+            const noteText = formattedDate ? `DISCHARGE_DATE:${formattedDate}` : '';
+            try {
+                await updateGSheetNote(state.confirm.sheetId, '', 0, 0, noteText);
+            } catch (shErr) {
+                console.warn('[PROJECT] Erro ao gravar nota DISCHARGE_DATE na planilha:', shErr);
+            }
+        }
+
+        toast('Data de descarga atualizada com sucesso!', 'success');
+
+        // Atualizar lista de clientes ou tela de detalhes
+        if (window.currentActiveClient) {
+            await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+        } else if (state.confirm.data) {
+            const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
+            renderConfirmList(state.confirm.data, '', statusFilter);
+        }
+    } catch (err) {
+        toast('Erro ao atualizar data de descarga: ' + err.message, 'error');
+    } finally {
+        setLoader(false);
+    }
+}
+window.promptSetProjectDischargeDate = promptSetProjectDischargeDate;
+
+// Fechar dropdowns de ações em massa ao clicar fora
+if (typeof document !== 'undefined') {
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#dropdown-bulk-bank-wrapper') && !e.target.closest('#dropdown-bulk-status-wrapper')) {
+            if (typeof closeAllBulkDropdowns === 'function') {
+                closeAllBulkDropdowns();
+            }
+        }
+    });
+}

@@ -32,88 +32,238 @@
                         <div id="badge-client-responded" class="hidden bg-indigo-50 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-xs font-black text-[9px] uppercase tracking-wider animate-pulse select-none" title="Este cliente já respondeu à nota de confirmação">
                             💬 Respondido
                         </div>
-                        <button id="btn-toggle-bulk-actions" onclick="document.getElementById('confirm-bulk-actions-panel').classList.toggle('hidden')" 
-                            class="bg-white text-slate-500 border border-slate-200 p-2 rounded-lg hover:bg-slate-50 transition-all shadow-xs active:scale-95 cursor-pointer flex items-center justify-center" title="Ações em Massa">
+                        <button id="btn-toggle-bulk-actions" onclick="ui.openBulkActionsPanel()" 
+                            class="bg-white text-slate-500 border border-slate-200 p-2 rounded-lg hover:bg-slate-50 transition-all shadow-xs active:scale-95 cursor-pointer flex items-center justify-center shrink-0" title="Ações em Massa">
                             <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
                         </button>
 
-                        <button id="btn-toggle-reconciliation" onclick="document.getElementById('payment-info-container').classList.toggle('hidden')" class="bg-white text-slate-500 border border-slate-200 p-2 rounded-lg hover:bg-slate-50 transition-all shadow-xs active:scale-95 cursor-pointer flex items-center justify-center" title="Ocultar/Ver Histórico de Pagamentos">
-                            <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                        </button>
+                        <!-- Card / Painel Minimalista de Ações em Massa Inline (Mesma linha e altura) -->
+                        <div id="confirm-bulk-actions-panel" class="hidden items-center gap-1.5 bg-slate-100/90 border border-slate-200 px-1.5 h-[34px] rounded-xl shadow-xs transition-all shrink-0">
+                            <!-- Dropdown Customizado Banco -->
+                            <div class="relative" id="dropdown-bulk-bank-wrapper">
+                                <button id="btn-dropdown-bulk-bank" type="button" onclick="ui.toggleBulkDropdown('bank', event)"
+                                    class="h-[26px] py-0 px-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 flex items-center justify-between gap-1.5 shadow-2xs cursor-pointer min-w-[105px] max-w-[130px] transition-all select-none" title="Selecionar Banco">
+                                    <span id="label-bulk-bank" class="truncate">Banco...</span>
+                                    <svg id="arrow-bulk-bank" class="w-2.5 h-2.5 text-slate-400 shrink-0 transition-transform duration-200" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                                </button>
+                                
+                                <!-- Select Nativo Invisível (Garante 100% de compatibilidade) -->
+                                <select id="bulk-bank" class="hidden">
+                                    <option value="">Banco...</option>
+                                    <option value="?">?</option>
+                                    <option value="BCI BOSS">BCI BOSS</option>
+                                    <option value="BIM BOSS">BIM BOSS</option>
+                                    <option value="BCI JUPITER">BCI JUPITER</option>
+                                    <option value="BIM JUPITER">BIM JUPITER</option>
+                                    <option value="STB JUPITER">STB JUPITER</option>
+                                    <option value="NED JUPITER">NED JUPITER</option>
+                                    <option value="PAID IN CHINA">PAID IN CHINA</option>
+                                    <option value="REPOSIÇÃO">REPOSIÇÃO</option>
+                                    <option value="COTACAO">COTACAO</option>
+                                    <option value="EMOLA BOSS">EMOLA BOSS</option>
+                                </select>
 
-                        <button id="btn-toggle-audit-history" onclick="ui.openClientAuditModal()" class="bg-white text-slate-600 hover:text-blue-700 hover:border-blue-200 border border-slate-200 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer" title="Ver Histórico de Auditoria">
+                                <!-- Lista Flutuante Customizada de Bancos -->
+                                <div id="list-dropdown-bulk-bank" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-slate-200/90 shadow-2xl rounded-2xl p-1.5 w-52 z-[150] flex flex-col text-[10px] animate-in fade-in zoom-in-95 duration-150">
+                                    <div class="p-1 border-b border-slate-100 flex items-center justify-between px-2 mb-1">
+                                        <span class="text-[8.5px] font-black uppercase tracking-wider text-slate-400">Selecionar Banco</span>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', '', 'Banco...')" class="text-[8.5px] font-bold text-slate-400 hover:text-red-500 transition-colors cursor-pointer">Limpar</button>
+                                    </div>
+                                    <div class="max-h-56 overflow-y-auto space-y-0.5 custom-scrollbar px-0.5">
+                                        <!-- Grupo BOSS -->
+                                        <div class="px-2 pt-1 pb-0.5 text-[7.5px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                                            <span>Contas BOSS</span>
+                                            <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                        </div>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'BCI BOSS', 'BCI BOSS')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="BCI BOSS">
+                                            <span class="flex items-center gap-1.5 truncate">BCI BOSS</span>
+                                            <span class="text-[7.5px] bg-blue-50 text-blue-600 border border-blue-200/60 font-black px-1.5 py-0.2 rounded shrink-0">BOSS</span>
+                                        </button>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'BIM BOSS', 'BIM BOSS')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="BIM BOSS">
+                                            <span class="flex items-center gap-1.5 truncate">BIM BOSS</span>
+                                            <span class="text-[7.5px] bg-blue-50 text-blue-600 border border-blue-200/60 font-black px-1.5 py-0.2 rounded shrink-0">BOSS</span>
+                                        </button>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'EMOLA BOSS', 'EMOLA BOSS')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="EMOLA BOSS">
+                                            <span class="flex items-center gap-1.5 truncate">EMOLA BOSS</span>
+                                            <span class="text-[7.5px] bg-orange-50 text-orange-600 border border-orange-200/60 font-black px-1.5 py-0.2 rounded shrink-0">MOLA</span>
+                                        </button>
+
+                                        <!-- Grupo JUPITER -->
+                                        <div class="px-2 pt-2 pb-0.5 text-[7.5px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                                            <span>Contas JUPITER</span>
+                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                        </div>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'BCI JUPITER', 'BCI JUPITER')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="BCI JUPITER">
+                                            <span class="flex items-center gap-1.5 truncate">BCI JUPITER</span>
+                                            <span class="text-[7.5px] bg-emerald-50 text-emerald-600 border border-emerald-200/60 font-black px-1.5 py-0.2 rounded shrink-0">JUPITER</span>
+                                        </button>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'BIM JUPITER', 'BIM JUPITER')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="BIM JUPITER">
+                                            <span class="flex items-center gap-1.5 truncate">BIM JUPITER</span>
+                                            <span class="text-[7.5px] bg-emerald-50 text-emerald-600 border border-emerald-200/60 font-black px-1.5 py-0.2 rounded shrink-0">JUPITER</span>
+                                        </button>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'STB JUPITER', 'STB JUPITER')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="STB JUPITER">
+                                            <span class="flex items-center gap-1.5 truncate">STB JUPITER</span>
+                                            <span class="text-[7.5px] bg-emerald-50 text-emerald-600 border border-emerald-200/60 font-black px-1.5 py-0.2 rounded shrink-0">JUPITER</span>
+                                        </button>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'NED JUPITER', 'NED JUPITER')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="NED JUPITER">
+                                            <span class="flex items-center gap-1.5 truncate">NED JUPITER</span>
+                                            <span class="text-[7.5px] bg-emerald-50 text-emerald-600 border border-emerald-200/60 font-black px-1.5 py-0.2 rounded shrink-0">JUPITER</span>
+                                        </button>
+
+                                        <!-- Outros / Especiais -->
+                                        <div class="px-2 pt-2 pb-0.5 text-[7.5px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                                            <span>Outros / Especiais</span>
+                                            <span class="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                                        </div>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'PAID IN CHINA', 'PAID IN CHINA')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="PAID IN CHINA">
+                                            <span class="flex items-center gap-1.5 truncate">PAID IN CHINA</span>
+                                            <span class="text-[7.5px] bg-purple-50 text-purple-600 border border-purple-200/60 font-black px-1.5 py-0.2 rounded shrink-0">CHINA</span>
+                                        </button>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'REPOSIÇÃO', 'REPOSIÇÃO')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="REPOSIÇÃO">
+                                            <span class="flex items-center gap-1.5 truncate">REPOSIÇÃO</span>
+                                        </button>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', 'COTACAO', 'COTACAO')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-700 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="COTACAO">
+                                            <span class="flex items-center gap-1.5 truncate">COTACAO</span>
+                                        </button>
+                                        <button type="button" onclick="ui.selectBulkOption('bank', '?', '?')" class="bulk-bank-opt w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 text-slate-500 font-bold flex items-center justify-between transition-colors cursor-pointer" data-val="?">
+                                            <span class="flex items-center gap-1.5 truncate">? (Sem Banco)</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Dropdown Customizado Estado -->
+                            <div class="relative" id="dropdown-bulk-status-wrapper">
+                                <button id="btn-dropdown-bulk-status" type="button" onclick="ui.toggleBulkDropdown('status', event)"
+                                    class="h-[26px] py-0 px-2.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 flex items-center justify-between gap-1.5 shadow-2xs cursor-pointer min-w-[115px] max-w-[145px] transition-all select-none" title="Selecionar Estado">
+                                    <span id="label-bulk-status" class="truncate">Estado...</span>
+                                    <svg id="arrow-bulk-status" class="w-2.5 h-2.5 text-slate-400 shrink-0 transition-transform duration-200" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"></path></svg>
+                                </button>
+                                
+                                <!-- Select Nativo Invisível (Garante 100% de compatibilidade) -->
+                                <select id="bulk-status" class="hidden">
+                                    <option value="">Estado...</option>
+                                    <option value="CONFIRMADO">CONFIRMADO</option>
+                                    <option value="PARCIAL">PARCIAL</option>
+                                    <option value="RE-VERIFICANDO">RE-VERIFICANDO</option>
+                                    <option value="SEM COMPROVATIVO">SEM COMPROVATIVO</option>
+                                    <option value="COMPROVATIVO ERRADO">COMPROVATIVO ERRADO</option>
+                                    <option value="PENDENTE">PENDENTE</option>
+                                    <option value="AGUARDA PAGAMENTO">AGUARDA PAGAMENTO</option>
+                                </select>
+
+                                <!-- Lista Flutuante Customizada de Estados -->
+                                <div id="list-dropdown-bulk-status" class="hidden absolute top-full left-0 mt-1.5 bg-white border border-slate-200/90 shadow-2xl rounded-2xl p-1.5 w-60 z-[150] flex flex-col text-[10px] animate-in fade-in zoom-in-95 duration-150">
+                                    <div class="p-1 border-b border-slate-100 flex items-center justify-between px-2 mb-1">
+                                        <span class="text-[8.5px] font-black uppercase tracking-wider text-slate-400">Selecionar Estado</span>
+                                        <button type="button" onclick="ui.selectBulkOption('status', '', 'Estado...')" class="text-[8.5px] font-bold text-slate-400 hover:text-red-500 transition-colors cursor-pointer">Limpar</button>
+                                    </div>
+                                    <div class="max-h-64 overflow-y-auto space-y-1 custom-scrollbar px-1 py-0.5">
+                                        <!-- CONFIRMADO -->
+                                        <button type="button" onclick="ui.selectBulkOption('status', 'CONFIRMADO', 'CONFIRMADO')" class="bulk-status-opt w-full text-left p-1 rounded-lg hover:bg-emerald-50/60 transition-all cursor-pointer flex items-center justify-between group" data-val="CONFIRMADO">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-2xs border bg-green-50 text-green-700 border-green-300">
+                                                <svg class="w-2.5 h-2.5 text-green-600" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                                                CONFIRMADO
+                                            </span>
+                                            <span class="text-[8.5px] font-bold text-slate-400 group-hover:text-green-700">Total</span>
+                                        </button>
+
+                                        <!-- PARCIAL -->
+                                        <button type="button" onclick="ui.selectBulkOption('status', 'PARCIAL', 'PARCIAL')" class="bulk-status-opt w-full text-left p-1 rounded-lg hover:bg-amber-50/60 transition-all cursor-pointer flex items-center justify-between group" data-val="PARCIAL">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-2xs border bg-amber-100 text-amber-800 border-amber-300">
+                                                <svg class="w-2.5 h-2.5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                                                PARCIAL
+                                            </span>
+                                            <span class="text-[8.5px] font-bold text-slate-400 group-hover:text-amber-800">Parcial</span>
+                                        </button>
+
+                                        <!-- RE-VERIFICANDO -->
+                                        <button type="button" onclick="ui.selectBulkOption('status', 'RE-VERIFICANDO', 'RE-VERIFICANDO')" class="bulk-status-opt w-full text-left p-1 rounded-lg hover:bg-blue-50/60 transition-all cursor-pointer flex items-center justify-between group" data-val="RE-VERIFICANDO">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-2xs border bg-blue-100 text-blue-800 border-blue-300">
+                                                <svg class="w-2.5 h-2.5 text-blue-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                                RE-VERIFICANDO
+                                            </span>
+                                            <span class="text-[8.5px] font-bold text-slate-400 group-hover:text-blue-800">Rever</span>
+                                        </button>
+
+                                        <!-- SEM COMPROVATIVO -->
+                                        <button type="button" onclick="ui.selectBulkOption('status', 'SEM COMPROVATIVO', 'SEM COMPROVATIVO')" class="bulk-status-opt w-full text-left p-1 rounded-lg hover:bg-orange-50/60 transition-all cursor-pointer flex items-center justify-between group" data-val="SEM COMPROVATIVO">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-2xs border bg-orange-100 text-orange-800 border-orange-300">
+                                                <svg class="w-2.5 h-2.5 text-orange-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                                                SEM COMPROVATIVO
+                                            </span>
+                                            <span class="text-[8.5px] font-bold text-slate-400 group-hover:text-orange-800">Falta</span>
+                                        </button>
+
+                                        <!-- COMPROVATIVO ERRADO -->
+                                        <button type="button" onclick="ui.selectBulkOption('status', 'COMPROVATIVO ERRADO', 'COMPROVATIVO ERRADO')" class="bulk-status-opt w-full text-left p-1 rounded-lg hover:bg-red-50/60 transition-all cursor-pointer flex items-center justify-between group" data-val="COMPROVATIVO ERRADO">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-2xs border bg-red-100 text-red-800 border-red-300">
+                                                <svg class="w-2.5 h-2.5 text-red-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                                COMPROVATIVO ERRADO
+                                            </span>
+                                            <span class="text-[8.5px] font-bold text-slate-400 group-hover:text-red-800">Errado</span>
+                                        </button>
+
+                                        <!-- PENDENTE -->
+                                        <button type="button" onclick="ui.selectBulkOption('status', 'PENDENTE', 'PENDENTE')" class="bulk-status-opt w-full text-left p-1 rounded-lg hover:bg-yellow-50/60 transition-all cursor-pointer flex items-center justify-between group" data-val="PENDENTE">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-2xs border bg-yellow-400 text-black border-yellow-500">
+                                                <svg class="w-2.5 h-2.5 text-black" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                                                PENDENTE (?)
+                                            </span>
+                                            <span class="text-[8.5px] font-bold text-slate-400 group-hover:text-yellow-900">Dúvida</span>
+                                        </button>
+
+                                        <!-- AGUARDA PAGAMENTO -->
+                                        <button type="button" onclick="ui.selectBulkOption('status', 'AGUARDA PAGAMENTO', 'AGUARDA PAGAMENTO')" class="bulk-status-opt w-full text-left p-1 rounded-lg hover:bg-slate-100 transition-all cursor-pointer flex items-center justify-between group" data-val="AGUARDA PAGAMENTO">
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-2xs border bg-slate-100 text-slate-500 border-slate-300">
+                                                <svg class="w-2.5 h-2.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                                                AGUARDA PAGAMENTO
+                                            </span>
+                                            <span class="text-[8.5px] font-bold text-slate-400 group-hover:text-slate-600">Espera</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Botão Aplicar -->
+                            <button onclick="ui.applyBulkUpdate()" class="h-[26px] bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-black uppercase tracking-wider px-2.5 rounded-lg transition-all shadow-xs active:scale-95 flex items-center gap-1 cursor-pointer shrink-0" title="Aplicar alterações em massa a todas as ordens">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17 4 12"></path></svg>
+                                <span>Aplicar</span>
+                            </button>
+
+                            <!-- Botão Fechar (x) -->
+                            <button onclick="ui.closeBulkActionsPanel()" class="h-[26px] w-[26px] bg-white hover:bg-slate-200 text-slate-400 hover:text-slate-700 border border-slate-200 rounded-lg flex items-center justify-center transition-all shadow-2xs active:scale-95 cursor-pointer shrink-0" title="Fechar Ações em Massa">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+
+                        <button id="btn-toggle-audit-history" onclick="ui.openClientAuditModal()" class="hidden bg-white text-slate-500 hover:text-blue-600 hover:border-blue-200 border border-slate-200 p-2 rounded-lg transition-all shadow-xs active:scale-95 items-center justify-center cursor-pointer" title="Ver Histórico de Auditoria">
                             <svg class="w-3.5 h-3.5 text-blue-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
-                            <span>Auditoria</span>
                         </button>
 
-                        <button id="btn-add-confirm-article" onclick="window.openAddConfirmArticleModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 flex items-center gap-1.5 cursor-pointer" title="Adicionar Artigo e Suportes">
+                        <button id="btn-add-confirm-article" onclick="window.openAddConfirmArticleModal()" class="hidden bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-lg transition-all shadow-xs active:scale-95 flex items-center justify-center cursor-pointer" title="Adicionar Artigo e Suportes">
                             <svg class="w-3.5 h-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                            <span>Artigo</span>
                         </button>
                         <button id="btn-confirm-freight-mini" onclick="ui.openFreightModal()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer group active:scale-95 hidden">
-                            <svg class="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                            <svg class="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1 .6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"></path>
+                                <path d="M19.38 20A11.6 11.6 0 0 0 21 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"></path>
+                                <path d="M19 13V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6"></path>
+                                <path d="M12 10v4"></path>
+                                <path d="M12 2v3"></path>
+                            </svg>
                             <span class="text-[9px] font-black uppercase text-slate-500">Frete:</span>
                             <span id="confirm-freight-mini-status" class="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-slate-100 text-slate-500">---</span>
                         </button>
+                        <button id="btn-confirm-storage-mini" onclick="ui.toggleConfirmArmazem('armazem')" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-all shadow-xs cursor-pointer group active:scale-95 hidden" title="Clique para gerir ou ver detalhes de Armazenagem">
+                            <svg class="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-500 transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                            <span class="text-[9px] font-black uppercase text-slate-500">Armazém:</span>
+                            <span id="confirm-storage-mini-status" class="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-slate-100 text-slate-500">---</span>
+                        </button>
                     </div>
                 </div>
 
-                <!-- Painel de Ações em Massa (Bulk Actions) -->
-                <div id="confirm-bulk-actions-panel" class="hidden bg-gradient-to-r from-slate-50 to-white border border-slate-200/80 p-4 rounded-3xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-8 h-8 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center font-black">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg>
-                        </div>
-                        <div>
-                            <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Ações em Massa</h4>
-                            <p class="text-[10px] text-slate-400 font-bold uppercase leading-none mt-0.5">Atualizar todas as ordens</p>
-                        </div>
-                    </div>
-                    
-                    <div class="flex flex-wrap items-center gap-4 w-full sm:w-auto justify-end">
-                        <!-- Banco em Massa -->
-                        <div class="flex flex-col gap-1">
-                            <label for="bulk-bank" class="text-[9px] font-black text-slate-400 uppercase tracking-wider">Banco</label>
-                            <select id="bulk-bank" class="py-1.5 px-3 text-slate-700 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-w-[140px] shadow-sm cursor-pointer">
-                                <option value="">Sem Alteração</option>
-                                <option value="?">?</option>
-                                <option value="BCI BOSS">BCI BOSS</option>
-                                <option value="BIM BOSS">BIM BOSS</option>
-                                <option value="BCI JUPITER">BCI JUPITER</option>
-                                <option value="BIM JUPITER">BIM JUPITER</option>
-                                <option value="STB JUPITER">STB JUPITER</option>
-                                <option value="NED JUPITER">NED JUPITER</option>
-                                <option value="PAID IN CHINA">PAID IN CHINA</option>
-                                <option value="REPOSIÇÃO">REPOSIÇÃO</option>
-                                <option value="COTACAO">COTACAO</option>
-                                <option value="EMOLA BOSS">EMOLA BOSS</option>
-                            </select>
-                        </div>
-                        
-                        <!-- Status em Massa -->
-                        <div class="flex flex-col gap-1">
-                            <label for="bulk-status" class="text-[9px] font-black text-slate-400 uppercase tracking-wider">Estado</label>
-                            <select id="bulk-status" class="py-1.5 px-3 text-slate-700 bg-white border border-slate-200 rounded-xl text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all min-w-[140px] shadow-sm cursor-pointer">
-                                <option value="">Sem Alteração</option>
-                                <option value="CONFIRMADO">✅ CONFIRMADO</option>
-                                <option value="PARCIAL">⚠️ PARCIAL</option>
-                                <option value="RE-VERIFICANDO">🔄 RE-VERIFICANDO</option>
-                                <option value="SEM COMPROVATIVO">❌ SEM COMPROVATIVO</option>
-                                <option value="COMPROVATIVO ERRADO">⚠️ COMPROVATIVO ERRADO</option>
-                                <option value="PENDENTE">⏳ PENDENTE (?)</option>
-                                <option value="AGUARDA PAGAMENTO">💸 AGUARDA PAGAMENTO</option>
-                            </select>
-                        </div>
 
-                        <!-- Botão Aplicar -->
-                        <div class="self-end pb-0.5">
-                            <button onclick="ui.applyBulkUpdate()" class="bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase tracking-widest px-5 py-2.5 rounded-xl transition-all shadow-md hover:shadow-blue-500/10 active:scale-95 flex items-center gap-2 cursor-pointer h-[34px]">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17 4 12"></path></svg>
-                                Aplicar
-                            </button>
-                        </div>
-                    </div>
-                </div>
 
                 <!-- Conteúdo da Tabela e Modal renderizados via JS -->
                 <div id="confirm-client-orders">

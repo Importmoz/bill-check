@@ -1900,16 +1900,33 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
         const projectRecord = state.confirm?.projects?.find(x => x.sheetId === sheetId);
         const data = await api.readGSheet(projectRecord || sheetId);
         
-        // Extrair Data de Descarga do PocketBase ou da nota da célula A1 se existir
+        // Extrair Data de Descarga do PocketBase, nota da célula A1 ou coluna da planilha
         state.confirm.dischargeDate = '';
-        if (projectRecord && projectRecord.dischargeDate) {
-            state.confirm.dischargeDate = projectRecord.dischargeDate;
+        const pbDischarge = projectRecord ? (projectRecord.dischargeDate || projectRecord.discharge_date || '') : '';
+        if (pbDischarge) {
+            state.confirm.dischargeDate = pbDischarge;
             console.log(`[WAREHOUSE] Data de Descarga carregada do PocketBase: ${state.confirm.dischargeDate}`);
         } else if (state.confirm && state.confirm.notes && state.confirm.notes[0] && state.confirm.notes[0][0]) {
             const note = state.confirm.notes[0][0];
             if (note.startsWith("DISCHARGE_DATE:")) {
                 state.confirm.dischargeDate = note.replace("DISCHARGE_DATE:", "").trim();
-                console.log(`[WAREHOUSE] Data de Descarga carregada da planilha (fallback): ${state.confirm.dischargeDate}`);
+                console.log(`[WAREHOUSE] Data de Descarga carregada da planilha (nota A1 fallback): ${state.confirm.dischargeDate}`);
+            }
+        }
+        
+        // Fallback adicional: procurar coluna de data de descarga na própria planilha se ainda não tiver
+        if (!state.confirm.dischargeDate && data && data.length > 1) {
+            const header = (data[0] || []).map(c => String(c || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim());
+            const dColIdx = header.findIndex(c => c === 'DISCHARGE DATE' || c === 'DATA DESCARGA' || c === 'DATA DE DESCARGA');
+            if (dColIdx !== -1) {
+                for (let r = 1; r < data.length; r++) {
+                    const val = String(data[r]?.[dColIdx] || '').trim();
+                    if (val && val !== '—' && val !== '-') {
+                        state.confirm.dischargeDate = val;
+                        console.log(`[WAREHOUSE] Data de Descarga carregada de coluna da planilha: ${state.confirm.dischargeDate}`);
+                        break;
+                    }
+                }
             }
         }
         
@@ -2067,6 +2084,11 @@ function setConfirmProjectPageSize(sizeVal) {
 }
 
 function openAddConfirmArticleModal() {
+    const role = api.pb.authStore.model?.role || 'USER';
+    if (role !== 'ADMIN') {
+        ui.toast("Apenas administradores podem adicionar artigos.", "warning");
+        return;
+    }
     const client = window.currentActiveClient;
     const clientIndex = window.currentActiveClientIndex;
     if (!client) {
@@ -2097,6 +2119,11 @@ function openAddConfirmArticleModal() {
 
 async function submitAddConfirmArticle(e) {
     e.preventDefault();
+    const role = api.pb.authStore.model?.role || 'USER';
+    if (role !== 'ADMIN') {
+        ui.toast("Apenas administradores podem adicionar artigos.", "error");
+        return;
+    }
     const client = window.currentActiveClient;
     const clientIndex = window.currentActiveClientIndex;
     if (!client) return;

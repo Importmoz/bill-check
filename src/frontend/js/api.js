@@ -505,13 +505,138 @@ export async function markPaymentReconciled(id, combinedInfo, allocatedAmount = 
 
 export async function getPaymentsByMasterRef(masterRef) {
     try {
-        if (!masterRef || !masterRef.includes("(Ref Mestre:")) return [];
-        const filter = `reference ~ "${masterRef.replace(/"/g, '\\"')}"`;
+        if (!masterRef) return [];
+        const match = masterRef.match(/\(Ref Mestre:\s*([^)]+)\)/);
+        if (!match) return [];
+        const masterToken = `(Ref Mestre: ${match[1].trim()})`;
+        const filter = `reference ~ "${masterToken.replace(/"/g, '\\"')}"`;
         return await pb.collection('bank_incomes').getFullList({ filter });
     } catch (e) {
         console.error("Erro ao buscar pagamentos por Ref Mestre:", e);
         return [];
     }
+}
+
+/**
+ * Desaloca um pagamento reconciliado no PocketBase (bank_incomes).
+ * Trata com precisão todos os cenários de pagamentos divididos (splits):
+ * 1. Se for um split filho e o mestre estiver livre, reintegra o valor no mestre e elimina o split.
+ * 2. Se for o mestre a ser desalocado e existirem splits filhos livres, absorve-os de volta.
+ * 3. Se partes do split estiverem em uso por outros clientes, preserva rigorosamente os seus valores sem adulterações.
+ * 4. Se options.mergeSplit === false, liberta apenas a fatia específica para reatribuição imediata.
+ */
+export async function unallocatePayment(id, options = {}) {
+    const payment = await pb.collection('bank_incomes').getOne(id);
+    if (!payment) throw new Error("Movimento bancário não encontrado.");
+
+    const prevAllocatedTo = payment.allocated_to || "";
+    const amount = payment.amount;
+
+    // Verificar se é um split filho com Ref Mestre
+    const masterMatch = payment.reference && payment.reference.match(/\(Ref Mestre:\s*([^)]+)\)/);
+    const masterId = masterMatch ? masterMatch[1].trim() : null;
+    const isSplitChild = (payment.signature && payment.signature.includes('_split_')) || (masterId && masterId !== payment.id);
+
+    // CASO 1: É um split filho e options.mergeSplit !== false
+    if (isSplitChild && masterId && options.mergeSplit !== false) {
+        try {
+            const master = await pb.collection('bank_incomes').getOne(masterId);
+            // Só reintegra se o mestre existir e NÃO estiver já reconciliado/alocado a outro cliente
+            if (master && !master.reconciled) {
+                const masterNewAmount = (parseFloat(master.amount) || 0) + (parseFloat(payment.amount) || 0);
+                
+                // Verificar se após esta reintegração ainda sobram outros filhos
+                const siblings = await getPaymentsByMasterRef(`(Ref Mestre: ${master.id})`);
+                const otherChildren = siblings.filter(s => s.id !== master.id && s.id !== payment.id);
+                
+                let masterCleanRef = master.reference || "";
+                masterCleanRef = masterCleanRef.replace(/\s*\[Vinculado:[^\]]+\]/g, '').trim();
+                if (otherChildren.length === 0) {
+                    masterCleanRef = masterCleanRef.replace(/\s*\(Ref Mestre:\s*[^)]+\)/g, '').trim();
+                }
+
+                await pb.collection('bank_incomes').update(master.id, {
+                    amount: masterNewAmount,
+                    reconciled: false,
+                    allocated_to: "",
+                    reference: masterCleanRef
+                });
+                await pb.collection('bank_incomes').delete(payment.id);
+                return {
+                    success: true,
+                    mergedWithMaster: true,
+                    masterId: master.id,
+                    prevAllocatedTo,
+                    amount,
+                    record: master
+                };
+            }
+        } catch (err) {
+            console.warn("[unallocatePayment] Não foi possível reintegrar no mestre, desalocando individualmente:", err);
+        }
+    }
+
+    // Limpar tag [Vinculado: ...] da referência para deixar o registo limpo
+    let cleanRef = payment.reference || "";
+    cleanRef = cleanRef.replace(/\s*\[Vinculado:[^\]]+\]/g, '').trim();
+
+    // CASO 2: É o registo Mestre que está a ser desalocado e options.mergeSplit !== false
+    // Verificar se existem splits filhos que já estavam LIVRES para serem absorvidos de volta
+    if (!isSplitChild && masterId && options.mergeSplit !== false) {
+        try {
+            const siblings = await getPaymentsByMasterRef(`(Ref Mestre: ${payment.id})`);
+            const freeChildren = siblings.filter(s => s.id !== payment.id && !s.reconciled);
+            const reconciledChildren = siblings.filter(s => s.id !== payment.id && s.reconciled);
+
+            if (freeChildren.length > 0) {
+                let additionalAmount = 0;
+                for (const child of freeChildren) {
+                    additionalAmount += (parseFloat(child.amount) || 0);
+                    await pb.collection('bank_incomes').delete(child.id);
+                }
+                const masterNewAmount = (parseFloat(payment.amount) || 0) + additionalAmount;
+
+                if (reconciledChildren.length === 0) {
+                    cleanRef = cleanRef.replace(/\s*\(Ref Mestre:\s*[^)]+\)/g, '').trim();
+                }
+
+                const updated = await pb.collection('bank_incomes').update(payment.id, {
+                    amount: masterNewAmount,
+                    reconciled: false,
+                    allocated_to: "",
+                    reference: cleanRef
+                });
+
+                return {
+                    success: true,
+                    mergedWithMaster: true,
+                    reintegratedChildrenCount: freeChildren.length,
+                    paymentId: payment.id,
+                    prevAllocatedTo,
+                    amount: masterNewAmount,
+                    record: updated
+                };
+            }
+        } catch (err) {
+            console.warn("[unallocatePayment] Não foi possível absorver filhos livres no mestre:", err);
+        }
+    }
+
+    // Desalocação padrão: apenas desmarca como reconciliado e limpa allocated_to
+    const updated = await pb.collection('bank_incomes').update(payment.id, {
+        reconciled: false,
+        allocated_to: "",
+        reference: cleanRef
+    });
+
+    return {
+        success: true,
+        mergedWithMaster: false,
+        paymentId: payment.id,
+        prevAllocatedTo,
+        amount,
+        record: updated
+    };
 }
 
 
@@ -1273,6 +1398,12 @@ export async function logConfirmAudit(sheetId, clientNo, clientName, actionType,
             user: userId || null
         });
         console.log(`[AUDIT] Evento '${actionType}' registado para Cliente ${clientNo}:`, payload);
+        if (typeof window !== 'undefined' && typeof window.setAuditHistoryButtonVisible === 'function' && window.currentActiveClient) {
+            const activeNo = String(window.currentActiveClient.no || '').trim();
+            if (activeNo && activeNo === String(clientNo || '').trim()) {
+                window.setAuditHistoryButtonVisible(true);
+            }
+        }
         return rec;
     } catch (err) {
         console.warn(`[AUDIT] Falha ao registar auditoria '${actionType}':`, err.message);
@@ -2646,6 +2777,19 @@ export async function searchPauta(query, limit = 50) {
             return desc.includes(term) || code.includes(term);
         });
         return results.slice(0, limit);
+    }
+}
+
+export async function getPautaHierarchy(code) {
+    if (!code) return null;
+    const clean = String(code).replace(/[^0-9]/g, '');
+    try {
+        const res = await fetch('/api/pauta/hierarchy/' + clean);
+        if (!res.ok) throw new Error('Falha ao obter dados da pauta');
+        return await res.json();
+    } catch (err) {
+        console.error('[PAUTA API] Erro ao obter hierarquia da pauta:', err);
+        throw err;
     }
 }
 
