@@ -33,6 +33,30 @@ function canonicalizeName(str) {
     .trim();
 }
 
+// Localiza a pasta do cliente de forma DETERMINÍSTICA (nunca cria uma duplicada).
+// Antes usava-se só `includes`, o que fazia uma pequena diferença no Nº ou no nome
+// (espaço, acento, nome a mais) não encontrar a pasta existente e criar OUTRA — e os
+// documentos já anexados ficavam "presos" na pasta antiga, parecendo apagados.
+function localizarPastaCliente(folders, no, nome, idCode) {
+  const idCodeNorm = canonicalizeName(idCode);
+  const nomeNorm = canonicalizeName(nome);
+  const comNoNorm = canonicalizeName(`${no} ${nome}`).trim();
+
+  if (idCodeNorm) {
+    const porId = folders.find(f => canonicalizeName(f.name) === idCodeNorm);
+    if (porId) return porId;
+  }
+  const porComNo = folders.find(f => canonicalizeName(f.name) === comNoNorm);
+  if (porComNo) return porComNo;
+  const porNome = folders.find(f => canonicalizeName(f.name) === nomeNorm);
+  if (porNome) return porNome;
+  // Retrocompatibilidade: folders antigas que só "contêm" o padrão.
+  return folders.find(f => {
+    const norm = canonicalizeName(f.name);
+    return (comNoNorm && norm.includes(comNoNorm)) || (idCodeNorm && norm.includes(idCodeNorm));
+  }) || null;
+}
+
 function getColLetter(colIndex) {
   let letter = '';
   let temp = colIndex;
@@ -351,10 +375,12 @@ router.post('/fill-client', upload.array('files', 10), async (req, res) => {
           fields: 'files(id, name)'
         });
 
-        const existingFolder = (listRes.data.files || []).find(f => {
-          const norm = canonicalizeName(f.name);
-          return norm.includes(folderTargetPattern) || (client.idCode && norm.includes(canonicalizeName(client.idCode)));
-        });
+        const existingFolder = localizarPastaCliente(
+          listRes.data.files || [],
+          effectiveClientNo,
+          client.name,
+          client.idCode || effectiveClientIdCode
+        );
 
         if (existingFolder) {
           clientFolderId = existingFolder.id;
@@ -733,16 +759,17 @@ router.post('/get-client', async (req, res) => {
 
     if (projectFolderId) {
       try {
-        const folderTargetPattern = canonicalizeName(`${clientNo} ${clientName}`);
         const listFolders = await drive.files.list({
           q: `'${projectFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
           fields: 'files(id, name)'
         });
 
-        const clientFolder = (listFolders.data.files || []).find(f => {
-          const norm = canonicalizeName(f.name);
-          return norm.includes(folderTargetPattern) || (clientIdCode && norm.includes(canonicalizeName(clientIdCode)));
-        });
+        const clientFolder = localizarPastaCliente(
+          listFolders.data.files || [],
+          clientNo,
+          clientName,
+          clientIdCode
+        );
 
         if (clientFolder) {
           clientFolderId = clientFolder.id;
