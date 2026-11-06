@@ -2733,25 +2733,45 @@ async function saveConfirmToSheet() {
 
     const updatedRow = [...currentConfirmRow.data];
 
-    const paidIdx = columns.findIndex((c, i) => {
-        const h = cleanString(c);
-        return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
-    });
+    let paidIdx = findCol(['PAID', 'PAID DUTY', 'DUTY PAID', 'VALOR PAGO', 'PAGO']);
+    if (paidIdx !== -1 && cleanString(columns[paidIdx]).includes('FREIGHT')) {
+        paidIdx = columns.findIndex(c => {
+            const h = cleanString(c);
+            return (h === 'PAID' || h === 'PAIDDUTY' || h === 'DUTYPAID' || h === 'PAGO') && !h.includes('FREIGHT');
+        });
+    }
     const amtDutyIdx = findCol(['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
-    const balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+    let balanceIdx = findCol(['BALANCE', 'SALDO', 'BALANCO']);
+    if (balanceIdx !== -1 && cleanString(columns[balanceIdx]).includes('FREIGHT')) {
+        balanceIdx = columns.findIndex(c => {
+            const h = cleanString(c);
+            return (h === 'BALANCE' || h === 'SALDO' || h === 'BALANCO') && !h.includes('FREIGHT');
+        });
+    }
 
     const amountDutyVal = amtDutyIdx !== -1 ? (parseFloat(String(currentConfirmRow.data[amtDutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
+    const currentPaidVal = paidIdx !== -1 ? (parseFloat(String(currentConfirmRow.data[paidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
 
     if (selectedStatus === 'CONFIRMADO') {
-        if (paidIdx !== -1) updatedRow[paidIdx] = amountDutyVal;
-        if (balanceIdx !== -1) updatedRow[balanceIdx] = 0;
+        if (paidIdx !== -1) {
+            // Se já tem um valor pago e for menor que o total, mantém o valor pago e força PARCIAL
+            if (currentPaidVal > 0 && currentPaidVal < (amountDutyVal - 1.0)) {
+                selectedStatus = 'PARCIAL';
+                updatedRow[paidIdx] = currentPaidVal;
+                if (balanceIdx !== -1) updatedRow[balanceIdx] = Math.max(0, amountDutyVal - currentPaidVal);
+            } else {
+                updatedRow[paidIdx] = amountDutyVal;
+                if (balanceIdx !== -1) updatedRow[balanceIdx] = 0;
+            }
+        }
     } else if (selectedStatus === 'PENDENTE') {
-        if (paidIdx !== -1 && !updatedRow[paidIdx]) updatedRow[paidIdx] = amountDutyVal;
-        if (balanceIdx !== -1) updatedRow[balanceIdx] = 0;
+        if (paidIdx !== -1) updatedRow[paidIdx] = '';
+        if (balanceIdx !== -1) updatedRow[balanceIdx] = amountDutyVal;
         selectedStatus = '?';
-    } else if (selectedStatus === 'PARCIAL' && balanceIdx !== -1) {
-        const paidVal = paidIdx !== -1 ? (parseFloat(String(updatedRow[paidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
-        updatedRow[balanceIdx] = Math.max(0, amountDutyVal - paidVal);
+    } else if (selectedStatus === 'PARCIAL') {
+        const paidVal = currentPaidVal > 0 ? currentPaidVal : 0;
+        if (paidIdx !== -1) updatedRow[paidIdx] = paidVal;
+        if (balanceIdx !== -1) updatedRow[balanceIdx] = Math.max(0, amountDutyVal - paidVal);
     }
 
     updatedRow[statusIdx] = selectedStatus;

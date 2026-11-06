@@ -3106,10 +3106,13 @@ export async function showConfirmDetail(client, clientIndex) {
     const dutyPrepIdx = findColumnIndex(columns, ['DUTY PREPAID', 'PREPAID', 'PRE-PAGO']);
     const amtDutyIdx = findColumnIndex(columns, ['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
     
-    const paidDutyIdx = columns.findIndex((c, i) => {
-        const h = cleanString(c);
-        return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
-    });
+    let paidDutyIdx = findColumnIndex(columns, ['PAID', 'PAID DUTY', 'DUTY PAID', 'VALOR PAGO', 'PAGO']);
+    if (paidDutyIdx !== -1 && cleanString(columns[paidDutyIdx]).includes('FREIGHT')) {
+        paidDutyIdx = columns.findIndex(c => {
+            const h = cleanString(c);
+            return (h === 'PAID' || h === 'PAIDDUTY' || h === 'DUTYPAID' || h === 'PAGO') && !h.includes('FREIGHT');
+        });
+    }
     
     const balanceIdx = findColumnIndex(columns, ['BALANCE', 'SALDO', 'BALANCO']);
     const bankDutyIdx = findColumnIndex(columns, ['BANK IN DUTY', 'BANK', 'BANCO']);
@@ -6516,12 +6519,18 @@ export async function applyBulkUpdate() {
                     const amountDutyVal = amtDutyIdx !== -1 ? (parseFloat(String(rowData[amtDutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
 
                     if (effectiveStatus === 'CONFIRMADO') {
-                        if (paidIdx !== -1) rowData[paidIdx] = amountDutyVal;
-                        if (balanceIdx !== -1) rowData[balanceIdx] = 0;
-                        rowData[statusIdx] = 'CONFIRMADO';
+                        const curPaid = paidIdx !== -1 ? (parseFloat(String(rowData[paidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
+                        if (curPaid > 0 && curPaid < (amountDutyVal - 1.0)) {
+                            rowData[statusIdx] = 'PARCIAL';
+                            if (balanceIdx !== -1) rowData[balanceIdx] = Math.max(0, amountDutyVal - curPaid);
+                        } else {
+                            if (paidIdx !== -1) rowData[paidIdx] = amountDutyVal;
+                            if (balanceIdx !== -1) rowData[balanceIdx] = 0;
+                            rowData[statusIdx] = 'CONFIRMADO';
+                        }
                     } else if (effectiveStatus === 'PENDENTE') {
-                        if (paidIdx !== -1 && !rowData[paidIdx]) rowData[paidIdx] = amountDutyVal;
-                        if (balanceIdx !== -1) rowData[balanceIdx] = 0;
+                        if (paidIdx !== -1) rowData[paidIdx] = '';
+                        if (balanceIdx !== -1) rowData[balanceIdx] = amountDutyVal;
                         rowData[statusIdx] = '?';
                     } else if (effectiveStatus === 'AGUARDA PAGAMENTO') {
                         if (paidIdx !== -1) rowData[paidIdx] = '';
@@ -9039,11 +9048,20 @@ export async function confirmPaymentSelection() {
                 pag2Idx = findColumnIndex(columns, ['PAG 2', 'PAG2']);
                 pag3Idx = findColumnIndex(columns, ['PAG 3', 'PAG3']);
                 obsIdx = findColumnIndex(columns, ['OBS', 'COMENTARIO', 'NOTAS', 'OBSERVACAO', 'OBSERVACOES']);
-                paidIdx = columns.findIndex((c, i) => {
-                    const h = cleanString(c);
-                    return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY');
-                });
+                paidIdx = findColumnIndex(columns, ['PAID', 'PAID DUTY', 'DUTY PAID', 'VALOR PAGO', 'PAGO']);
+                if (paidIdx !== -1 && cleanString(columns[paidIdx]).includes('FREIGHT')) {
+                    paidIdx = columns.findIndex(c => {
+                        const h = cleanString(c);
+                        return (h === 'PAID' || h === 'PAIDDUTY' || h === 'DUTYPAID' || h === 'PAGO') && !h.includes('FREIGHT');
+                    });
+                }
                 balanceIdx = findColumnIndex(columns, ['BALANCE', 'SALDO', 'BALANCO']);
+                if (balanceIdx !== -1 && cleanString(columns[balanceIdx]).includes('FREIGHT')) {
+                    balanceIdx = columns.findIndex(c => {
+                        const h = cleanString(c);
+                        return (h === 'BALANCE' || h === 'SALDO' || h === 'BALANCO') && !h.includes('FREIGHT');
+                    });
+                }
                 amountIdx = findColumnIndex(columns, ['AMOUNT DUTY', 'AMT DUTY', 'TOTAL DUTY', 'VALOR DUTY', 'ADUANEIROS']);
             }
 
@@ -9090,8 +9108,14 @@ export async function confirmPaymentSelection() {
                 const sortedClientRows = [...window.currentClientRows].sort((a, b) => a.originalIndex - b.originalIndex);
                 const firstRowIndex = sortedClientRows[0]?.originalIndex;
 
-                let allocatedAmountRemaining = allocatedAmount;
-                const filterStatus = status;
+                const totalAllocatedFromPayments = usedPayments.reduce((sum, p) => sum + p.amount, 0);
+                let allocatedAmountRemaining = (usedPayments.length > 0)
+                    ? Math.min(allocatedAmount, totalAllocatedFromPayments)
+                    : allocatedAmount;
+                let filterStatus = status;
+                if (allocatedAmountRemaining > 0 && currentMiniFilterExpectedAmount > 0 && allocatedAmountRemaining < (currentMiniFilterExpectedAmount - 0.05)) {
+                    filterStatus = 'PARCIAL';
+                }
 
                 // Formatar as datas de todos os pagamentos selecionados para vínculo usando parseDate
                 const formattedDates = selectedPaymentsForLink.map(p => {
@@ -9130,14 +9154,17 @@ export async function confirmPaymentSelection() {
                         if (bankDutyIdx !== -1) rowData[bankDutyIdx] = '';
                     } else {
                         // Distribuir o valor do pagamento
-                        const currentPaid = isFreight ? (parseFloat(rowObj.pdFreight) || 0) : (parseFloat(rowObj.paid) || 0);
                         const amt = isFreight ? (parseFloat(rowObj.amtFreight) || 0) : (parseFloat(rowObj.amountDuty) || 0);
                         const prep = isFreight ? 0 : (parseFloat(rowObj.dutyPrepaid) || 0);
+                        const netTarget = Math.max(0, amt - prep);
 
-                        let currentBalance = isFreight ? (parseFloat(rowObj.balFreight) || 0) : (parseFloat(rowObj.balance) || 0);
-                        if (currentBalance === 0 && amt > 0 && (currentPaid + prep) < amt) {
-                            currentBalance = Math.max(0, amt - prep - currentPaid);
+                        let currentPaid = isFreight ? (parseFloat(rowObj.pdFreight) || 0) : (parseFloat(rowObj.paid) || 0);
+                        // Se o valor pago existente na linha for igual ou superior ao total da linha, mas o operador está a alocar um montante parcial:
+                        if (currentPaid >= netTarget && allocatedAmountRemaining < netTarget) {
+                            currentPaid = 0;
                         }
+
+                        let currentBalance = Math.max(0, netTarget - currentPaid);
                         
                         let allocatedForThisRow = 0;
                         if (currentBalance > 0 && allocatedAmountRemaining > 0) {
@@ -9146,7 +9173,7 @@ export async function confirmPaymentSelection() {
                         }
 
                         const newPaid = currentPaid + allocatedForThisRow;
-                        const newBalance = Math.max(0, currentBalance - allocatedForThisRow);
+                        const newBalance = Math.max(0, netTarget - newPaid);
 
                         if (paidIdx !== -1) rowData[paidIdx] = newPaid;
                         if (balanceIdx !== -1) rowData[balanceIdx] = newBalance;
@@ -9199,7 +9226,7 @@ export async function confirmPaymentSelection() {
                         } else if (!isFreight) {
                             if (newBalance <= 1.0 && (newPaid > 0 || prep > 0 || amt === 0)) {
                                 newStatus = 'CONFIRMADO';
-                            } else if (newPaid > 0 || allocatedForThisRow > 0) {
+                            } else if (newBalance > 1.0 && (newPaid > 0 || prep > 0 || allocatedForThisRow > 0)) {
                                 newStatus = 'PARCIAL';
                             } else if (filterStatus === 'PARCIAL') {
                                 newStatus = 'PARCIAL';
