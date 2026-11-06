@@ -2329,14 +2329,9 @@ async function submitAddConfirmClient(e) {
 }
 
 
-async function autoOpenClientFolder(clientCode, clientName) {
+async function autoOpenClientFolder(clientCode, clientName, force = false) {
     const rootId = currentProjectRootFolderId;
     if (!rootId) return;
-
-    // Limpar o histórico de navegação ao entrar num novo cliente
-    if (typeof driveHistory !== 'undefined') {
-        driveHistory = [];
-    }
 
     // Função de normalização/canonicalização para correspondência ultra-robusta de nomes
     const canonicalize = (str) => {
@@ -2352,6 +2347,17 @@ async function autoOpenClientFolder(clientCode, clientName) {
     // Limpar o código de eventuais decimais (.0) que vêm do Excel
     const cleanCode = String(clientCode).split('.')[0].split(',')[0].trim();
     const targetPattern = canonicalize(`${cleanCode} ${clientName}`);
+
+    // Se a pasta deste cliente já estiver ativa no card Suportes e não for forçado, manter vista estável sem piscar
+    if (!force && api.state.confirm?.activeClientFolderPattern === targetPattern && api.state.confirm?.activeClientFolderId) {
+        console.log(`[AUTO-DRIVE] Pasta já carregada e ativa para "${targetPattern}". Mantendo vista.`);
+        return;
+    }
+
+    // Limpar o histórico de navegação ao entrar num novo cliente
+    if (typeof driveHistory !== 'undefined') {
+        driveHistory = [];
+    }
 
     console.log(`[AUTO-DRIVE] Tentando abertura instantânea (padrão canónico): "${targetPattern}"`);
 
@@ -2370,6 +2376,9 @@ async function autoOpenClientFolder(clientCode, clientName) {
 
     if (targetFolder) {
         console.log(`[AUTO-DRIVE] Encontrado no cache!`);
+        if (!api.state.confirm) api.state.confirm = {};
+        api.state.confirm.activeClientFolderId = targetFolder.id;
+        api.state.confirm.activeClientFolderPattern = targetPattern;
         openDriveExplorer(targetFolder.id);
         return;
     }
@@ -2384,7 +2393,9 @@ async function autoOpenClientFolder(clientCode, clientName) {
         });
 
         if (targetFolder) {
-            state.confirm.activeClientFolderId = targetFolder.id;
+            if (!api.state.confirm) api.state.confirm = {};
+            api.state.confirm.activeClientFolderId = targetFolder.id;
+            api.state.confirm.activeClientFolderPattern = targetPattern;
             openDriveExplorer(targetFolder.id);
         } else {
             console.warn(`[AUTO-DRIVE] Pasta não localizada.`);

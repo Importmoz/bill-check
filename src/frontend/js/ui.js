@@ -24,6 +24,28 @@ export function getPaymentBankDisplay(payment) {
     }
     return bankDisplay;
 }
+
+export function getBankLogoHtml(bankName, extraClass = 'w-4 h-4 rounded-[2px] object-contain shrink-0') {
+    if (!bankName) return '';
+    const b = String(bankName).toUpperCase();
+    if (b.includes('BIM')) {
+        return `<img src="assets/banks/bim.png" alt="BIM" class="${extraClass}">`;
+    }
+    if (b.includes('BCI')) {
+        return `<img src="assets/banks/bci.jpg" alt="BCI" class="${extraClass}">`;
+    }
+    if (b.includes('STB') || b.includes('STANDARD')) {
+        return `<img src="assets/banks/stb.png" alt="STB" class="${extraClass}">`;
+    }
+    if (b.includes('NEDBANK')) {
+        return `<img src="assets/banks/nedbank.png" alt="NEDBANK" class="${extraClass}">`;
+    }
+    if (b.includes('EMOLA') || b.includes('MPESA') || b.includes('M-PESA')) {
+        return `<img src="assets/banks/emola.png" alt="EMOLA" class="${extraClass}">`;
+    }
+    return '';
+}
+window.getBankLogoHtml = getBankLogoHtml;
 /**
  * Controla o indicador de carregamento
  */
@@ -2907,6 +2929,50 @@ export function renderConfirmList(data, filterText = "", statusFilter = null, is
     return groups;
 }
 
+
+export function setReconciliationViewMode(mode) {
+    window.reconciliationViewMode = mode;
+    window.reconciliationUserChoice = mode;
+    try {
+        localStorage.setItem('reconciliation_view_mode', mode);
+        localStorage.setItem('reconciliation_user_choice', mode);
+    } catch (e) {}
+
+    document.querySelectorAll('.recon-grid-view').forEach(el => {
+        el.classList.toggle('hidden', mode !== 'grid');
+    });
+    document.querySelectorAll('.recon-list-view').forEach(el => {
+        el.classList.toggle('hidden', mode !== 'list');
+    });
+
+    document.querySelectorAll('.btn-recon-view-grid').forEach(btn => {
+        if (mode === 'grid') {
+            btn.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+            btn.classList.remove('bg-transparent', 'text-slate-400');
+        } else {
+            btn.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+            btn.classList.add('bg-transparent', 'text-slate-400');
+        }
+    });
+    document.querySelectorAll('.btn-recon-view-list').forEach(btn => {
+        if (mode === 'list') {
+            btn.classList.add('bg-white', 'text-slate-800', 'shadow-sm');
+            btn.classList.remove('bg-transparent', 'text-slate-400');
+        } else {
+            btn.classList.remove('bg-white', 'text-slate-800', 'shadow-sm');
+            btn.classList.add('bg-transparent', 'text-slate-400');
+        }
+    });
+}
+window.setReconciliationViewMode = setReconciliationViewMode;
+if (typeof window !== 'undefined') {
+    try {
+        window.reconciliationUserChoice = localStorage.getItem('reconciliation_user_choice') || 'list';
+    } catch (e) {
+        window.reconciliationUserChoice = 'list';
+    }
+}
+
 export async function showConfirmDetail(client, clientIndex) {
     const isSameClient = window.currentActiveClient && String(window.currentActiveClientIndex) === String(clientIndex);
     window.currentActiveClient = client;
@@ -3256,103 +3322,332 @@ export async function showConfirmDetail(client, clientIndex) {
         let totalAllocated = 0;
         let pbHtml = '';
 
-        // FUNÇÃO AUXILIAR PARA GERAR O HTML DE RECONCILIAÇÃO E BUSCAR SIBLINGS
-        const renderReconciliationBlock = (pmts, title, color) => {
+        // FUNÇÃO AUXILIAR PARA GERAR O HTML DE RECONCILIAÇÃO E BUSCAR SIBLINGS (GRADE / LISTA UNIFICADA)
+        const renderReconciliationBlock = (pmts, title = 'Detalhes de Reconciliação', color = 'blue', meta = null) => {
             if (!pmts || pmts.length === 0) return '';
             const userRole = pb.authStore.model?.role || 'USER';
             const canUnallocate = (userRole !== 'USER' && userRole !== 'USER_L1');
+            // Regra de visualização padrão:
+            // - 1 reconciliação: default 'list'
+            // - 2 reconciliações: default 'grid'
+            // - 3 ou mais: a critério do usuário (preferência salva)
+            let currentMode;
+            if (pmts.length === 1) {
+                currentMode = 'list';
+            } else if (pmts.length === 2) {
+                currentMode = 'grid';
+            } else {
+                const userChoice = (typeof window !== 'undefined' && window.reconciliationUserChoice)
+                    ? window.reconciliationUserChoice
+                    : (typeof localStorage !== 'undefined' ? (localStorage.getItem('reconciliation_user_choice') || 'list') : 'list');
+                currentMode = userChoice;
+            }
+            window.reconciliationViewMode = currentMode;
             
+            const totalBlockAmount = pmts.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
+            let gridColsClass = 'grid-cols-1';
+            if (pmts.length === 2) {
+                gridColsClass = 'grid-cols-1 md:grid-cols-2';
+            } else if (pmts.length >= 3) {
+                gridColsClass = 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3';
+            }
+
             let html = `
-                <div class="mb-4 p-4 border border-${color}-100 bg-${color}-50 rounded-xl shadow-inner">
-                    <div class="flex justify-between items-center mb-4 border-b border-${color}-100 pb-2">
-                        <h5 class="text-[10px] font-bold text-${color}-800 uppercase tracking-wider">${title}</h5>
-                        <span class="text-[10px] font-bold text-${color}-600 bg-${color}-200 px-3 py-1 rounded-full">${pmts.length} Pagamento(s)</span>
+                <div class="mb-3.5 reconciliation-block w-full">
+                    <!-- Toggle Grade vs Lista (Estilo Confirm & Armazém - Apenas Ícones) -->
+                    <div class="flex items-center justify-end mb-2.5">
+                        <div class="bg-slate-100 p-1 rounded-xl flex items-center shadow-inner border border-slate-200">
+                            <button type="button" onclick="ui.setReconciliationViewMode('grid')" 
+                                class="btn-recon-view-grid px-2.5 py-1.5 rounded-lg transition-all flex items-center justify-center cursor-pointer select-none ${currentMode === 'grid' ? 'shadow-sm bg-white text-slate-800' : 'bg-transparent text-slate-400 hover:text-slate-600'}" 
+                                title="Visualização em Grade">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                            </button>
+                            <button type="button" onclick="ui.setReconciliationViewMode('list')" 
+                                class="btn-recon-view-list px-2.5 py-1.5 rounded-lg transition-all flex items-center justify-center cursor-pointer select-none ${currentMode === 'list' ? 'shadow-sm bg-white text-slate-800' : 'bg-transparent text-slate-400 hover:text-slate-600'}" 
+                                title="Visualização em Lista">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                            </button>
+                        </div>
                     </div>
-                    <div class="space-y-4">
+
+                    <!-- 1. MODO GRADE (Cards com Ocupação Total do Espaço Horizontal e Máximo de 3 por Linha) -->
+                    <div class="recon-grid-view ${currentMode === 'grid' ? '' : 'hidden'} grid ${gridColsClass} gap-3.5 w-full">
             `;
 
-            pmts.forEach((payment, idx) => {
+            pmts.forEach((payment) => {
                 let vinculadorName = payment.reconciled_by_name || '';
                 let vinculadoEm = payment.reconciled_at || '';
                 if (!vinculadorName && payment.reference) {
-                    const match = payment.reference.match(/\[Vinculado:\s*([^\]|]+)(?:\s*em\s*([^\]]+))?\]/i);
+                    const match = payment.reference.match(/\[Vinculado:\s*([^\]]+)\]/i);
                     if (match) {
-                        vinculadorName = match[1].trim();
-                        vinculadoEm = match[2] ? match[2].trim() : '';
+                        const raw = match[1].trim();
+                        const emIndex = raw.toLowerCase().indexOf(' em ');
+                        if (emIndex !== -1) {
+                            vinculadorName = raw.substring(0, emIndex).trim();
+                            vinculadoEm = raw.substring(emIndex + 4).trim();
+                        } else {
+                            vinculadorName = raw;
+                        }
                     }
                 }
-                
-                // Limpar tag [Vinculado: ...] da referência para apresentação limpa
                 const displayRef = (payment.reference || payment.description || '---').replace(/\[Vinculado:[^\]]+\]/g, '').trim();
+                const bankDisplay = getPaymentBankDisplay(payment);
+                const ownerDisplay = payment.account_owner || '';
+                const dateDisplay = payment.date ? payment.date.split(' ')[0] : '---';
+                const formattedAmount = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount);
+                const reconType = payment.reconType || (payment.allocated_to && payment.allocated_to.startsWith('FRETE') ? 'FRETE' : (title.includes('FRETE') ? 'FRETE' : 'DUTY'));
+                const isFrete = reconType === 'FRETE';
+                const cardThemeClass = isFrete 
+                    ? 'bg-rose-50/25 hover:bg-rose-50/40 border-rose-200/90 hover:border-rose-400' 
+                    : 'bg-blue-50/25 hover:bg-blue-50/40 border-blue-200/90 hover:border-blue-400';
+                const textAmountClass = isFrete ? 'text-rose-800' : 'text-blue-800';
+                const refBoxClass = isFrete ? 'bg-white/90 border-rose-100/90' : 'bg-white/90 border-blue-100/90';
+                const dividerClass = isFrete ? 'border-rose-100/70' : 'border-blue-100/70';
+
+                const typeBadgeHtml = `<span class="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shrink-0 ${isFrete ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}">${reconType}</span>`;
 
                 html += `
-                    <div class="grid grid-cols-2 gap-2 text-[11px] text-${color}-900 ${idx !== pmts.length - 1 ? `border-b border-${color}-100 pb-3` : ''}">
-                        <div><span class="font-bold text-${color}-700">Banco:</span> ${getPaymentBankDisplay(payment)}</div>
-                        <div><span class="font-bold text-${color}-700">Titular da Conta:</span> ${payment.account_owner || '---'}</div>
-                        <div><span class="font-bold text-${color}-700">Valor (MZN):</span> ${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount)}</div>
-                        <div><span class="font-bold text-${color}-700">Data Extrato:</span> ${payment.date ? payment.date.split(' ')[0] : '---'}</div>
-                        <div class="col-span-2"><span class="font-bold text-${color}-700">Referência:</span> ${displayRef}</div>
-                        ${vinculadorName ? `
-                            <div class="col-span-2 bg-${color}-100/60 p-2 rounded-lg flex items-center justify-between text-[10px] border border-${color}-200/50 mt-1">
-                                <span class="font-bold text-${color}-900 flex items-center gap-1.5">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><polyline points="17 11 19 13 23 9"></polyline></svg>
-                                    Vinculado por: <strong class="text-black font-extrabold">${vinculadorName}</strong>
-                                </span>
-                                ${vinculadoEm ? `<span class="text-[9px] text-${color}-700 font-mono italic">${vinculadoEm}</span>` : ''}
+                    <div class="${cardThemeClass} p-3.5 sm:p-4 rounded-xl border shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between w-full">
+                        <div>
+                            <!-- Topo: Tipo (DUTY/FRETE), Banco, Titular e Data -->
+                            <div class="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b ${dividerClass}">
+                                <div class="flex items-center gap-1.5 truncate text-[10.5px] font-bold text-slate-700">
+                                    ${typeBadgeHtml}
+                                    <span>${bankDisplay}</span>
+                                    ${ownerDisplay ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-white/90 text-slate-600 border border-slate-200/70 font-semibold truncate max-w-[130px]">${ownerDisplay}</span>` : ''}
+                                </div>
+                                <span class="text-[9.5px] text-slate-400 font-mono shrink-0">${dateDisplay}</span>
                             </div>
-                        ` : ''}
-                        <div class="col-span-2 flex items-center justify-between pt-1 mt-1 border-t border-${color}-100/70">
-                            <span class="text-[9px] text-${color}-600/70 font-mono">ID: ${payment.id}</span>
+
+                            <!-- Valor em Destaque & ID -->
+                            <div class="flex items-baseline justify-between gap-1 my-1.5">
+                                <span class="text-[15px] font-black ${textAmountClass} tracking-tight">${formattedAmount} <small class="text-[10px] font-bold text-slate-400">MT</small></span>
+                                <span class="text-[8.5px] font-mono text-slate-400">#${payment.id.slice(-6)}</span>
+                            </div>
+
+                            <!-- Referência -->
+                            <div class="text-[10px] text-slate-700 ${refBoxClass} p-2 rounded-lg border truncate mb-2" title="${displayRef.replace(/"/g, '&quot;')}">
+                                <span class="font-bold text-slate-400 uppercase text-[8px] mr-1">Ref:</span>${displayRef}
+                            </div>
+                        </div>
+
+                        <!-- Rodapé: Vinculador & Desalocar -->
+                        <div class="pt-2 border-t ${dividerClass} flex items-center justify-between gap-2">
+                            <div class="text-[9px] text-slate-500 truncate max-w-[160px]" title="${vinculadorName ? `Vinculado por ${vinculadorName}${vinculadoEm ? ` em ${vinculadoEm}` : ''}` : ''}">
+                                ${vinculadorName ? `
+                                    <span class="flex items-center gap-1 truncate">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-blue-500 shrink-0"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle></svg>
+                                        <strong class="font-bold text-slate-700 truncate">${vinculadorName}</strong>
+                                    </span>
+                                ` : '<span class="text-slate-400 italic">Vinculado</span>'}
+                            </div>
+
                             ${canUnallocate ? `
-                                <button type="button" onclick="event.stopPropagation(); window.confirmUnallocatePayment('${payment.id}', ${payment.amount}, '${displayRef.replace(/'/g, "\\'")}', '${title.includes('FRETE') ? 'FRETE' : 'DUTY'}')"
-                                    class="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg transition-all shadow-2xs active:scale-95 cursor-pointer"
-                                    title="Desalocar este pagamento para que volte a ficar LIVRE no banco de dados">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 21h5v-5"></path></svg>
-                                    <span>Desalocar Movimento</span>
+                                <button type="button" onclick="event.stopPropagation(); window.confirmUnallocatePayment('${payment.id}', ${payment.amount}, '${displayRef.replace(/'/g, "\\'")}', '${reconType}')"
+                                    class="py-1 px-2.5 text-[9px] font-black uppercase text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                                    title="Desalocar este pagamento">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="9.5" height="9.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                                    <span>Desalocar</span>
                                 </button>
                             ` : ''}
                         </div>
-                        <div class="col-span-2" id="siblings-${payment.id}"></div>
+
+                        <!-- Container para Subdivisões (Siblings) em Grade -->
+                        <div id="siblings-grid-${payment.id}"></div>
                     </div>
                 `;
             });
 
-            html += `</div></div>`;
+            html += `</div>`; // Fecho do recon-grid-view
 
-            // Lógica para carregar detalhes de partilha (siblings)
+            // 2. MODO LISTA (Separado em 2 Cards Dedicados: DUTY e FRETE, com fundo colorido e sem corte de informação)
+            const dutyPayments = pmts.filter(p => {
+                const reconType = p.reconType || (p.allocated_to && p.allocated_to.startsWith('FRETE') ? 'FRETE' : (title.includes('FRETE') ? 'FRETE' : 'DUTY'));
+                return reconType !== 'FRETE';
+            });
+            const fretePayments = pmts.filter(p => {
+                const reconType = p.reconType || (p.allocated_to && p.allocated_to.startsWith('FRETE') ? 'FRETE' : (title.includes('FRETE') ? 'FRETE' : 'DUTY'));
+                return reconType === 'FRETE';
+            });
+            const dutySubtotal = dutyPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+            const freteSubtotal = fretePayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+
+            const renderListRow = (payment) => {
+                let vinculadorName = payment.reconciled_by_name || '';
+                let vinculadoEm = payment.reconciled_at || '';
+                if (!vinculadorName && payment.reference) {
+                    const match = payment.reference.match(/\[Vinculado:\s*([^\]]+)\]/i);
+                    if (match) {
+                        const raw = match[1].trim();
+                        const emIndex = raw.toLowerCase().indexOf(' em ');
+                        if (emIndex !== -1) {
+                            vinculadorName = raw.substring(0, emIndex).trim();
+                            vinculadoEm = raw.substring(emIndex + 4).trim();
+                        } else {
+                            vinculadorName = raw;
+                        }
+                    }
+                }
+                const displayRef = (payment.reference || payment.description || '---').replace(/\[Vinculado:[^\]]+\]/g, '').trim();
+                const bankDisplay = getPaymentBankDisplay(payment);
+                const ownerDisplay = payment.account_owner || '';
+                const dateDisplay = payment.date ? payment.date.split(' ')[0] : '---';
+                const formattedAmount = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount);
+                const reconType = payment.reconType || (payment.allocated_to && payment.allocated_to.startsWith('FRETE') ? 'FRETE' : (title.includes('FRETE') ? 'FRETE' : 'DUTY'));
+                const isFrete = reconType === 'FRETE';
+                const rowThemeClass = isFrete 
+                    ? 'hover:bg-rose-100/40 border-b border-rose-100/60' 
+                    : 'hover:bg-blue-100/40 border-b border-blue-100/60';
+                const textAmountClass = isFrete ? 'text-rose-800' : 'text-blue-800';
+
+                const typeBadgeHtml = `<span class="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shrink-0 ${isFrete ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}">${reconType}</span>`;
+
+                return `
+                    <tr class="${rowThemeClass} transition-colors">
+                        <td class="py-2.5 px-2 text-center whitespace-nowrap">
+                            ${typeBadgeHtml}
+                        </td>
+                        <td class="py-2.5 px-2.5">
+                            <div class="truncate">
+                                <span class="font-bold text-slate-800 text-[10.5px] truncate block">${bankDisplay}</span>
+                                ${ownerDisplay ? `<span class="inline-block text-[8px] px-1.5 py-0.2 rounded bg-white/90 border border-slate-200/70 text-slate-600 font-semibold truncate max-w-full">${ownerDisplay}</span>` : ''}
+                            </div>
+                        </td>
+                        <td class="py-2.5 px-2 font-mono text-[9.5px] text-slate-500 whitespace-nowrap">${dateDisplay}</td>
+                        <td class="py-2.5 px-2.5 text-slate-700 truncate" title="${displayRef.replace(/"/g, '&quot;')}">
+                            ${displayRef}
+                        </td>
+                        <td class="py-2.5 px-3 text-right font-black text-xs ${textAmountClass} whitespace-nowrap">
+                            ${formattedAmount} <span class="text-[8.5px] font-bold text-slate-400">MT</span>
+                        </td>
+                        <td class="py-2.5 px-2 text-slate-600">
+                            ${vinculadorName ? `
+                                <div class="truncate" title="${vinculadorName}${vinculadoEm ? ` (${vinculadoEm})` : ''}">
+                                    <span class="font-bold text-slate-800 text-[10px] block truncate">${vinculadorName}</span>
+                                    ${vinculadoEm ? `<span class="text-[8.5px] text-slate-400 font-mono block">${vinculadoEm.split(' ')[0]}</span>` : ''}
+                                </div>
+                            ` : '<span class="text-slate-300 italic">—</span>'}
+                        </td>
+                        <td class="py-2.5 px-2 text-right whitespace-nowrap pr-3">
+                            ${canUnallocate ? `
+                                <button type="button" onclick="event.stopPropagation(); window.confirmUnallocatePayment('${payment.id}', ${payment.amount}, '${displayRef.replace(/'/g, "\\'")}', '${reconType}')"
+                                    class="py-1 px-2.5 text-[9px] font-black uppercase text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg transition-all inline-flex items-center justify-center gap-1 cursor-pointer shadow-2xs active:scale-95 shrink-0"
+                                    title="Desalocar este pagamento">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="9.5" height="9.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></svg>
+                                    <span>Desalocar</span>
+                                </button>
+                            ` : '<span class="text-slate-300">—</span>'}
+                        </td>
+                    </tr>
+                    <!-- Linha para Siblings em Lista (se existirem) -->
+                    <tr id="siblings-row-${payment.id}" class="hidden">
+                        <td colspan="7" class="p-2 border-b ${isFrete ? 'border-rose-100/60' : 'border-blue-100/60'}">
+                            <div id="siblings-list-${payment.id}" class="px-3 py-2 bg-white/60 rounded-lg border ${isFrete ? 'border-rose-200/70' : 'border-blue-200/70'} shadow-2xs"></div>
+                        </td>
+                    </tr>
+                `;
+            };
+
+            const renderListTable = (type, paymentsList) => {
+                if (!paymentsList || paymentsList.length === 0) return '';
+                const isFrete = type === 'FRETE';
+                const tableBorder = isFrete ? 'border-rose-200/90' : 'border-blue-200/90';
+                const tableBg = isFrete ? 'bg-rose-50/45' : 'bg-blue-50/45';
+                const thBg = isFrete ? 'bg-rose-50/70 text-rose-950 border-rose-200/70' : 'bg-blue-50/70 text-blue-950 border-blue-200/70';
+                const tbodyDivide = isFrete ? 'divide-rose-100/50' : 'divide-blue-100/50';
+
+                let rowsHtml = '';
+                paymentsList.forEach(p => { rowsHtml += renderListRow(p); });
+
+                return `
+                    <div class="overflow-hidden rounded-xl border ${tableBorder} ${tableBg} shadow-2xs w-full">
+                        <table class="w-full table-fixed text-left text-xs border-collapse">
+                            <colgroup>
+                                <col style="width: 65px;">
+                                <col style="width: 160px;">
+                                <col style="width: 85px;">
+                                <col style="width: auto;">
+                                <col style="width: 125px;">
+                                <col style="width: 135px;">
+                                <col style="width: 110px;">
+                            </colgroup>
+                            <thead class="${thBg} text-[9px] uppercase font-black border-b">
+                                <tr>
+                                    <th class="py-2.5 px-2 text-center">Tipo</th>
+                                    <th class="py-2.5 px-2.5">Banco & Titular</th>
+                                    <th class="py-2.5 px-2">Data Extrato</th>
+                                    <th class="py-2.5 px-2.5">Referência</th>
+                                    <th class="py-2.5 px-3 text-right">Valor</th>
+                                    <th class="py-2.5 px-2">Vinculado Por</th>
+                                    <th class="py-2.5 px-2 text-right pr-3">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y ${tbodyDivide} text-[10.5px]">
+                                ${rowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            };
+
+            html += `
+                <div class="recon-list-view ${currentMode === 'list' ? '' : 'hidden'} space-y-3 w-full">
+                    ${renderListTable('DUTY', dutyPayments)}
+                    ${renderListTable('FRETE', fretePayments)}
+                </div>
+            `;
+
+            html += `</div>`; // Fecho do card container
+
+            // Lógica para carregar detalhes de partilha (siblings) tanto no grid quanto na lista
             setTimeout(async () => {
                 for (const p of pmts) {
                     if (p.reference && p.reference.includes("(Ref Mestre:")) {
                         const siblings = await getPaymentsByMasterRef(p.reference);
                         if (siblings.length > 1) {
-                            const containerId = `siblings-${p.id}`;
-                            const el = document.getElementById(containerId);
-                            if (el) {
-                                let sibHtml = `
-                                    <div class="mt-2 pt-2 border-t border-${color}-100">
-                                        <div class="text-[9px] font-black text-${color}-500 uppercase mb-1">Divisão deste Pagamento:</div>
-                                        <div class="space-y-1">
-                                `;
-                                let originalTotal = 0;
-                                siblings.forEach(s => {
-                                    originalTotal += s.amount;
-                                    const isCurrent = s.id === p.id;
-                                    const dest = s.allocated_to || `<span class="text-${color}-400 italic">Livre / Não Alocado</span>`;
-                                    sibHtml += `
-                                        <div class="flex justify-between items-center text-[10px] ${isCurrent ? `bg-${color}-100 px-1 rounded` : ''}">
-                                            <span class="truncate max-w-[120px]">${dest}</span>
-                                            <span class="font-bold">${formatValue(s.amount)}</span>
-                                        </div>
-                                    `;
-                                });
-                                sibHtml += `
-                                        <div class="flex justify-between items-center text-[10px] font-black text-${color}-800 pt-1 border-t border-${color}-200 mt-1">
-                                            <span>TOTAL ORIGINAL:</span>
-                                            <span>${formatValue(originalTotal)}</span>
-                                        </div>
+                            let originalTotal = 0;
+                            let sibRowsHtml = '';
+                            const reconType = p.reconType || (p.allocated_to && p.allocated_to.startsWith('FRETE') ? 'FRETE' : 'DUTY');
+                            const isFrete = reconType === 'FRETE';
+                            const sibTheme = isFrete ? 'rose' : 'blue';
+
+                            siblings.forEach(s => {
+                                originalTotal += s.amount;
+                                const isCurrent = s.id === p.id;
+                                const dest = s.allocated_to || 'Livre / Não Alocado';
+                                const activeClass = isCurrent 
+                                    ? (isFrete ? 'bg-rose-100/80 font-bold px-1.5 rounded' : 'bg-blue-100/80 font-bold px-1.5 rounded') 
+                                    : 'text-slate-500';
+                                sibRowsHtml += `
+                                    <div class="flex justify-between items-center text-[9px] py-0.5 ${activeClass}">
+                                        <span class="truncate max-w-[160px]">${dest}</span>
+                                        <span>${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(s.amount)} MT</span>
                                     </div>
                                 `;
-                                el.innerHTML = sibHtml;
+                            });
+
+                            const sibBoxContent = `
+                                <div class="mt-1 pt-1 text-[8.5px]">
+                                    <div class="text-[8px] font-black ${isFrete ? 'text-rose-600' : 'text-blue-600'} uppercase mb-0.5">Partilha deste Movimento:</div>
+                                    <div class="space-y-0.5">${sibRowsHtml}</div>
+                                    <div class="flex justify-between items-center text-[8.5px] font-black text-slate-700 pt-1 border-t ${isFrete ? 'border-rose-200' : 'border-blue-200'} mt-1">
+                                        <span>TOTAL ORIGINAL:</span>
+                                        <span>${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(originalTotal)} MT</span>
+                                    </div>
+                                </div>
+                            `;
+
+                            // Injetar no Grid
+                            const elGrid = document.getElementById(`siblings-grid-${p.id}`);
+                            if (elGrid) elGrid.innerHTML = sibBoxContent;
+
+                            // Injetar na Lista
+                            const elList = document.getElementById(`siblings-list-${p.id}`);
+                            const rowList = document.getElementById(`siblings-row-${p.id}`);
+                            if (elList && rowList) {
+                                elList.innerHTML = sibBoxContent;
+                                rowList.classList.remove('hidden');
                             }
                         }
                     }
@@ -3362,13 +3657,27 @@ export async function showConfirmDetail(client, clientIndex) {
             return html;
         };
 
+        const allReconPayments = [];
+        let dutySum = 0;
+        let freightSum = 0;
+
         if (payments && payments.length > 0) {
-            payments.forEach(p => totalAllocated += p.amount);
-            pbHtml += renderReconciliationBlock(payments, 'Detalhes de Reconciliação - DUTY', 'blue');
+            payments.forEach(p => {
+                totalAllocated += p.amount;
+                dutySum += p.amount;
+                allReconPayments.push({ ...p, reconType: 'DUTY' });
+            });
         }
 
         if (freightPayments && freightPayments.length > 0) {
-            pbHtml += renderReconciliationBlock(freightPayments, 'Detalhes de Reconciliação - FRETE', 'rose');
+            freightPayments.forEach(p => {
+                freightSum += p.amount;
+                allReconPayments.push({ ...p, reconType: 'FRETE' });
+            });
+        }
+
+        if (allReconPayments.length > 0) {
+            pbHtml += renderReconciliationBlock(allReconPayments, 'Detalhes de Reconciliação', 'blue', { dutySum, freightSum });
         }
 
         // 1. Fonte Primária: Google Sheets (Planilha)
@@ -3516,8 +3825,8 @@ export async function showConfirmDetail(client, clientIndex) {
         showView('view-confirm-client-detail');
     }
 
-    // Abrir pasta automaticamente se existir número e nome
-    if (window.autoOpenClientFolder) {
+    // Abrir pasta automaticamente se existir número e nome (apenas se for um cliente diferente)
+    if (window.autoOpenClientFolder && !isSameClient) {
         window.autoOpenClientFolder(client.no || '', client.displayName);
     }
 
@@ -5409,16 +5718,29 @@ export function handleConfirmRealtimeEvent(e) {
     const searchText = searchEl?.value || '';
     const groups = renderConfirmList(state.confirm.data, searchText, statusFilter);
 
-    // Se o painel de detalhe do cliente estiver aberto, atualizar a vista completa
+    // 2. Se o painel de detalhe do cliente estiver aberto, isolar alterações apenas ao cliente relevante
     const detailView = document.getElementById('view-confirm-client-detail');
-    if (detailView && !detailView.classList.contains('hidden') && window.currentActiveClient) {
-        // Usa state.confirm.groupedClients para evitar que o cliente suma se o status mudar e for filtrado
-        const allGroups = state.confirm.groupedClients || groups;
-        const activeGroup = allGroups.find(g => String(g.no || '—') === String(window.currentActiveClientIndex || window.currentActiveClient.no));
-        if (activeGroup) {
-            console.log("[SSE-FASE-5][DETALHE-RE-RENDER] Atualizando o painel de detalhe completo do cliente em tempo real.");
-            showConfirmDetail(activeGroup, window.currentActiveClientIndex);
+    const isClientDetailOpen = detailView && !detailView.classList.contains('hidden') && window.currentActiveClient;
+
+    if (isClientDetailOpen) {
+        const clientRows = window.currentActiveClient.rows || [];
+        const isRowInCurrentClient = clientRows.some(r => r.originalIndex === row);
+
+        if (isRowInCurrentClient) {
+            console.log(`[SSE-FASE-5][DETALHE-UPDATE-SUAVE] Linha ${row} pertence ao cliente ativo. Atualizando pontualmente sem recarregar tela.`);
+            if (type === 'UPDATE' && payload.rowData) {
+                // Atualizar pontualmente a linha que mudou no DOM (sem destruir o formulário de Armazém nem o Drive)
+                updateConfirmDetailRow(row, payload.rowData);
+            }
+            // Atualizar os cadeados específicos e o card de pagamento
+            updateLocksUI();
+            updatePaymentCardUI();
+        } else {
+            // A linha pertence a OUTRO cliente: preservar a visualização atual intacta!
+            updateLocksUI();
         }
+    } else {
+        updateLocksUI();
     }
     
     // Atualizar UI dos Locks
@@ -6696,53 +7018,6 @@ export function renderConfirmProjects(projects, isSearch = false) {
     if (btnList) btnList.className = `p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
     if (btnTable) btnTable.className = `p-1.5 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white shadow-sm text-black' : 'text-gray-500 hover:text-black'}`;
 
-    // === SEÇÃO DE ACESSO RÁPIDO A PROJETOS (RANKING) ===
-    // Exibir apenas na Página 1 e quando não for pesquisa
-    if (currentPage === 1 && !isSearch) {
-        const accessedProjects = projects
-            .map(p => ({ ...p, accessCount: getProjectAccessCount(p.sheetId) }))
-            .filter(p => p.accessCount > 0)
-            .sort((a, b) => b.accessCount - a.accessCount);
-
-        const topAccessed = accessedProjects.slice(0, 4);
-
-        if (topAccessed.length > 0) {
-            const rankingContainer = document.createElement('div');
-            rankingContainer.className = "col-span-full mb-2 bg-gradient-to-r from-yellow-50 to-amber-50/50 border border-yellow-100 rounded-2xl p-4 shadow-sm";
-            
-            rankingContainer.innerHTML = `
-                <div class="flex items-center gap-1.5 mb-3">
-                    <span class="text-xs">⚡</span>
-                    <h4 class="text-[9px] font-black uppercase tracking-wider text-yellow-800">Acesso Rápido (Projetos Mais Utilizados)</h4>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3"></div>
-            `;
-            
-            const cardsGrid = rankingContainer.querySelector('.grid');
-            topAccessed.forEach((p, rankIdx) => {
-                const card = document.createElement('div');
-                card.className = "bg-white/90 p-3 rounded-xl border border-yellow-100/70 flex items-center justify-between gap-2 hover:border-yellow-400 hover:bg-white cursor-pointer transition-all active:scale-[0.98]";
-                card.onclick = () => selectConfirmProject(p.sheetId, p.folderId, p.name.replace(/'/g, "\\'"));
-                
-                const medal = rankIdx === 0 ? '🥇' : rankIdx === 1 ? '🥈' : rankIdx === 2 ? '🥉' : '⭐';
-                
-                card.innerHTML = `
-                    <div class="flex items-center gap-2.5 overflow-hidden w-full min-w-0">
-                        <div class="bg-yellow-400 text-black w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm font-black text-xs">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                        </div>
-                        <div class="overflow-hidden w-full min-w-0">
-                            <h5 class="text-xs font-black text-slate-800 truncate uppercase leading-tight" title="${p.name}">${p.name}</h5>
-                            <p class="text-[8px] text-slate-400 font-bold uppercase truncate">${medal} Rank ${rankIdx + 1} (${p.accessCount} ${p.accessCount === 1 ? 'acesso' : 'acessos'})</p>
-                        </div>
-                    </div>
-                `;
-                cardsGrid.appendChild(card);
-            });
-            container.appendChild(rankingContainer);
-        }
-    }
-
     // === MODOS DE EXIBIÇÃO DE PROJETOS (PAGINADOS) ===
     if (viewMode === 'grid') {
         container.className = "grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8 gap-2.5 px-4";
@@ -7424,6 +7699,9 @@ export function setMiniFilterSearch(value) {
     const searchInput = document.getElementById('mini-filter-search');
     if (searchInput) {
         searchInput.value = value;
+        if (value) {
+            toggleMiniFilterExtraFilters(true);
+        }
         searchPaymentMiniFilter();
     }
 }
@@ -7490,24 +7768,64 @@ export function setMiniFilterDatePreset(preset) {
     searchPaymentMiniFilter();
 }
 
+export function toggleMiniFilterExtraFilters(forceOpen = null) {
+    const container = document.getElementById('mini-filter-extra-filters');
+    const textEl = document.getElementById('text-toggle-mini-extra-filters');
+    const iconEl = document.getElementById('icon-toggle-mini-extra-filters');
+    if (!container) return;
+
+    const willBeOpen = forceOpen !== null ? Boolean(forceOpen) : container.classList.contains('hidden');
+
+    if (willBeOpen) {
+        container.classList.remove('hidden');
+        if (textEl) textEl.innerText = "Ocultar Filtros Adicionais (Datas, Canal, Descrição)";
+        if (iconEl) {
+            iconEl.innerHTML = '<line x1="5" y1="12" x2="19" y2="12"></line>';
+        }
+    } else {
+        container.classList.add('hidden');
+        if (textEl) textEl.innerText = "Mais Filtros (Datas, Canal, Descrição)";
+        if (iconEl) {
+            iconEl.innerHTML = '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>';
+        }
+    }
+}
+
+export function clearAmountAndSearch() {
+    const amountInput = document.getElementById('mini-filter-amount');
+    if (amountInput) amountInput.value = '';
+    const minInput = document.getElementById('mini-filter-amount-min');
+    if (minInput) minInput.value = '';
+    const maxInput = document.getElementById('mini-filter-amount-max');
+    if (maxInput) maxInput.value = '';
+    searchPaymentMiniFilter();
+}
+window.clearAmountAndSearch = clearAmountAndSearch;
+
 export function resetPaymentMiniFilter() {
     const bankSelect = document.getElementById('mini-filter-bank');
     if (bankSelect) bankSelect.value = '';
     
     const ownerSelect = document.getElementById('mini-filter-owner');
     if (ownerSelect) ownerSelect.value = '';
+    renderMiniFilterOwnerDisplay('');
 
     const modeSelect = document.getElementById('mini-filter-amount-mode');
     if (modeSelect) modeSelect.value = 'exact';
-    handleAmountModeChange();
+    renderMiniFilterAmountModeDisplay('exact');
 
     const amountInput = document.getElementById('mini-filter-amount');
-    if (amountInput) amountInput.value = currentMiniFilterExpectedAmount > 0 ? currentMiniFilterExpectedAmount.toFixed(2) : '';
+    if (amountInput) amountInput.value = '';
 
     const minInput = document.getElementById('mini-filter-amount-min');
     if (minInput) minInput.value = '';
     const maxInput = document.getElementById('mini-filter-amount-max');
     if (maxInput) maxInput.value = '';
+
+    const singleContainer = document.getElementById('mini-filter-amount-single-container');
+    const rangeContainer = document.getElementById('mini-filter-range-container');
+    if (singleContainer) singleContainer.classList.remove('hidden');
+    if (rangeContainer) rangeContainer.classList.add('hidden');
 
     const refInput = document.getElementById('mini-filter-reference');
     if (refInput) refInput.value = '';
@@ -7519,6 +7837,7 @@ export function resetPaymentMiniFilter() {
 
     const channelSelect = document.getElementById('mini-filter-channel');
     if (channelSelect) channelSelect.value = '';
+    renderMiniFilterChannelDisplay('');
 
     const searchInput = document.getElementById('mini-filter-search');
     if (searchInput) searchInput.value = '';
@@ -7526,12 +7845,36 @@ export function resetPaymentMiniFilter() {
     const usedCheckbox = document.getElementById('mini-filter-show-used');
     if (usedCheckbox) usedCheckbox.checked = false;
 
+    // Resetar visibilidade dos filtros 5, 6 e 7 para oculto por padrão
+    toggleMiniFilterExtraFilters(false);
+    renderMiniFilterBankDisplay('');
+    renderMiniFilterOwnerDisplay('');
+    renderMiniFilterAmountModeDisplay('exact');
+    renderMiniFilterChannelDisplay('');
+    renderMiniFilterStatusDisplay('CONFIRMADO');
+    closeAllMiniFilterDropdowns();
+
     searchPaymentMiniFilter();
 }
 
 export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmount = '', defaultTerm = '', clientName = '', phoneNumber = '', notaDuty = '') {
     if (defaultBank) {
-        defaultBank = String(defaultBank).replace(' BOSS', '').replace(' JUPITER', '').trim();
+        const dbUpper = String(defaultBank).trim().toUpperCase();
+        if (dbUpper === '—' || dbUpper === '-' || dbUpper === 'NIL' || dbUpper === 'N/A' || dbUpper === 'NULL' || dbUpper === 'NONE') {
+            defaultBank = '';
+        } else if (dbUpper.includes('BIM')) {
+            defaultBank = 'BIM';
+        } else if (dbUpper.includes('BCI')) {
+            defaultBank = 'BCI';
+        } else if (dbUpper.includes('STB') || dbUpper.includes('STANDARD')) {
+            defaultBank = 'STB';
+        } else if (dbUpper.includes('NEDBANK')) {
+            defaultBank = 'NEDBANK';
+        } else if (dbUpper.includes('EMOLA') || dbUpper.includes('MPESA') || dbUpper.includes('M-PESA')) {
+            defaultBank = 'EMOLA';
+        } else {
+            defaultBank = String(defaultBank).replace(' BOSS', '').replace(' JUPITER', '').trim();
+        }
     }
     const role = pb.authStore.model?.role || 'USER';
     if (role === 'USER' || role === 'USER_L1') {
@@ -7552,6 +7895,9 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
 
     document.getElementById('payment-mini-filter').classList.remove('hidden');
 
+    // Garantir que os filtros adicionais 5, 6 e 7 iniciem ocultos por padrão (exceto se houver defaultTerm)
+    toggleMiniFilterExtraFilters(Boolean(defaultTerm));
+
     // 1. Fonte Primária: Saldo e Totais para Duty ou Frete
     const isFreight = window.paymentReconciliationContext === 'FREIGHT';
     const clientRows = window.currentClientRows || window.currentActiveClient?.rows || [];
@@ -7564,7 +7910,16 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
         totalExpected = clientRows.reduce((sum, r) => sum + (parseFloat(r.amtFreight) || 0), 0);
         alreadyPaid = clientRows.reduce((sum, r) => sum + (parseFloat(r.pdFreight) || 0), 0);
         const freightBal = clientRows.reduce((sum, r) => sum + (parseFloat(r.balFreight) || 0), 0);
-        expectedAmount = freightBal > 0 ? freightBal : (parseFloat(defaultAmount) || Math.max(0, totalExpected - alreadyPaid));
+        
+        if (window.freightExtrasContext && window.freightExtrasContext.totalExpectedInBank > 0) {
+            expectedAmount = window.freightExtrasContext.totalExpectedInBank;
+            totalExpected = Math.max(totalExpected, expectedAmount);
+        } else if (parseFloat(defaultAmount) > 0) {
+            expectedAmount = parseFloat(defaultAmount);
+            totalExpected = Math.max(totalExpected, expectedAmount);
+        } else {
+            expectedAmount = freightBal > 0 ? freightBal : Math.max(0, totalExpected - alreadyPaid);
+        }
     } else {
         totalExpected = window.currentActiveClientState?.targetAmount || clientRows.reduce((sum, r) => sum + (parseFloat(r.amountDuty) || 0), 0);
         const totalPrepaid = window.currentActiveClientState?.totalDutyPrepaid || clientRows.reduce((sum, r) => sum + (parseFloat(r.dutyPrepaid) || 0), 0);
@@ -7687,6 +8042,7 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
         bankSelect.add(newOpt);
     }
     if (bankSelect) bankSelect.value = defaultBank;
+    renderMiniFilterBankDisplay(defaultBank || '');
 
     // Reset filtros adicionais
     const ownerSelect = document.getElementById('mini-filter-owner');
@@ -7730,6 +8086,8 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
     document.getElementById('mini-filter-max-available').innerText = '0.00';
     if (document.getElementById('mini-filter-status')) {
         document.getElementById('mini-filter-status').value = 'CONFIRMADO';
+        renderMiniFilterStatusDisplay('CONFIRMADO');
+        closeMiniFilterStatusDropdown();
         document.getElementById('mini-filter-comment-container')?.classList.add('hidden');
         document.getElementById('mini-filter-comment').value = '';
     }
@@ -7835,8 +8193,8 @@ export async function searchPaymentMiniFilter() {
                 const rawBank = (Array.isArray(rec.bank) ? rec.bank[0] : (rec.bank || '')).toUpperCase();
                 let bankBadgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
                 if (rawBank.includes('BIM')) bankBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200';
-                else if (rawBank.includes('BCI')) bankBadgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
-                else if (rawBank.includes('STB') || rawBank.includes('STANDARD')) bankBadgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-200';
+                else if (rawBank.includes('BCI')) bankBadgeClass = 'bg-orange-50 text-orange-700 border-orange-200';
+                else if (rawBank.includes('STB') || rawBank.includes('STANDARD')) bankBadgeClass = 'bg-blue-50 text-blue-700 border-blue-200';
                 else if (rawBank.includes('NEDBANK')) bankBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
                 else if (rawBank.includes('EMOLA') || rawBank.includes('MPESA')) bankBadgeClass = 'bg-amber-50 text-amber-700 border-amber-200';
 
@@ -7898,6 +8256,7 @@ export async function searchPaymentMiniFilter() {
                 // 5. Montante Formatado
                 const amountFormatted = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(rec.amount);
                 const checkboxDisabled = rec.reconciled ? 'disabled' : '';
+                const bankLogoHtml = getBankLogoHtml(rawBank, 'w-4 h-4 rounded-[2px] object-contain shrink-0');
 
                 tr.innerHTML = `
                     <td class="px-3 py-2 text-center" onclick="event.stopPropagation();">
@@ -7906,7 +8265,8 @@ export async function searchPaymentMiniFilter() {
                     <td class="px-3 py-2 whitespace-nowrap text-xs font-semibold text-slate-600">${dateFormatted}</td>
                     <td class="px-3 py-2 whitespace-nowrap">
                         <div class="flex items-center gap-1.5">
-                            <span class="text-[9px] font-black uppercase px-2 py-0.5 rounded-md border ${bankBadgeClass}">${rawBank || '—'}</span>
+                            ${bankLogoHtml}
+                            <span class="text-xs font-bold text-slate-700 uppercase">${rawBank || '—'}</span>
                             ${ownerBadge}
                         </div>
                     </td>
@@ -7951,6 +8311,443 @@ export async function searchPaymentMiniFilter() {
 }
 
 
+export function renderMiniFilterBankDisplay(bankVal) {
+    const displayEl = document.getElementById('selected-mini-filter-bank-display');
+    if (!displayEl) return;
+
+    const b = String(bankVal || '').trim().toUpperCase();
+    let normVal = '';
+    if (b.includes('BIM')) normVal = 'BIM';
+    else if (b.includes('BCI')) normVal = 'BCI';
+    else if (b.includes('STB') || b.includes('STANDARD')) normVal = 'STB';
+    else if (b.includes('NEDBANK')) normVal = 'NEDBANK';
+    else if (b.includes('EMOLA') || b.includes('MPESA') || b.includes('M-PESA')) normVal = 'EMOLA';
+    else if (b) normVal = b;
+
+    let html = '';
+    switch (normVal) {
+        case 'BIM':
+            html = `<div class="flex items-center gap-1.5 truncate">
+                <img src="assets/banks/bim.png" alt="BIM" class="w-4 h-4 rounded-[2px] object-contain shrink-0">
+                <span class="text-xs font-bold text-slate-800">BIM</span>
+            </div>`;
+            break;
+        case 'BCI':
+            html = `<div class="flex items-center gap-1.5 truncate">
+                <img src="assets/banks/bci.jpg" alt="BCI" class="w-4 h-4 rounded-[2px] object-contain shrink-0">
+                <span class="text-xs font-bold text-slate-800">BCI</span>
+            </div>`;
+            break;
+        case 'STB':
+            html = `<div class="flex items-center gap-1.5 truncate">
+                <img src="assets/banks/stb.png" alt="STB" class="w-4 h-4 rounded-[2px] object-contain shrink-0">
+                <span class="text-xs font-bold text-slate-800">STB</span>
+            </div>`;
+            break;
+        case 'NEDBANK':
+            html = `<div class="flex items-center gap-1.5 truncate">
+                <img src="assets/banks/nedbank.png" alt="NEDBANK" class="w-4 h-4 rounded-[2px] object-contain shrink-0">
+                <span class="text-xs font-bold text-slate-800">NEDBANK</span>
+            </div>`;
+            break;
+        case 'EMOLA':
+            html = `<div class="flex items-center gap-1.5 truncate">
+                <img src="assets/banks/emola.png" alt="EMOLA" class="w-4 h-4 rounded-[2px] object-contain shrink-0">
+                <span class="text-xs font-bold text-slate-800">EMOLA</span>
+            </div>`;
+            break;
+        case '':
+            html = `<span>🏦 Todos os Bancos</span>`;
+            break;
+        default:
+            const logo = getBankLogoHtml(normVal, 'w-4 h-4 rounded-[2px] object-contain shrink-0');
+            html = `<div class="flex items-center gap-1.5 truncate">
+                ${logo || '🏦'}
+                <span class="text-xs font-bold text-slate-800">${bankVal}</span>
+            </div>`;
+    }
+    displayEl.innerHTML = html;
+
+    document.querySelectorAll('.mini-bank-opt').forEach(opt => {
+        const optVal = (opt.getAttribute('data-val') || '').trim().toUpperCase();
+        if (optVal === normVal || (!normVal && !optVal)) {
+            opt.classList.add('bg-slate-100', 'font-black');
+        } else {
+            opt.classList.remove('bg-slate-100', 'font-black');
+        }
+    });
+}
+window.renderMiniFilterBankDisplay = renderMiniFilterBankDisplay;
+
+export function toggleMiniFilterBankDropdown(e) {
+    if (e) e.stopPropagation();
+    const list = document.getElementById('list-dropdown-mini-filter-bank');
+    const arrow = document.getElementById('arrow-mini-filter-bank');
+    if (!list) return;
+
+    const willOpen = list.classList.contains('hidden');
+    closeAllMiniFilterDropdowns();
+
+    if (willOpen) {
+        list.classList.remove('hidden');
+        if (arrow) arrow.classList.add('rotate-180');
+    }
+}
+window.toggleMiniFilterBankDropdown = toggleMiniFilterBankDropdown;
+
+export function closeMiniFilterBankDropdown() {
+    const list = document.getElementById('list-dropdown-mini-filter-bank');
+    const arrow = document.getElementById('arrow-mini-filter-bank');
+    if (list) list.classList.add('hidden');
+    if (arrow) arrow.classList.remove('rotate-180');
+}
+window.closeMiniFilterBankDropdown = closeMiniFilterBankDropdown;
+
+export function selectMiniFilterBank(val) {
+    const selectEl = document.getElementById('mini-filter-bank');
+    if (selectEl) {
+        if (val && !Array.from(selectEl.options).some(opt => opt.value === val)) {
+            selectEl.add(new Option(val, val));
+        }
+        selectEl.value = val;
+    }
+    renderMiniFilterBankDisplay(val);
+    closeMiniFilterBankDropdown();
+    searchPaymentMiniFilter();
+}
+window.selectMiniFilterBank = selectMiniFilterBank;
+
+export function renderMiniFilterOwnerDisplay(ownerVal) {
+    const displayEl = document.getElementById('selected-mini-filter-owner-display');
+    if (!displayEl) return;
+
+    let html = '';
+    switch (ownerVal) {
+        case 'JUPITER':
+            html = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-blue-50 text-blue-700 border-blue-200 shadow-2xs">
+                🏢 JUPITER
+            </span>`;
+            break;
+        case 'FILIPE':
+            html = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-amber-50 text-amber-800 border-amber-200 shadow-2xs">
+                👑 FILIPE (BOSS)
+            </span>`;
+            break;
+        case '':
+        default:
+            html = `<span>👤 Todos os Titulares</span>`;
+    }
+    displayEl.innerHTML = html;
+
+    document.querySelectorAll('.mini-owner-opt').forEach(opt => {
+        if (opt.getAttribute('data-val') === (ownerVal || '')) {
+            opt.classList.add('bg-slate-100', 'font-black');
+        } else {
+            opt.classList.remove('bg-slate-100', 'font-black');
+        }
+    });
+}
+window.renderMiniFilterOwnerDisplay = renderMiniFilterOwnerDisplay;
+
+export function toggleMiniFilterOwnerDropdown(e) {
+    if (e) e.stopPropagation();
+    const list = document.getElementById('list-dropdown-mini-filter-owner');
+    const arrow = document.getElementById('arrow-mini-filter-owner');
+    if (!list) return;
+
+    const willOpen = list.classList.contains('hidden');
+    closeAllMiniFilterDropdowns();
+
+    if (willOpen) {
+        list.classList.remove('hidden');
+        if (arrow) arrow.classList.add('rotate-180');
+    }
+}
+window.toggleMiniFilterOwnerDropdown = toggleMiniFilterOwnerDropdown;
+
+export function closeMiniFilterOwnerDropdown() {
+    const list = document.getElementById('list-dropdown-mini-filter-owner');
+    const arrow = document.getElementById('arrow-mini-filter-owner');
+    if (list) list.classList.add('hidden');
+    if (arrow) arrow.classList.remove('rotate-180');
+}
+window.closeMiniFilterOwnerDropdown = closeMiniFilterOwnerDropdown;
+
+export function selectMiniFilterOwner(val) {
+    const selectEl = document.getElementById('mini-filter-owner');
+    if (selectEl) {
+        selectEl.value = val;
+    }
+    renderMiniFilterOwnerDisplay(val);
+    closeMiniFilterOwnerDropdown();
+    searchPaymentMiniFilter();
+}
+window.selectMiniFilterOwner = selectMiniFilterOwner;
+
+export function renderMiniFilterAmountModeDisplay(modeVal) {
+    const displayEl = document.getElementById('selected-mini-filter-amount-mode-display');
+    if (!displayEl) return;
+
+    let label = '= Exato';
+    switch (modeVal) {
+        case 'tol_10':
+            label = '± 10 MT';
+            break;
+        case 'tol_50':
+            label = '± 50 MT';
+            break;
+        case 'tol_100':
+            label = '± 100 MT';
+            break;
+        case 'range':
+            label = 'Min ↔ Max';
+            break;
+        case 'exact':
+        default:
+            label = '= Exato';
+    }
+    displayEl.innerText = label;
+
+    document.querySelectorAll('.mini-amount-mode-opt').forEach(opt => {
+        if (opt.getAttribute('data-val') === (modeVal || 'exact')) {
+            opt.classList.add('bg-blue-50', 'font-black');
+        } else {
+            opt.classList.remove('bg-blue-50', 'font-black');
+        }
+    });
+}
+window.renderMiniFilterAmountModeDisplay = renderMiniFilterAmountModeDisplay;
+
+export function toggleMiniFilterAmountModeDropdown(e) {
+    if (e) e.stopPropagation();
+    const list = document.getElementById('list-dropdown-mini-filter-amount-mode');
+    const arrow = document.getElementById('arrow-mini-filter-amount-mode');
+    if (!list) return;
+
+    const willOpen = list.classList.contains('hidden');
+    closeAllMiniFilterDropdowns();
+
+    if (willOpen) {
+        list.classList.remove('hidden');
+        if (arrow) arrow.classList.add('rotate-180');
+    }
+}
+window.toggleMiniFilterAmountModeDropdown = toggleMiniFilterAmountModeDropdown;
+
+export function closeMiniFilterAmountModeDropdown() {
+    const list = document.getElementById('list-dropdown-mini-filter-amount-mode');
+    const arrow = document.getElementById('arrow-mini-filter-amount-mode');
+    if (list) list.classList.add('hidden');
+    if (arrow) arrow.classList.remove('rotate-180');
+}
+window.closeMiniFilterAmountModeDropdown = closeMiniFilterAmountModeDropdown;
+
+export function selectMiniFilterAmountMode(val) {
+    const selectEl = document.getElementById('mini-filter-amount-mode');
+    if (selectEl) {
+        selectEl.value = val;
+    }
+    renderMiniFilterAmountModeDisplay(val);
+    closeMiniFilterAmountModeDropdown();
+    handleAmountModeChange();
+}
+window.selectMiniFilterAmountMode = selectMiniFilterAmountMode;
+
+export function renderMiniFilterChannelDisplay(channelVal) {
+    const displayEl = document.getElementById('selected-mini-filter-channel-display');
+    if (!displayEl) return;
+
+    let html = '';
+    switch (channelVal) {
+        case 'IB':
+            html = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-blue-50 text-blue-700 border-blue-200 shadow-2xs">
+                💻 Internet Banking
+            </span>`;
+            break;
+        case 'P24':
+            html = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-indigo-50 text-indigo-700 border-indigo-200 shadow-2xs">
+                🏧 P24 / ATM
+            </span>`;
+            break;
+        case 'MPESA':
+            html = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-red-50 text-red-700 border-red-200 shadow-2xs">
+                📱 M-Pesa
+            </span>`;
+            break;
+        case 'EMOLA':
+            html = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-amber-50 text-amber-700 border-amber-200 shadow-2xs">
+                📲 e-Mola
+            </span>`;
+            break;
+        case 'IZI':
+            html = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-yellow-50 text-yellow-800 border-yellow-200 shadow-2xs">
+                ⚡ IZI Transfer
+            </span>`;
+            break;
+        case 'TRF':
+            html = `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-slate-100 text-slate-700 border-slate-300 shadow-2xs">
+                📄 Transferência
+            </span>`;
+            break;
+        case '':
+        default:
+            html = `<span>🌐 Todos os Canais</span>`;
+    }
+    displayEl.innerHTML = html;
+
+    document.querySelectorAll('.mini-channel-opt').forEach(opt => {
+        if (opt.getAttribute('data-val') === (channelVal || '')) {
+            opt.classList.add('bg-slate-100', 'font-black');
+        } else {
+            opt.classList.remove('bg-slate-100', 'font-black');
+        }
+    });
+}
+window.renderMiniFilterChannelDisplay = renderMiniFilterChannelDisplay;
+
+export function toggleMiniFilterChannelDropdown(e) {
+    if (e) e.stopPropagation();
+    const list = document.getElementById('list-dropdown-mini-filter-channel');
+    const arrow = document.getElementById('arrow-mini-filter-channel');
+    if (!list) return;
+
+    const willOpen = list.classList.contains('hidden');
+    closeAllMiniFilterDropdowns();
+
+    if (willOpen) {
+        list.classList.remove('hidden');
+        if (arrow) arrow.classList.add('rotate-180');
+    }
+}
+window.toggleMiniFilterChannelDropdown = toggleMiniFilterChannelDropdown;
+
+export function closeMiniFilterChannelDropdown() {
+    const list = document.getElementById('list-dropdown-mini-filter-channel');
+    const arrow = document.getElementById('arrow-mini-filter-channel');
+    if (list) list.classList.add('hidden');
+    if (arrow) arrow.classList.remove('rotate-180');
+}
+window.closeMiniFilterChannelDropdown = closeMiniFilterChannelDropdown;
+
+export function selectMiniFilterChannel(val) {
+    const selectEl = document.getElementById('mini-filter-channel');
+    if (selectEl) {
+        selectEl.value = val;
+    }
+    renderMiniFilterChannelDisplay(val);
+    closeMiniFilterChannelDropdown();
+    searchPaymentMiniFilter();
+}
+window.selectMiniFilterChannel = selectMiniFilterChannel;
+
+export function closeAllMiniFilterDropdowns() {
+    closeMiniFilterBankDropdown();
+    closeMiniFilterOwnerDropdown();
+    closeMiniFilterAmountModeDropdown();
+    closeMiniFilterChannelDropdown();
+    closeMiniFilterStatusDropdown();
+}
+window.closeAllMiniFilterDropdowns = closeAllMiniFilterDropdowns;
+
+export function renderMiniFilterStatusDisplay(statusValue) {
+    const displayEl = document.getElementById('selected-mini-filter-status-display');
+    if (!displayEl) return;
+
+    let badgeHtml = '';
+    switch (statusValue) {
+        case 'CONFIRMADO':
+            badgeHtml = `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-green-50 text-green-700 border-green-300 shadow-2xs">
+                <svg class="w-2.5 h-2.5 text-green-600" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                CONFIRMADO
+            </span>`;
+            break;
+        case 'PARCIAL':
+            badgeHtml = `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-amber-100 text-amber-800 border-amber-300 shadow-2xs">
+                <svg class="w-2.5 h-2.5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                PARCIAL
+            </span>`;
+            break;
+        case 'AGUARDA PAGAMENTO':
+            badgeHtml = `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-slate-100 text-slate-600 border-slate-300 shadow-2xs">
+                <svg class="w-2.5 h-2.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                AGUARDA PAGAMENTO
+            </span>`;
+            break;
+        case 'RE-VERIFICANDO':
+            badgeHtml = `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-blue-100 text-blue-800 border-blue-300 shadow-2xs">
+                <svg class="w-2.5 h-2.5 text-blue-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                RE-VERIFICANDO
+            </span>`;
+            break;
+        case 'SEM COMPROVATIVO':
+            badgeHtml = `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-orange-100 text-orange-800 border-orange-300 shadow-2xs">
+                <svg class="w-2.5 h-2.5 text-orange-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                SEM COMPROVATIVO
+            </span>`;
+            break;
+        case 'COMPROVATIVO ERRADO':
+            badgeHtml = `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-red-100 text-red-800 border-red-300 shadow-2xs">
+                <svg class="w-2.5 h-2.5 text-red-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                COMPROVATIVO ERRADO
+            </span>`;
+            break;
+        case 'PENDENTE':
+            badgeHtml = `<span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg font-black text-[9px] uppercase tracking-tighter border bg-yellow-400 text-black border-yellow-500 shadow-2xs">
+                <svg class="w-2.5 h-2.5 text-black" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+                PENDENTE
+            </span>`;
+            break;
+        default:
+            badgeHtml = `<span class="font-black text-xs text-slate-700 uppercase">${statusValue || 'Status...'}</span>`;
+    }
+    displayEl.innerHTML = badgeHtml;
+
+    // Atualizar estilo ativo na lista customizada
+    document.querySelectorAll('.mini-status-opt').forEach(opt => {
+        if (opt.getAttribute('data-val') === statusValue) {
+            opt.classList.add('bg-slate-100', 'font-black');
+        } else {
+            opt.classList.remove('bg-slate-100', 'font-black');
+        }
+    });
+}
+window.renderMiniFilterStatusDisplay = renderMiniFilterStatusDisplay;
+
+export function toggleMiniFilterStatusDropdown(e) {
+    if (e) e.stopPropagation();
+    const list = document.getElementById('list-dropdown-mini-filter-status');
+    const arrow = document.getElementById('arrow-mini-filter-status');
+    if (!list) return;
+
+    const willOpen = list.classList.contains('hidden');
+    closeAllMiniFilterDropdowns();
+
+    if (willOpen) {
+        list.classList.remove('hidden');
+        if (arrow) arrow.classList.add('rotate-180');
+    }
+}
+window.toggleMiniFilterStatusDropdown = toggleMiniFilterStatusDropdown;
+
+export function closeMiniFilterStatusDropdown() {
+    const list = document.getElementById('list-dropdown-mini-filter-status');
+    const arrow = document.getElementById('arrow-mini-filter-status');
+    if (list) list.classList.add('hidden');
+    if (arrow) arrow.classList.remove('rotate-180');
+}
+window.closeMiniFilterStatusDropdown = closeMiniFilterStatusDropdown;
+
+export function selectMiniFilterStatus(val) {
+    const selectEl = document.getElementById('mini-filter-status');
+    if (selectEl) {
+        selectEl.value = val;
+        selectEl.dispatchEvent(new Event('change'));
+    }
+    renderMiniFilterStatusDisplay(val);
+    closeMiniFilterStatusDropdown();
+}
+window.selectMiniFilterStatus = selectMiniFilterStatus;
+
 export function checkMiniFilterStatus() {
     const allocated = parseFloat(document.getElementById('mini-filter-allocate-amount')?.value) || 0;
     const statusSelect = document.getElementById('mini-filter-status');
@@ -7974,6 +8771,7 @@ export function checkMiniFilterStatus() {
         // PARCIAL
         if (statusSelect && statusSelect.value !== 'PARCIAL') {
             statusSelect.value = 'PARCIAL';
+            renderMiniFilterStatusDisplay('PARCIAL');
         }
         if (statusPill) {
             statusPill.innerText = 'PARCIAL';
@@ -7991,6 +8789,7 @@ export function checkMiniFilterStatus() {
         // CONFIRMADO
         if (statusSelect && (statusSelect.value === 'PARCIAL' || statusSelect.value === 'PENDENTE')) {
             statusSelect.value = 'CONFIRMADO';
+            renderMiniFilterStatusDisplay('CONFIRMADO');
         }
         if (statusPill) {
             statusPill.innerText = 'CONFIRMADO';
@@ -8175,7 +8974,10 @@ export async function confirmPaymentSelection() {
         if (status === 'CONFIRMADO') {
             status = 'PARCIAL';
             const statusSelect = document.getElementById('mini-filter-status');
-            if (statusSelect) statusSelect.value = 'PARCIAL';
+            if (statusSelect) {
+                statusSelect.value = 'PARCIAL';
+                renderMiniFilterStatusDisplay('PARCIAL');
+            }
         }
     }
 
@@ -8484,6 +9286,15 @@ export async function confirmPaymentSelection() {
                         }
 
                         let finalNote = 'PAID TO JUPITER';
+                        if (window.freightExtrasContext && window.freightExtrasContext.totalExtras > 0) {
+                            finalNote = window.freightExtrasContext.finalNote;
+                        } else {
+                            const totalFreightSheet = (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || r.amtFreight || 0), 0);
+                            if (allocatedAmount > totalFreightSheet + 0.01) {
+                                const extraDiff = allocatedAmount - totalFreightSheet;
+                                finalNote = `PAID TO JUPITER (+${formatMZN(extraDiff)} Extras China)`;
+                            }
+                        }
                         
                         if (bankFreightIdx !== -1 && bankVal && bankVal !== '—') {
                             rowData[bankFreightIdx] = bankVal;
@@ -8630,8 +9441,20 @@ export async function confirmPaymentSelection() {
                 // 5. PocketBase - Reconciliação como Segurança da Informação (executada após sucesso na planilha Google Sheets)
                 if (usedPayments.length > 0) {
                     try {
+                        let finalCombinedInfo = combinedInfo;
+                        if (isFreight) {
+                            if (window.freightExtrasContext && window.freightExtrasContext.totalExtras > 0) {
+                                finalCombinedInfo = `FRETE (+${formatMZN(window.freightExtrasContext.totalExtras)} EXTRAS) - ${clientNo} - ${projectName}`;
+                            } else {
+                                const totalFreightSheet = (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || r.amtFreight || 0), 0);
+                                if (allocatedAmount > totalFreightSheet + 0.01) {
+                                    const extraDiff = allocatedAmount - totalFreightSheet;
+                                    finalCombinedInfo = `FRETE (+${formatMZN(extraDiff)} EXTRAS CHINA) - ${clientNo} - ${projectName}`;
+                                }
+                            }
+                        }
                         for (const up of usedPayments) {
-                            await markPaymentReconciled(up.id, combinedInfo, up.amount);
+                            await markPaymentReconciled(up.id, finalCombinedInfo, up.amount);
                         }
                     } catch (pbErr) {
                         console.warn("[PocketBase] Falha ao registar conciliação no PocketBase (Google Sheets já foi atualizado com sucesso):", pbErr);
@@ -8699,12 +9522,14 @@ export async function confirmPaymentSelection() {
         alert('Erro ao vincular pagamento: ' + e.message + detail);
     } finally {
         window.paymentReconciliationContext = null;
+        window.freightExtrasContext = null;
         setLoader(false);
         setBtnLoading(btn, false);
     }
 }
 
 export function closePaymentMiniFilter() {
+    closeAllMiniFilterDropdowns();
     // 1. Emitir UNLOCK para todas as ordens (linhas) deste cliente
     if (window.currentActiveClient && window.currentActiveClient.rows && state.confirm && state.confirm.sheetId) {
         console.log("[SSE-FASE-1][EMISSÃO-PAGAMENTO] Desbloqueando todas as ordens do cliente para fecho do popup de pagamento.");
@@ -8732,6 +9557,7 @@ export function closePaymentMiniFilter() {
     
     // Limpar o contexto de vínculo para evitar conflitos com Duty
     window.paymentReconciliationContext = null;
+    window.freightExtrasContext = null;
 }
 
 // --- MÓDULO DEFINIÇÕES (USERS) ---
@@ -10602,8 +11428,82 @@ window.loadSavedQuote = function(id) {
 };
 
 // ==========================================
-// FREIGHT MODAL LOGIC
+// FREIGHT MODAL LOGIC (VALOR DO BILL & CÁLCULO AUTOMÁTICO DE CUSTO EXTRA)
 // ==========================================
+
+export function updateFreightTotalCalculation() {
+    const freightBase = window.currentFreightBaseAmount !== undefined
+        ? window.currentFreightBaseAmount
+        : (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || 0), 0);
+        
+    const billInput = document.getElementById('input-freight-bill-amount');
+    const billInputVal = billInput?.value?.trim();
+    const hasCustomBill = billInputVal !== undefined && billInputVal !== '' && !isNaN(parseFloat(billInputVal));
+    const billAmount = hasCustomBill ? Math.max(0, parseFloat(billInputVal)) : freightBase;
+
+    // A diferença entre o valor do bill e o frete base é o custo extra
+    const totalExtras = Math.max(0, billAmount - freightBase);
+    const grandTotal = Math.max(freightBase, billAmount);
+
+    // Atualizar displays de valores
+    const baseEl = document.getElementById('modal-freight-base-display');
+    if (baseEl) baseEl.innerText = formatMZN(freightBase);
+
+    const extrasRow = document.getElementById('modal-freight-extras-row');
+    const extrasEl = document.getElementById('modal-freight-extras-display');
+    if (extrasRow && extrasEl) {
+        if (totalExtras > 0) {
+            extrasRow.classList.remove('hidden');
+            extrasEl.innerText = `+${formatMZN(totalExtras)}`;
+        } else {
+            extrasRow.classList.add('hidden');
+        }
+    }
+
+    const totalValEl = document.getElementById('modal-freight-total-value');
+    if (totalValEl) {
+        totalValEl.innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(grandTotal);
+    }
+
+    const ruleBaseEl = document.getElementById('modal-freight-rule-base');
+    if (ruleBaseEl) ruleBaseEl.innerText = formatMZN(freightBase);
+
+    const ruleDiffEl = document.getElementById('modal-freight-rule-diff');
+    if (ruleDiffEl) ruleDiffEl.innerText = formatMZN(totalExtras);
+
+    const ruleTotalEl = document.getElementById('modal-freight-rule-total');
+    if (ruleTotalEl) ruleTotalEl.innerText = formatMZN(grandTotal);
+
+    const statusBadge = document.getElementById('badge-freight-bill-status');
+    if (statusBadge) {
+        if (totalExtras > 0) {
+            statusBadge.innerText = `+${formatMZN(totalExtras)} Extra`;
+            statusBadge.className = 'text-[8.5px] font-bold text-amber-700 bg-amber-100/90 px-2 py-0.5 rounded-full border border-amber-300';
+        } else {
+            statusBadge.innerText = 'Frete Base';
+            statusBadge.className = 'text-[8.5px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200';
+        }
+    }
+
+    // Gerar prévia da nota
+    const notePreviewEl = document.getElementById('modal-freight-note-preview');
+    if (notePreviewEl) {
+        if (totalExtras > 0) {
+            notePreviewEl.innerText = `PAID TO JUPITER (+${formatMZN(totalExtras)} Extras)`;
+        } else {
+            notePreviewEl.innerText = 'PAID TO JUPITER';
+        }
+    }
+
+    return {
+        freightBase,
+        billAmount,
+        totalExtras,
+        grandTotal,
+        hasCustomBill
+    };
+}
+window.updateFreightTotalCalculation = updateFreightTotalCalculation;
 
 export function openFreightModal() {
     const totalBal = (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || 0), 0);
@@ -10619,12 +11519,18 @@ export function openFreightModal() {
     const modal = document.getElementById('modal-freight-update');
     if (modal) {
         document.getElementById('select-freight-bank').value = '';
-        
-        const displayVal = totalBal > 0 ? totalBal : totalFrt;
-        const valEl = document.getElementById('modal-freight-total-value');
-        if (valEl) {
-            valEl.innerText = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(displayVal);
+
+        const baseVal = totalBal > 0 ? totalBal : totalFrt;
+        window.currentFreightBaseAmount = baseVal;
+
+        // Inicializar campo do Valor do Bill com o valor base do frete
+        const inpBill = document.getElementById('input-freight-bill-amount');
+        if (inpBill) {
+            inpBill.value = baseVal > 0 ? baseVal.toFixed(2) : '';
+            inpBill.placeholder = baseVal > 0 ? baseVal.toFixed(2) : '0.00';
         }
+        
+        updateFreightTotalCalculation();
 
         setFreightOrigin('local');
         
@@ -10666,21 +11572,42 @@ export function vincularPagamentoFrete() {
     window.paymentReconciliationContext = 'FREIGHT';
 
     const bankValue = document.getElementById('select-freight-bank').value;
-    const finalNote = 'PAID TO JUPITER';
 
-    const trueRemaining = (window.currentClientRows || []).reduce((acc, r) => acc + (r.balFreight || 0), 0);
+    const calc = updateFreightTotalCalculation();
+    const freightBase = calc.freightBase;
+    const totalExtras = calc.totalExtras;
+    const totalExpectedInBank = calc.grandTotal;
+
+    let finalNote = 'PAID TO JUPITER';
+    if (totalExtras > 0) {
+        finalNote = `PAID TO JUPITER (+${formatMZN(totalExtras)} Extras)`;
+    }
+
+    // Guardar contexto completo de frete e extras para uso no confirmPaymentFull
+    window.freightExtrasContext = {
+        freightBase,
+        totalExtras,
+        totalExpectedInBank,
+        finalNote
+    };
 
     let projectName = 'Folha';
     const breadcrumbSpan = document.querySelector('#confirm-breadcrumb > span.hover\\:text-black.cursor-pointer.transition-colors');
     if (breadcrumbSpan) {
         projectName = breadcrumbSpan.innerText.trim();
     }
-    const combinedInfo = `FRETE - ${window.currentActiveClient.no || ''} - ${projectName}`.replace(/(^ - )|( - $)/g, '').trim();
+    
+    let combinedTag = 'FRETE';
+    if (totalExtras > 0) {
+        combinedTag = `FRETE (+${formatMZN(totalExtras)} EXTRAS)`;
+    }
+    const combinedInfo = `${combinedTag} - ${window.currentActiveClient.no || ''} - ${projectName}`.replace(/(^ - )|( - $)/g, '').trim();
 
+    // Abrir o mini-filtro pesquisando pelo valor TOTAL recebido no banco (ex: 6000 MT)
     ui.openPaymentMiniFilter(
         combinedInfo,
         bankValue,
-        trueRemaining,
+        totalExpectedInBank,
         '',
         window.currentActiveClient.displayName || '',
         window.currentActiveClientState?.clientPhone || '',
@@ -10701,24 +11628,26 @@ export async function saveFreightModal() {
         return;
     }
 
+    const isChina = window.currentFreightOrigin === 'china';
+    const calc = updateFreightTotalCalculation();
+    const totalExtras = calc.totalExtras;
+
     let finalNote = '';
     let bankVal = '';
-    const isChina = window.currentFreightOrigin === 'china';
 
     if (isChina) {
         bankVal = 'PAID IN CHINA';
-        finalNote = 'PAID IN CHINA';
+        finalNote = totalExtras > 0 ? `PAID IN CHINA (+${formatMZN(totalExtras)} Extras)` : 'PAID IN CHINA';
     } else {
         bankVal = document.getElementById('select-freight-bank').value;
-        finalNote = 'PAID TO JUPITER';
-
         if (!bankVal) {
             toast("Por favor, selecione um banco para continuar.", "info");
             return;
         }
+        finalNote = totalExtras > 0 ? `PAID TO JUPITER (+${formatMZN(totalExtras)} Extras)` : 'PAID TO JUPITER';
     }
 
-    const btn = document.querySelector('#modal-freight-update button:nth-child(2)');
+    const btn = document.getElementById('btn-freight-salvar') || document.querySelector('#modal-freight-update button:nth-child(2)');
     if (btn) btn.disabled = true;
 
     try {
@@ -10759,7 +11688,7 @@ export async function saveFreightModal() {
                 });
             }
             
-            // Update Nota Freight
+            // Update Nota Freight com documentação de extras
             if (notaFreightIdx !== -1 && finalNote !== '') {
                 if (state.confirm?.data && state.confirm.data[originalIndex]) {
                     state.confirm.data[originalIndex][notaFreightIdx] = finalNote;
@@ -10774,6 +11703,7 @@ export async function saveFreightModal() {
             }
 
             // Update PAID FREIGHT e BALANCE FREIGHT
+            // Na lista/folha regista-se ESTRITAMENTE o valor referente ao frete (amt)
             const amountVal = state.confirm?.data?.[originalIndex]?.[amountFreightIdx] ?? rowObj.originalRow?.[amountFreightIdx] ?? rowObj.amtFreight ?? 0;
             const amt = parseFloat(String(amountVal).replace(/[^0-9.-]+/g, "")) || 0;
 
@@ -10825,7 +11755,7 @@ export async function saveFreightModal() {
 
         if (updates.length > 0) {
             await updateGSheetBatch(currentProjectSheetId, updates);
-            toast("Frete atualizado com sucesso no GSheet!", "success");
+            toast("Frete gravado com sucesso no GSheet!", "success");
         } else {
             toast("Erro: Colunas de Frete não encontradas no GSheet.", "warning");
         }
@@ -11818,6 +12748,51 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             </span>
         `;
 
+        // Preservar valores já digitados pelo operador no formulário se ainda não tiverem sido gravados
+        let draftValues = null;
+        const currentForm = container.querySelector('#armazem-form-container');
+        if (currentForm) {
+            const hasFocus = currentForm.contains(document.activeElement);
+            const activeId = document.activeElement ? (document.activeElement.name || document.activeElement.id) : null;
+            const selStart = document.activeElement?.selectionStart;
+            const selEnd = document.activeElement?.selectionEnd;
+
+            const dIn = currentForm.querySelector('input[name="discharge"]')?.value;
+            const delIn = currentForm.querySelector('input[name="deliver"]')?.value;
+            const dateIn = currentForm.querySelector('input[name="deliverDate"]')?.value;
+            const toIn = currentForm.querySelector('input[name="deliverTo"]')?.value;
+            const contIn = currentForm.querySelector('input[name="contacto"]')?.value;
+            const viatIn = currentForm.querySelector('input[name="viatura"]')?.value;
+            const hasViat = currentForm.querySelector('#check-has-viatura')?.checked;
+            const hasIsenc = currentForm.querySelector('#check-has-isencao')?.checked;
+            const isencSel = currentForm.querySelector('#select-isencao')?.value;
+            const isencMot = currentForm.querySelector('input[name="motivoIsencao"]')?.value;
+            const noteIn = currentForm.querySelector('input[name="notaContacto"]')?.value;
+            const payAmtIn = currentForm.querySelector('#input-storage-pay-amount')?.value;
+            const paySelIn = currentForm.querySelector('select[name="storagePaid"]')?.value;
+
+            if (hasFocus || delIn || dateIn || toIn || contIn || viatIn || hasIsenc || noteIn) {
+                draftValues = {
+                    discharge: dIn,
+                    deliver: delIn,
+                    deliverDate: dateIn,
+                    deliverTo: toIn,
+                    contacto: contIn,
+                    viatura: viatIn,
+                    hasViatura: hasViat,
+                    hasIsencao: hasIsenc,
+                    isencaoSelect: isencSel,
+                    isencaoMotivo: isencMot,
+                    notaContacto: noteIn,
+                    storagePayAmount: payAmtIn,
+                    storagePaid: paySelIn,
+                    activeId,
+                    selStart,
+                    selEnd
+                };
+            }
+        }
+
         container.innerHTML = `
             ${bannerHtml}
             
@@ -12009,6 +12984,83 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             </div>
             `}
         `;
+
+        // Restaurar valores em edição se o operador estava a preencher
+        if (draftValues) {
+            const newForm = container.querySelector('#armazem-form-container');
+            if (newForm) {
+                if (draftValues.discharge !== undefined && draftValues.discharge !== '') {
+                    const el = newForm.querySelector('input[name="discharge"]');
+                    if (el) el.value = draftValues.discharge;
+                }
+                if (draftValues.deliver !== undefined && draftValues.deliver !== '') {
+                    const el = newForm.querySelector('input[name="deliver"]');
+                    if (el) el.value = draftValues.deliver;
+                }
+                if (draftValues.deliverDate !== undefined && draftValues.deliverDate !== '') {
+                    const el = newForm.querySelector('input[name="deliverDate"]');
+                    if (el) el.value = draftValues.deliverDate;
+                }
+                if (draftValues.deliverTo !== undefined && draftValues.deliverTo !== '') {
+                    const el = newForm.querySelector('input[name="deliverTo"]');
+                    if (el) el.value = draftValues.deliverTo;
+                }
+                if (draftValues.contacto !== undefined && draftValues.contacto !== '') {
+                    const el = newForm.querySelector('input[name="contacto"]');
+                    if (el) el.value = draftValues.contacto;
+                }
+                if (draftValues.viatura !== undefined && draftValues.viatura !== '') {
+                    const el = newForm.querySelector('input[name="viatura"]');
+                    if (el) el.value = draftValues.viatura;
+                }
+                if (draftValues.hasViatura !== undefined) {
+                    const chk = newForm.querySelector('#check-has-viatura');
+                    if (chk) {
+                        chk.checked = draftValues.hasViatura;
+                        if (typeof toggleViaturaField === 'function') toggleViaturaField(chk);
+                    }
+                }
+                if (draftValues.hasIsencao !== undefined) {
+                    const chk = newForm.querySelector('#check-has-isencao');
+                    if (chk) {
+                        chk.checked = draftValues.hasIsencao;
+                        if (typeof toggleIsencao === 'function') toggleIsencao(chk);
+                    }
+                }
+                if (draftValues.isencaoSelect !== undefined && draftValues.isencaoSelect !== '') {
+                    const sel = newForm.querySelector('#select-isencao');
+                    if (sel) sel.value = draftValues.isencaoSelect;
+                }
+                if (draftValues.isencaoMotivo !== undefined && draftValues.isencaoMotivo !== '') {
+                    const inp = newForm.querySelector('input[name="motivoIsencao"]');
+                    if (inp) inp.value = draftValues.isencaoMotivo;
+                }
+                if (draftValues.notaContacto !== undefined && draftValues.notaContacto !== '') {
+                    const el = newForm.querySelector('input[name="notaContacto"]');
+                    if (el) el.value = draftValues.notaContacto;
+                }
+                if (draftValues.storagePayAmount !== undefined && draftValues.storagePayAmount !== '') {
+                    const el = newForm.querySelector('#input-storage-pay-amount');
+                    if (el) el.value = draftValues.storagePayAmount;
+                }
+                if (draftValues.storagePaid !== undefined && draftValues.storagePaid !== '') {
+                    const el = newForm.querySelector('select[name="storagePaid"]');
+                    if (el) el.value = draftValues.storagePaid;
+                }
+                if (draftValues.activeId) {
+                    const activeEl = newForm.querySelector(`[name="${draftValues.activeId}"], #${draftValues.activeId}`);
+                    if (activeEl && typeof activeEl.focus === 'function') {
+                        activeEl.focus();
+                        if (draftValues.selStart !== undefined && draftValues.selEnd !== undefined && typeof activeEl.setSelectionRange === 'function') {
+                            try { activeEl.setSelectionRange(draftValues.selStart, draftValues.selEnd); } catch (e) {}
+                        }
+                    }
+                }
+                if (window.updateArmazemCalculations) {
+                    window.updateArmazemCalculations();
+                }
+            }
+        }
     } catch (err) {
         console.error('[WAREHOUSE] Erro ao renderizar detalhes de Armazém:', err);
         container.innerHTML = `
@@ -17009,6 +18061,15 @@ if (typeof document !== 'undefined') {
         if (!e.target.closest('#dropdown-bulk-bank-wrapper') && !e.target.closest('#dropdown-bulk-status-wrapper')) {
             if (typeof closeAllBulkDropdowns === 'function') {
                 closeAllBulkDropdowns();
+            }
+        }
+        if (!e.target.closest('#dropdown-mini-filter-bank-wrapper') &&
+            !e.target.closest('#dropdown-mini-filter-owner-wrapper') &&
+            !e.target.closest('#dropdown-mini-filter-amount-mode-wrapper') &&
+            !e.target.closest('#dropdown-mini-filter-channel-wrapper') &&
+            !e.target.closest('#dropdown-mini-filter-status-wrapper')) {
+            if (typeof closeAllMiniFilterDropdowns === 'function') {
+                closeAllMiniFilterDropdowns();
             }
         }
     });
