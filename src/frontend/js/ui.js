@@ -3174,7 +3174,8 @@ export async function showConfirmDetail(client, clientIndex) {
         body.innerHTML = `<div id="empty-state" class="p-12 text-center text-slate-500 italic">Nenhum dado para exibir.</div>`;
     } else {
         client.rows.forEach((rowObj, index) => {
-            const rowData = rowObj.originalRow;
+            const rowData = (state.confirm?.data && state.confirm.data[rowObj.originalIndex]) || rowObj.originalRow || [];
+            rowObj.originalRow = rowData;
             const originalIndex = rowObj.originalIndex;
 
             const orderNumber = getRaw(rowData, orderNumIdx);
@@ -9108,12 +9109,34 @@ export async function confirmPaymentSelection() {
                 const sortedClientRows = [...window.currentClientRows].sort((a, b) => a.originalIndex - b.originalIndex);
                 const firstRowIndex = sortedClientRows[0]?.originalIndex;
 
-                const totalAllocatedFromPayments = usedPayments.reduce((sum, p) => sum + p.amount, 0);
-                let allocatedAmountRemaining = (usedPayments.length > 0)
-                    ? Math.min(allocatedAmount, totalAllocatedFromPayments)
-                    : allocatedAmount;
+                const newlyAllocatedSum = usedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+                // Buscar outros pagamentos já alocados a este cliente no PocketBase para somar o valor total bancário
+                let existingAllocatedOtherSum = 0;
+                try {
+                    const existingPmts = await getPaymentsByAllocatedTo(isFreight ? `FRETE - ${combinedInfo}` : combinedInfo);
+                    if (existingPmts && existingPmts.length > 0) {
+                        existingAllocatedOtherSum = existingPmts
+                            .filter(p => !usedPayments.some(u => u.id === p.id))
+                            .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+                    }
+                } catch (fetchErr) {
+                    console.warn("[confirmPaymentSelection] Aviso ao consultar pagamentos existentes:", fetchErr);
+                }
+
+                // O total de fundos bancários disponíveis para cobrir as ordens deste cliente:
+                const totalBankFundsForClient = existingAllocatedOtherSum + newlyAllocatedSum;
+                let fundsRemaining = totalBankFundsForClient;
+
+                // Calcular meta total líquida do cliente
+                const totalClientNetTarget = sortedClientRows.reduce((sum, r) => {
+                    const a = isFreight ? (parseFloat(r.amtFreight) || 0) : (parseFloat(r.amountDuty) || 0);
+                    const p = isFreight ? 0 : (parseFloat(r.dutyPrepaid) || 0);
+                    return sum + Math.max(0, a - p);
+                }, 0);
+
                 let filterStatus = status;
-                if (allocatedAmountRemaining > 0 && currentMiniFilterExpectedAmount > 0 && allocatedAmountRemaining < (currentMiniFilterExpectedAmount - 0.05)) {
+                if (totalClientNetTarget > 0 && totalBankFundsForClient < (totalClientNetTarget - 0.05)) {
                     filterStatus = 'PARCIAL';
                 }
 
@@ -9136,8 +9159,8 @@ export async function confirmPaymentSelection() {
                 
                 let firstRowPassed = false;
 
-                // Fazer o update para cada linha deste cliente
-                for (const rowObj of window.currentClientRows) {
+                // Fazer o update para cada linha deste cliente na ordem correta
+                for (const rowObj of sortedClientRows) {
                     const sheetRowNumber = rowObj.originalIndex + 1;
                     const originalIndex = rowObj.originalIndex;
                     const rawRow = (state.confirm?.data && state.confirm.data[originalIndex]) || rowObj.originalRow || [];
@@ -9153,26 +9176,18 @@ export async function confirmPaymentSelection() {
                         if (balanceIdx !== -1) rowData[balanceIdx] = rowObj.amountDuty;
                         if (bankDutyIdx !== -1) rowData[bankDutyIdx] = '';
                     } else {
-                        // Distribuir o valor do pagamento
+                        // Distribuir o valor do pagamento sequencialmente a partir dos fundos bancários
                         const amt = isFreight ? (parseFloat(rowObj.amtFreight) || 0) : (parseFloat(rowObj.amountDuty) || 0);
                         const prep = isFreight ? 0 : (parseFloat(rowObj.dutyPrepaid) || 0);
                         const netTarget = Math.max(0, amt - prep);
 
-                        let currentPaid = isFreight ? (parseFloat(rowObj.pdFreight) || 0) : (parseFloat(rowObj.paid) || 0);
-                        // Se o valor pago existente na linha for igual ou superior ao total da linha, mas o operador está a alocar um montante parcial:
-                        if (currentPaid >= netTarget && allocatedAmountRemaining < netTarget) {
-                            currentPaid = 0;
-                        }
-
-                        let currentBalance = Math.max(0, netTarget - currentPaid);
-                        
                         let allocatedForThisRow = 0;
-                        if (currentBalance > 0 && allocatedAmountRemaining > 0) {
-                            allocatedForThisRow = Math.min(allocatedAmountRemaining, currentBalance);
-                            allocatedAmountRemaining -= allocatedForThisRow;
+                        if (fundsRemaining > 0 && netTarget > 0) {
+                            allocatedForThisRow = Math.min(fundsRemaining, netTarget);
+                            fundsRemaining -= allocatedForThisRow;
                         }
 
-                        const newPaid = currentPaid + allocatedForThisRow;
+                        const newPaid = allocatedForThisRow;
                         const newBalance = Math.max(0, netTarget - newPaid);
 
                         if (paidIdx !== -1) rowData[paidIdx] = newPaid;
@@ -9210,6 +9225,7 @@ export async function confirmPaymentSelection() {
                                 if (activeClientRow) {
                                     activeClientRow.paid = newPaid;
                                     activeClientRow.balance = newBalance;
+                                    activeClientRow.status = newStatus;
                                     if (dutyBankVal) activeClientRow.bankDuty = dutyBankVal;
                                     if (activeClientRow.originalRow) {
                                         if (paidIdx !== -1) activeClientRow.originalRow[paidIdx] = newPaid;
@@ -9254,7 +9270,10 @@ export async function confirmPaymentSelection() {
                         if (rowObj.originalRow) rowObj.originalRow[statusIdx] = newStatus;
                         if (window.currentActiveClient && window.currentActiveClient.rows) {
                             const acr = window.currentActiveClient.rows.find(r => r.originalIndex === originalIndex);
-                            if (acr && acr.originalRow) acr.originalRow[statusIdx] = newStatus;
+                            if (acr) {
+                                acr.status = newStatus;
+                                if (acr.originalRow) acr.originalRow[statusIdx] = newStatus;
+                            }
                         }
                     }
 
@@ -9531,7 +9550,12 @@ export async function confirmPaymentSelection() {
             if (window.currentActiveClient && window.currentActiveClient.rows) {
                 window.currentClientRows.forEach(rowObj => {
                     const updatedRowData = state.confirm.data[rowObj.originalIndex];
-                    updateConfirmDetailRow(rowObj.originalIndex, updatedRowData);
+                    if (updatedRowData) {
+                        rowObj.originalRow = updatedRowData;
+                        const acr = window.currentActiveClient.rows.find(r => r.originalIndex === rowObj.originalIndex);
+                        if (acr) acr.originalRow = updatedRowData;
+                        updateConfirmDetailRow(rowObj.originalIndex, updatedRowData);
+                    }
                 });
                 // Re-renderizar o detalhe inteiro para exibir o card "Detalhes de Reconciliação" atualizado
                 await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
