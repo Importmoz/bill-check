@@ -503,6 +503,131 @@ router.post('/sheet/batch-requests', async (req, res) => {
 });
 
 // Atualizar Sheets
+/**
+ * Converte índice de coluna base-0 para letra A1 (0 -> A, 26 -> AA).
+ */
+function columnIndexToA1Letter(colIdx) {
+  let letter = '';
+  let temp = colIdx;
+  while (temp >= 0) {
+    letter = String.fromCharCode((temp % 26) + 65) + letter;
+    temp = Math.floor(temp / 26) - 1;
+  }
+  return letter;
+}
+
+/**
+ * Insere uma coluna numa posição específica (base-0) da folha Google Sheet e grava o respetivo cabeçalho na linha 1.
+ * Idempotente: se o cabeçalho já existir na linha 1, devolve o índice existente sem duplicar.
+ */
+router.post('/sheet/insert-column', async (req, res) => {
+  try {
+    let { spreadsheetId, sheetName, columnIndex, headerName } = req.body;
+    spreadsheetId = extractSpreadsheetId(spreadsheetId);
+    if (!spreadsheetId) return res.status(400).json({ error: 'Spreadsheet ID is required' });
+
+    const targetIndex = parseInt(columnIndex, 10);
+    if (isNaN(targetIndex) || targetIndex < 0) {
+      return res.status(400).json({ error: 'Valid non-negative columnIndex is required' });
+    }
+    const cleanHeader = String(headerName || '').trim();
+    if (!cleanHeader) {
+      return res.status(400).json({ error: 'headerName is required' });
+    }
+
+    const auth = await getGoogleAuth();
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(sheetId,title,gridProperties(columnCount)))'
+    });
+    const sheetsList = meta.data.sheets || [];
+    if (sheetsList.length === 0) {
+      return res.status(404).json({ error: 'No sheets found in spreadsheet' });
+    }
+    const targetSheet = sheetName
+      ? (sheetsList.find(s => s.properties.title === sheetName) || sheetsList[0])
+      : sheetsList[0];
+
+    const sheetId = targetSheet.properties.sheetId;
+    const sheetTitle = targetSheet.properties.title;
+    const columnCount = targetSheet.properties.gridProperties?.columnCount || 0;
+    const safeTitle = sheetTitle.replace(/'/g, "''");
+
+    const headerResp = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${safeTitle}'!1:1`,
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    });
+    const currentHeaders = (headerResp.data.values && headerResp.data.values[0]) || [];
+    const normalizeHeader = (s) => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9]/g, '').trim();
+    const wantedNorm = normalizeHeader(cleanHeader);
+    const existingIdx = currentHeaders.findIndex(h => normalizeHeader(h) === wantedNorm);
+    if (existingIdx !== -1) {
+      return res.json({
+        success: true,
+        alreadyExists: true,
+        columnIndex: existingIdx,
+        columnLetter: columnIndexToA1Letter(existingIdx),
+        sheetTitle
+      });
+    }
+
+    const effectiveIndex = Math.min(targetIndex, currentHeaders.length);
+    const requests = [];
+    if (effectiveIndex < columnCount) {
+      requests.push({
+        insertDimension: {
+          range: {
+            sheetId,
+            dimension: 'COLUMNS',
+            startIndex: effectiveIndex,
+            endIndex: effectiveIndex + 1
+          },
+          inheritFromBefore: effectiveIndex > 0
+        }
+      });
+    } else {
+      const colsToAdd = Math.max(1, effectiveIndex - columnCount + 1);
+      requests.push({
+        appendDimension: {
+          sheetId,
+          dimension: 'COLUMNS',
+          length: colsToAdd
+        }
+      });
+    }
+
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      resource: { requests }
+    });
+
+    const colLetter = columnIndexToA1Letter(effectiveIndex);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `'${safeTitle}'!${colLetter}1`,
+      valueInputOption: 'USER_ENTERED',
+      resource: { values: [[cleanHeader]] }
+    });
+
+    console.log(`[BACKEND] Coluna '${cleanHeader}' inserida na posição ${effectiveIndex} (${colLetter}) da folha '${sheetTitle}'.`);
+    res.json({
+      success: true,
+      alreadyExists: false,
+      columnIndex: effectiveIndex,
+      columnLetter: colLetter,
+      sheetTitle
+    });
+  } catch (error) {
+    console.error('SERVER ERROR (Sheet Insert Column):', error.message);
+    if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
+    const status = (error.message.includes('AUTH_REQUIRED') || error.message.includes('invalid_grant')) ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
 router.post('/sheet/update', async (req, res) => {
   try {
     let { spreadsheetId, range, values } = req.body;

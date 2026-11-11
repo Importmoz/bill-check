@@ -424,6 +424,18 @@ export async function getPaymentsByAllocatedTo(allocatedTo) {
     }
 }
 
+export async function getPaymentsByAllocatedPrefix(prefix) {
+    try {
+        const cleanPrefix = String(prefix || '').replace(/"/g, '\\"');
+        const filter = `reconciled = true && allocated_to ~ "${cleanPrefix}"`;
+        const res = await pb.collection('bank_incomes').getFullList({ filter });
+        return res;
+    } catch (e) {
+        console.warn("Aviso ao buscar pagamentos por prefixo:", e);
+        return [];
+    }
+}
+
 /**
  * Marca um pagamento como reconciliado ou faz o split se o valor for parcial
  */
@@ -1057,6 +1069,33 @@ export async function updateGSheetNote(spreadsheetId, sheetName, row, col, note,
         console.warn("[SYNC] GSheet updateNote falhou. Guardando no PocketBase.", err.message);
         debouncedSyncToPocketBase(true);
         return { success: true, offline: true };
+    }
+}
+
+/**
+ * Insere estruturalmente uma nova coluna na Google Sheet numa posição base-0 específica.
+ * Idempotente: se já existir na folha, devolve o índice existente.
+ */
+export async function insertGSheetColumn(spreadsheetId, sheetName, columnIndex, headerName) {
+    try {
+        const res = await fetch('/api/google/sheet/insert-column', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ spreadsheetId, sheetName, columnIndex, headerName })
+        });
+        if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || 'Erro ao inserir coluna no GSheet');
+        }
+        const responseData = await res.json();
+        debouncedSyncToPocketBase(false);
+        return responseData;
+    } catch (err) {
+        console.warn('[SYNC] GSheet insertColumn falhou. Guardando no PocketBase como pendência.', err.message);
+        state.confirm.hasPendingSync = true;
+        debouncedSyncToPocketBase(true);
+        window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true, pendingSync: true } }));
+        return { success: true, offline: true, pendingSync: true, columnIndex };
     }
 }
 

@@ -2,7 +2,33 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, unallocatePayment, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, unallocatePayment, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, insertGSheetColumn, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByAllocatedPrefix, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
+import { cleanHeaderString, findWarehouseCol, formatLocalYMD, parseWarehouseDate, formatFeeSheetStatus, parseStorageInfo, calculateClientStorage, parseDespachoCopyInfo, calculateClientDespachoCopy } from './warehouseStorage.js';
+
+const DESPACHO_DEFAULT_PRICE_KEY = 'despacho_copy_default_price';
+
+export function getDespachoCopyDefaultPrice() {
+    try {
+        const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(DESPACHO_DEFAULT_PRICE_KEY) : null;
+        if (raw === null || raw === '') return 500;
+        const parsed = parseFloat(raw);
+        return (!isNaN(parsed) && parsed >= 0) ? parsed : 500;
+    } catch (e) {
+        return 500;
+    }
+}
+
+export function setDespachoCopyDefaultPrice(val) {
+    const num = Math.max(0, parseFloat(val) || 0);
+    try {
+        if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(DESPACHO_DEFAULT_PRICE_KEY, String(num));
+        }
+    } catch (e) {
+        console.warn('[DESPACHO] Aviso ao gravar valor padrão em localStorage:', e);
+    }
+    return num;
+}
 import { getRateFromPauta, getComplexRateFromPauta, calculateInvoice } from './quoteCalculator.js';
 import { JUPITER_LOGO_DATA_URL } from './logoData.js';
 import { printService } from './printService.js';
@@ -2368,16 +2394,6 @@ export function renderConfirmList(data, filterText = "", statusFilter = null, is
         }
     }
 
-    // Verificar e criar colunas de Armazém em falta
-    const requiredCols = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
-    const hasAllCols = requiredCols.every(req => {
-        const idx = columns.findIndex(c => {
-            const clean = String(c || '').toUpperCase().trim();
-            if (req === 'CONTACTO') return clean === 'CONTACTO' || clean === 'CONTACT';
-            return clean === req;
-        });
-        return idx !== -1;
-    });
 
     const columnsUpper = columns.map(c => String(c || '').toUpperCase());
     
@@ -2977,6 +2993,10 @@ export async function showConfirmDetail(client, clientIndex) {
     const isSameClient = window.currentActiveClient && String(window.currentActiveClientIndex) === String(clientIndex);
     window.currentActiveClient = client;
     window.currentActiveClientIndex = clientIndex;
+    window.currentClientStorageInfo = null;
+    window.currentClientStoragePayments = [];
+    window.currentClientDespachoInfo = null;
+    window.currentClientDespachoPayments = [];
 
     // Inicialmente ocultar botão de auditoria até verificar se existem registos
     setAuditHistoryButtonVisible(false);
@@ -3157,6 +3177,8 @@ export async function showConfirmDetail(client, clientIndex) {
     let allConfirmed = true;
     let payments = [];
     let freightPayments = [];
+    let storagePayments = [];
+    let despachoPayments = [];
     let isFullyPrepaid = false;
     
     // Novas Variáveis Armazém
@@ -3319,12 +3341,139 @@ export async function showConfirmDetail(client, clientIndex) {
             targetAmount = totalPaid; // Se houver overpayment local
         }
 
-        // Buscar todos os pagamentos já alocados a este cliente
-        payments = await getPaymentsByAllocatedTo(combinedInfo);
-        freightPayments = await getPaymentsByAllocatedTo(`FRETE - ${combinedInfo}`);
+        // Buscar todos os pagamentos já alocados a este cliente (Duty, Frete, Armazém e Cópia de Despacho)
+        const [fetchedDutyPmts, fetchedFreightPmts, fetchedStoragePmts, fetchedDespachoPmts] = await Promise.all([
+            getPaymentsByAllocatedTo(combinedInfo),
+            getPaymentsByAllocatedTo(`FRETE - ${combinedInfo}`),
+            getPaymentsByAllocatedTo(`ARMAZEM - ${combinedInfo}`),
+            getPaymentsByAllocatedTo(`DESPACHO - ${combinedInfo}`)
+        ]);
+        payments = fetchedDutyPmts;
+        freightPayments = fetchedFreightPmts;
+        storagePayments = fetchedStoragePmts;
+        despachoPayments = fetchedDespachoPmts;
+        window.currentClientStoragePayments = storagePayments;
+        window.currentClientDespachoPayments = despachoPayments;
         
         let totalAllocated = 0;
         let pbHtml = '';
+
+        const RECON_THEMES = {
+            DUTY: {
+                card: 'bg-blue-50/25 hover:bg-blue-50/40 border-blue-200/90 hover:border-blue-400',
+                amountText: 'text-blue-800',
+                refBox: 'bg-white/90 border-blue-100/90',
+                divider: 'border-blue-100/70',
+                badge: 'bg-blue-100 text-blue-800 border border-blue-200',
+                rowHover: 'hover:bg-blue-100/40 border-b border-blue-100/60',
+                sibRowBorder: 'border-blue-100/60',
+                sibBoxBorder: 'border-blue-200/70',
+                tableBorder: 'border-blue-200/90',
+                tableBg: 'bg-blue-50/45',
+                thBg: 'bg-blue-50/70 text-blue-950 border-blue-200/70',
+                tbodyDivide: 'divide-blue-100/50',
+                sibTitle: 'text-blue-600',
+                sibActive: 'bg-blue-100/80 font-bold px-1.5 rounded',
+                sibDivider: 'border-blue-200'
+            },
+            FRETE: {
+                card: 'bg-rose-50/25 hover:bg-rose-50/40 border-rose-200/90 hover:border-rose-400',
+                amountText: 'text-rose-800',
+                refBox: 'bg-white/90 border-rose-100/90',
+                divider: 'border-rose-100/70',
+                badge: 'bg-rose-100 text-rose-800 border border-rose-200',
+                rowHover: 'hover:bg-rose-100/40 border-b border-rose-100/60',
+                sibRowBorder: 'border-rose-100/60',
+                sibBoxBorder: 'border-rose-200/70',
+                tableBorder: 'border-rose-200/90',
+                tableBg: 'bg-rose-50/45',
+                thBg: 'bg-rose-50/70 text-rose-950 border-rose-200/70',
+                tbodyDivide: 'divide-rose-100/50',
+                sibTitle: 'text-rose-600',
+                sibActive: 'bg-rose-100/80 font-bold px-1.5 rounded',
+                sibDivider: 'border-rose-200'
+            },
+            ARMAZEM: {
+                card: 'bg-indigo-50/25 hover:bg-indigo-50/40 border-indigo-200/90 hover:border-indigo-400',
+                amountText: 'text-indigo-800',
+                refBox: 'bg-white/90 border-indigo-100/90',
+                divider: 'border-indigo-100/70',
+                badge: 'bg-indigo-100 text-indigo-800 border border-indigo-200',
+                rowHover: 'hover:bg-indigo-100/40 border-b border-indigo-100/60',
+                sibRowBorder: 'border-indigo-100/60',
+                sibBoxBorder: 'border-indigo-200/70',
+                tableBorder: 'border-indigo-200/90',
+                tableBg: 'bg-indigo-50/45',
+                thBg: 'bg-indigo-50/70 text-indigo-950 border-indigo-200/70',
+                tbodyDivide: 'divide-indigo-100/50',
+                sibTitle: 'text-indigo-600',
+                sibActive: 'bg-indigo-100/80 font-bold px-1.5 rounded',
+                sibDivider: 'border-indigo-200'
+            },
+            DESPACHO: {
+                card: 'bg-teal-50/25 hover:bg-teal-50/40 border-teal-200/90 hover:border-teal-400',
+                amountText: 'text-teal-800',
+                refBox: 'bg-white/90 border-teal-100/90',
+                divider: 'border-teal-100/70',
+                badge: 'bg-teal-100 text-teal-800 border border-teal-200',
+                rowHover: 'hover:bg-teal-100/40 border-b border-teal-100/60',
+                sibRowBorder: 'border-teal-100/60',
+                sibBoxBorder: 'border-teal-200/70',
+                tableBorder: 'border-teal-200/90',
+                tableBg: 'bg-teal-50/45',
+                thBg: 'bg-teal-50/70 text-teal-950 border-teal-200/70',
+                tbodyDivide: 'divide-teal-100/50',
+                sibTitle: 'text-teal-600',
+                sibActive: 'bg-teal-100/80 font-bold px-1.5 rounded',
+                sibDivider: 'border-teal-200'
+            }
+        };
+
+        const resolveReconType = (p, fallbackTitle = '') => {
+            if (p.reconType) return p.reconType;
+            const alloc = String(p.allocated_to || '').toUpperCase();
+            if (alloc.startsWith('FRETE')) return 'FRETE';
+            if (alloc.startsWith('ARMAZEM')) return 'ARMAZEM';
+            if (alloc.startsWith('DESPACHO')) return 'DESPACHO';
+            const upperTitle = String(fallbackTitle || '').toUpperCase();
+            if (upperTitle.includes('FRETE')) return 'FRETE';
+            if (upperTitle.includes('ARMAZEM')) return 'ARMAZEM';
+            if (upperTitle.includes('DESPACHO')) return 'DESPACHO';
+            return 'DUTY';
+        };
+
+        const extractReconMeta = (payment, fallbackTitle = '') => {
+            let vinculadorName = payment.reconciled_by_name || '';
+            let vinculadoEm = payment.reconciled_at || '';
+            if (!vinculadorName && payment.reference) {
+                const match = payment.reference.match(/\[Vinculado:\s*([^\]]+)\]/i);
+                if (match) {
+                    const raw = match[1].trim();
+                    const emIndex = raw.toLowerCase().indexOf(' em ');
+                    if (emIndex !== -1) {
+                        vinculadorName = raw.substring(0, emIndex).trim();
+                        vinculadoEm = raw.substring(emIndex + 4).trim();
+                    } else {
+                        vinculadorName = raw;
+                    }
+                }
+            }
+            const reconType = resolveReconType(payment, fallbackTitle);
+            const theme = RECON_THEMES[reconType] || RECON_THEMES.DUTY;
+            const displayRef = (payment.reference || payment.description || '---').replace(/\[Vinculado:[^\]]+\]/g, '').trim();
+            return {
+                vinculadorName,
+                vinculadoEm,
+                displayRef,
+                bankDisplay: getPaymentBankDisplay(payment),
+                ownerDisplay: payment.account_owner || '',
+                dateDisplay: payment.date ? payment.date.split(' ')[0] : '---',
+                formattedAmount: new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount),
+                reconType,
+                theme,
+                typeBadgeHtml: `<span class="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shrink-0 ${theme.badge}">${reconType}</span>`
+            };
+        };
 
         // FUNÇÃO AUXILIAR PARA GERAR O HTML DE RECONCILIAÇÃO E BUSCAR SIBLINGS (GRADE / LISTA UNIFICADA)
         const renderReconciliationBlock = (pmts, title = 'Detalhes de Reconciliação', color = 'blue', meta = null) => {
@@ -3347,8 +3496,6 @@ export async function showConfirmDetail(client, clientIndex) {
                 currentMode = userChoice;
             }
             window.reconciliationViewMode = currentMode;
-            
-            const totalBlockAmount = pmts.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
             let gridColsClass = 'grid-cols-1';
             if (pmts.length === 2) {
@@ -3380,42 +3527,16 @@ export async function showConfirmDetail(client, clientIndex) {
             `;
 
             pmts.forEach((payment) => {
-                let vinculadorName = payment.reconciled_by_name || '';
-                let vinculadoEm = payment.reconciled_at || '';
-                if (!vinculadorName && payment.reference) {
-                    const match = payment.reference.match(/\[Vinculado:\s*([^\]]+)\]/i);
-                    if (match) {
-                        const raw = match[1].trim();
-                        const emIndex = raw.toLowerCase().indexOf(' em ');
-                        if (emIndex !== -1) {
-                            vinculadorName = raw.substring(0, emIndex).trim();
-                            vinculadoEm = raw.substring(emIndex + 4).trim();
-                        } else {
-                            vinculadorName = raw;
-                        }
-                    }
-                }
-                const displayRef = (payment.reference || payment.description || '---').replace(/\[Vinculado:[^\]]+\]/g, '').trim();
-                const bankDisplay = getPaymentBankDisplay(payment);
-                const ownerDisplay = payment.account_owner || '';
-                const dateDisplay = payment.date ? payment.date.split(' ')[0] : '---';
-                const formattedAmount = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount);
-                const reconType = payment.reconType || (payment.allocated_to && payment.allocated_to.startsWith('FRETE') ? 'FRETE' : (title.includes('FRETE') ? 'FRETE' : 'DUTY'));
-                const isFrete = reconType === 'FRETE';
-                const cardThemeClass = isFrete 
-                    ? 'bg-rose-50/25 hover:bg-rose-50/40 border-rose-200/90 hover:border-rose-400' 
-                    : 'bg-blue-50/25 hover:bg-blue-50/40 border-blue-200/90 hover:border-blue-400';
-                const textAmountClass = isFrete ? 'text-rose-800' : 'text-blue-800';
-                const refBoxClass = isFrete ? 'bg-white/90 border-rose-100/90' : 'bg-white/90 border-blue-100/90';
-                const dividerClass = isFrete ? 'border-rose-100/70' : 'border-blue-100/70';
-
-                const typeBadgeHtml = `<span class="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shrink-0 ${isFrete ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}">${reconType}</span>`;
+                const {
+                    vinculadorName, vinculadoEm, displayRef, bankDisplay,
+                    ownerDisplay, dateDisplay, formattedAmount, reconType, theme, typeBadgeHtml
+                } = extractReconMeta(payment, title);
 
                 html += `
-                    <div class="${cardThemeClass} p-3.5 sm:p-4 rounded-xl border shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between w-full">
+                    <div class="${theme.card} p-3.5 sm:p-4 rounded-xl border shadow-2xs hover:shadow-sm transition-all flex flex-col justify-between w-full">
                         <div>
-                            <!-- Topo: Tipo (DUTY/FRETE), Banco, Titular e Data -->
-                            <div class="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b ${dividerClass}">
+                            <!-- Topo: Tipo (DUTY/FRETE/ARMAZEM), Banco, Titular e Data -->
+                            <div class="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b ${theme.divider}">
                                 <div class="flex items-center gap-1.5 truncate text-[10.5px] font-bold text-slate-700">
                                     ${typeBadgeHtml}
                                     <span>${bankDisplay}</span>
@@ -3426,18 +3547,18 @@ export async function showConfirmDetail(client, clientIndex) {
 
                             <!-- Valor em Destaque & ID -->
                             <div class="flex items-baseline justify-between gap-1 my-1.5">
-                                <span class="text-[15px] font-black ${textAmountClass} tracking-tight">${formattedAmount} <small class="text-[10px] font-bold text-slate-400">MT</small></span>
+                                <span class="text-[15px] font-black ${theme.amountText} tracking-tight">${formattedAmount} <small class="text-[10px] font-bold text-slate-400">MT</small></span>
                                 <span class="text-[8.5px] font-mono text-slate-400">#${payment.id.slice(-6)}</span>
                             </div>
 
                             <!-- Referência -->
-                            <div class="text-[10px] text-slate-700 ${refBoxClass} p-2 rounded-lg border truncate mb-2" title="${displayRef.replace(/"/g, '&quot;')}">
+                            <div class="text-[10px] text-slate-700 ${theme.refBox} p-2 rounded-lg border truncate mb-2" title="${displayRef.replace(/"/g, '&quot;')}">
                                 <span class="font-bold text-slate-400 uppercase text-[8px] mr-1">Ref:</span>${displayRef}
                             </div>
                         </div>
 
                         <!-- Rodapé: Vinculador & Desalocar -->
-                        <div class="pt-2 border-t ${dividerClass} flex items-center justify-between gap-2">
+                        <div class="pt-2 border-t ${theme.divider} flex items-center justify-between gap-2">
                             <div class="text-[9px] text-slate-500 truncate max-w-[160px]" title="${vinculadorName ? `Vinculado por ${vinculadorName}${vinculadoEm ? ` em ${vinculadoEm}` : ''}` : ''}">
                                 ${vinculadorName ? `
                                     <span class="flex items-center gap-1 truncate">
@@ -3465,50 +3586,20 @@ export async function showConfirmDetail(client, clientIndex) {
 
             html += `</div>`; // Fecho do recon-grid-view
 
-            // 2. MODO LISTA (Separado em 2 Cards Dedicados: DUTY e FRETE, com fundo colorido e sem corte de informação)
-            const dutyPayments = pmts.filter(p => {
-                const reconType = p.reconType || (p.allocated_to && p.allocated_to.startsWith('FRETE') ? 'FRETE' : (title.includes('FRETE') ? 'FRETE' : 'DUTY'));
-                return reconType !== 'FRETE';
-            });
-            const fretePayments = pmts.filter(p => {
-                const reconType = p.reconType || (p.allocated_to && p.allocated_to.startsWith('FRETE') ? 'FRETE' : (title.includes('FRETE') ? 'FRETE' : 'DUTY'));
-                return reconType === 'FRETE';
-            });
-            const dutySubtotal = dutyPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-            const freteSubtotal = fretePayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+            // 2. MODO LISTA (Separado em Cards Dedicados: DUTY, FRETE, ARMAZEM e DESPACHO)
+            const dutyPayments = pmts.filter(p => resolveReconType(p, title) === 'DUTY');
+            const fretePayments = pmts.filter(p => resolveReconType(p, title) === 'FRETE');
+            const armazemPayments = pmts.filter(p => resolveReconType(p, title) === 'ARMAZEM');
+            const despachoListPayments = pmts.filter(p => resolveReconType(p, title) === 'DESPACHO');
 
             const renderListRow = (payment) => {
-                let vinculadorName = payment.reconciled_by_name || '';
-                let vinculadoEm = payment.reconciled_at || '';
-                if (!vinculadorName && payment.reference) {
-                    const match = payment.reference.match(/\[Vinculado:\s*([^\]]+)\]/i);
-                    if (match) {
-                        const raw = match[1].trim();
-                        const emIndex = raw.toLowerCase().indexOf(' em ');
-                        if (emIndex !== -1) {
-                            vinculadorName = raw.substring(0, emIndex).trim();
-                            vinculadoEm = raw.substring(emIndex + 4).trim();
-                        } else {
-                            vinculadorName = raw;
-                        }
-                    }
-                }
-                const displayRef = (payment.reference || payment.description || '---').replace(/\[Vinculado:[^\]]+\]/g, '').trim();
-                const bankDisplay = getPaymentBankDisplay(payment);
-                const ownerDisplay = payment.account_owner || '';
-                const dateDisplay = payment.date ? payment.date.split(' ')[0] : '---';
-                const formattedAmount = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(payment.amount);
-                const reconType = payment.reconType || (payment.allocated_to && payment.allocated_to.startsWith('FRETE') ? 'FRETE' : (title.includes('FRETE') ? 'FRETE' : 'DUTY'));
-                const isFrete = reconType === 'FRETE';
-                const rowThemeClass = isFrete 
-                    ? 'hover:bg-rose-100/40 border-b border-rose-100/60' 
-                    : 'hover:bg-blue-100/40 border-b border-blue-100/60';
-                const textAmountClass = isFrete ? 'text-rose-800' : 'text-blue-800';
-
-                const typeBadgeHtml = `<span class="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider shrink-0 ${isFrete ? 'bg-rose-100 text-rose-800 border border-rose-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}">${reconType}</span>`;
+                const {
+                    vinculadorName, vinculadoEm, displayRef, bankDisplay,
+                    ownerDisplay, dateDisplay, formattedAmount, reconType, theme, typeBadgeHtml
+                } = extractReconMeta(payment, title);
 
                 return `
-                    <tr class="${rowThemeClass} transition-colors">
+                    <tr class="${theme.rowHover} transition-colors">
                         <td class="py-2.5 px-2 text-center whitespace-nowrap">
                             ${typeBadgeHtml}
                         </td>
@@ -3522,7 +3613,7 @@ export async function showConfirmDetail(client, clientIndex) {
                         <td class="py-2.5 px-2.5 text-slate-700 truncate" title="${displayRef.replace(/"/g, '&quot;')}">
                             ${displayRef}
                         </td>
-                        <td class="py-2.5 px-3 text-right font-black text-xs ${textAmountClass} whitespace-nowrap">
+                        <td class="py-2.5 px-3 text-right font-black text-xs ${theme.amountText} whitespace-nowrap">
                             ${formattedAmount} <span class="text-[8.5px] font-bold text-slate-400">MT</span>
                         </td>
                         <td class="py-2.5 px-2 text-slate-600">
@@ -3546,8 +3637,8 @@ export async function showConfirmDetail(client, clientIndex) {
                     </tr>
                     <!-- Linha para Siblings em Lista (se existirem) -->
                     <tr id="siblings-row-${payment.id}" class="hidden">
-                        <td colspan="7" class="p-2 border-b ${isFrete ? 'border-rose-100/60' : 'border-blue-100/60'}">
-                            <div id="siblings-list-${payment.id}" class="px-3 py-2 bg-white/60 rounded-lg border ${isFrete ? 'border-rose-200/70' : 'border-blue-200/70'} shadow-2xs"></div>
+                        <td colspan="7" class="p-2 border-b ${theme.sibRowBorder}">
+                            <div id="siblings-list-${payment.id}" class="px-3 py-2 bg-white/60 rounded-lg border ${theme.sibBoxBorder} shadow-2xs"></div>
                         </td>
                     </tr>
                 `;
@@ -3555,20 +3646,16 @@ export async function showConfirmDetail(client, clientIndex) {
 
             const renderListTable = (type, paymentsList) => {
                 if (!paymentsList || paymentsList.length === 0) return '';
-                const isFrete = type === 'FRETE';
-                const tableBorder = isFrete ? 'border-rose-200/90' : 'border-blue-200/90';
-                const tableBg = isFrete ? 'bg-rose-50/45' : 'bg-blue-50/45';
-                const thBg = isFrete ? 'bg-rose-50/70 text-rose-950 border-rose-200/70' : 'bg-blue-50/70 text-blue-950 border-blue-200/70';
-                const tbodyDivide = isFrete ? 'divide-rose-100/50' : 'divide-blue-100/50';
+                const theme = RECON_THEMES[type] || RECON_THEMES.DUTY;
 
                 let rowsHtml = '';
                 paymentsList.forEach(p => { rowsHtml += renderListRow(p); });
 
                 return `
-                    <div class="overflow-hidden rounded-xl border ${tableBorder} ${tableBg} shadow-2xs w-full">
+                    <div class="overflow-hidden rounded-xl border ${theme.tableBorder} ${theme.tableBg} shadow-2xs w-full">
                         <table class="w-full table-fixed text-left text-xs border-collapse">
                             <colgroup>
-                                <col style="width: 65px;">
+                                <col style="width: 75px;">
                                 <col style="width: 160px;">
                                 <col style="width: 85px;">
                                 <col style="width: auto;">
@@ -3576,7 +3663,7 @@ export async function showConfirmDetail(client, clientIndex) {
                                 <col style="width: 135px;">
                                 <col style="width: 110px;">
                             </colgroup>
-                            <thead class="${thBg} text-[9px] uppercase font-black border-b">
+                            <thead class="${theme.thBg} text-[9px] uppercase font-black border-b">
                                 <tr>
                                     <th class="py-2.5 px-2 text-center">Tipo</th>
                                     <th class="py-2.5 px-2.5">Banco & Titular</th>
@@ -3587,7 +3674,7 @@ export async function showConfirmDetail(client, clientIndex) {
                                     <th class="py-2.5 px-2 text-right pr-3">Ação</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y ${tbodyDivide} text-[10.5px]">
+                            <tbody class="divide-y ${theme.tbodyDivide} text-[10.5px]">
                                 ${rowsHtml}
                             </tbody>
                         </table>
@@ -3599,6 +3686,8 @@ export async function showConfirmDetail(client, clientIndex) {
                 <div class="recon-list-view ${currentMode === 'list' ? '' : 'hidden'} space-y-3 w-full">
                     ${renderListTable('DUTY', dutyPayments)}
                     ${renderListTable('FRETE', fretePayments)}
+                    ${renderListTable('ARMAZEM', armazemPayments)}
+                    ${renderListTable('DESPACHO', despachoListPayments)}
                 </div>
             `;
 
@@ -3612,17 +3701,14 @@ export async function showConfirmDetail(client, clientIndex) {
                         if (siblings.length > 1) {
                             let originalTotal = 0;
                             let sibRowsHtml = '';
-                            const reconType = p.reconType || (p.allocated_to && p.allocated_to.startsWith('FRETE') ? 'FRETE' : 'DUTY');
-                            const isFrete = reconType === 'FRETE';
-                            const sibTheme = isFrete ? 'rose' : 'blue';
+                            const reconType = resolveReconType(p, title);
+                            const theme = RECON_THEMES[reconType] || RECON_THEMES.DUTY;
 
                             siblings.forEach(s => {
                                 originalTotal += s.amount;
                                 const isCurrent = s.id === p.id;
                                 const dest = s.allocated_to || 'Livre / Não Alocado';
-                                const activeClass = isCurrent 
-                                    ? (isFrete ? 'bg-rose-100/80 font-bold px-1.5 rounded' : 'bg-blue-100/80 font-bold px-1.5 rounded') 
-                                    : 'text-slate-500';
+                                const activeClass = isCurrent ? theme.sibActive : 'text-slate-500';
                                 sibRowsHtml += `
                                     <div class="flex justify-between items-center text-[9px] py-0.5 ${activeClass}">
                                         <span class="truncate max-w-[160px]">${dest}</span>
@@ -3633,9 +3719,9 @@ export async function showConfirmDetail(client, clientIndex) {
 
                             const sibBoxContent = `
                                 <div class="mt-1 pt-1 text-[8.5px]">
-                                    <div class="text-[8px] font-black ${isFrete ? 'text-rose-600' : 'text-blue-600'} uppercase mb-0.5">Partilha deste Movimento:</div>
+                                    <div class="text-[8px] font-black ${theme.sibTitle} uppercase mb-0.5">Partilha deste Movimento:</div>
                                     <div class="space-y-0.5">${sibRowsHtml}</div>
-                                    <div class="flex justify-between items-center text-[8.5px] font-black text-slate-700 pt-1 border-t ${isFrete ? 'border-rose-200' : 'border-blue-200'} mt-1">
+                                    <div class="flex justify-between items-center text-[8.5px] font-black text-slate-700 pt-1 border-t ${theme.sibDivider} mt-1">
                                         <span>TOTAL ORIGINAL:</span>
                                         <span>${new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2 }).format(originalTotal)} MT</span>
                                     </div>
@@ -3664,6 +3750,8 @@ export async function showConfirmDetail(client, clientIndex) {
         const allReconPayments = [];
         let dutySum = 0;
         let freightSum = 0;
+        let storageSum = 0;
+        let despachoSum = 0;
 
         if (payments && payments.length > 0) {
             payments.forEach(p => {
@@ -3680,8 +3768,22 @@ export async function showConfirmDetail(client, clientIndex) {
             });
         }
 
+        if (storagePayments && storagePayments.length > 0) {
+            storagePayments.forEach(p => {
+                storageSum += p.amount;
+                allReconPayments.push({ ...p, reconType: 'ARMAZEM' });
+            });
+        }
+
+        if (despachoPayments && despachoPayments.length > 0) {
+            despachoPayments.forEach(p => {
+                despachoSum += p.amount;
+                allReconPayments.push({ ...p, reconType: 'DESPACHO' });
+            });
+        }
+
         if (allReconPayments.length > 0) {
-            pbHtml += renderReconciliationBlock(allReconPayments, 'Detalhes de Reconciliação', 'blue', { dutySum, freightSum });
+            pbHtml += renderReconciliationBlock(allReconPayments, 'Detalhes de Reconciliação', 'blue', { dutySum, freightSum, storageSum, despachoSum });
         }
 
         // 1. Fonte Primária: Google Sheets (Planilha)
@@ -3865,7 +3967,7 @@ export async function showConfirmDetail(client, clientIndex) {
     if (cbmEl) cbmEl.innerText = formatValue(totalCbm);
 
     // Renderizar tabela e controlo de entrega do Armazém
-    await renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed);
+    await renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed, storagePayments, despachoPayments);
 
     // Botão Mini de Frete na aba Confirm
     const miniFreightBtn = document.getElementById('btn-confirm-freight-mini');
@@ -3930,11 +4032,14 @@ export async function showConfirmDetail(client, clientIndex) {
     const miniStorageStatus = document.getElementById('confirm-storage-mini-status');
     const stInfo = window.currentClientStorageInfo;
     if (miniStorageBtn && miniStorageStatus) {
-        if (!stInfo || stInfo.cost <= 0 || stInfo.isExempt) {
+        if (!stInfo || (stInfo.cost <= 0 && !stInfo.paidAmount) || stInfo.isExempt) {
             miniStorageBtn.classList.add('hidden');
         } else {
             miniStorageBtn.classList.remove('hidden');
-            if (!stInfo.isPaid) {
+            if (stInfo.isPartial) {
+                miniStorageStatus.innerText = `PARCIAL (FALTA ${formatMZN(stInfo.remainingBalance)})`;
+                miniStorageStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-extrabold';
+            } else if (!stInfo.isPaid) {
                 miniStorageStatus.innerText = `PENDENTE (${formatMZN(stInfo.cost)})`;
                 miniStorageStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 font-extrabold animate-pulse';
             } else {
@@ -4102,6 +4207,19 @@ export async function confirmUnallocatePayment(paymentId, amount, ref, type = 'D
 
         const res = await unallocatePayment(paymentId);
 
+        const prevAllocUpper = String(res?.prevAllocatedTo || '').toUpperCase();
+        const feeKeyUnalloc = (type === 'DESPACHO' || prevAllocUpper.startsWith('DESPACHO'))
+            ? 'DESPACHO'
+            : ((type === 'ARMAZEM' || prevAllocUpper.startsWith('ARMAZEM')) ? 'STORAGE' : null);
+        if (feeKeyUnalloc && window.currentActiveClient && window.currentActiveClient.rows && state.confirm?.sheetId) {
+            try {
+                const prefixLabel = feeKeyUnalloc === 'DESPACHO' ? 'DESPACHO' : 'ARMAZEM';
+                await syncClientFeeAfterUnallocate(feeKeyUnalloc, window.currentActiveClient, res?.prevAllocatedTo || `${prefixLabel} - ${clientNo}`);
+            } catch (syncErr) {
+                console.warn(`[${feeKeyUnalloc}] Aviso ao sincronizar GSheet após desalocação:`, syncErr);
+            }
+        }
+
         // Registar auditoria detalhada
         try {
             await logConfirmAudit(sheetId, clientNo, clientName, 'PAGAMENTO_DESALOCADO', {
@@ -4160,49 +4278,42 @@ window.confirmUnallocatePayment = confirmUnallocatePayment;
  * Abre o modal que lista mercadorias pendentes no armazém, 
  * verificando o status de pagamento de Duty e Frete de cada uma.
  */
-export function openWarehouseStatusModal() {
+export async function openWarehouseStatusModal() {
     if (!state.confirm || !state.confirm.data) return;
     
-    const columns = state.confirm.columns;
-    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
-    
-    const findCol = (targets) => {
-        const cleanedTargets = targets.map(cleanString);
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c) === target);
-            if (idx !== -1) return idx;
-        }
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c).includes(target));
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    };
+    const columns = state.confirm.columns || [];
+    const findCol = (targets, opts) => findWarehouseCol(columns, targets, opts);
 
     const idCodeIdx = findCol(['ID CODE', 'CODE ID', 'ID']);
     const nameIdx = findCol(['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
-    const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
+    const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO'], { exclude: ['FREIGHT'] });
     const statusIdx = findCol(['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
     
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE']);
     const balanceFreightIdx = findCol(['BALANCE FREIGHT', 'SALDO FRETE']);
     const packagesIdx = findCol(['PACKAGES', 'VOLUMES', 'QTIES']);
-    const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
-    const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
-    const deliverDateIdx = findCol(['DELIVER DATE', 'DATA ENTREGA']);
-    const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
-    const pag1Idx = findCol(['PAG 1', 'PAG1']);
-    const pag2Idx = findCol(['PAG 2', 'PAG2']);
-    const pag3Idx = findCol(['PAG 3', 'PAG3']);
-    const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(idx => idx !== -1);
 
     const phoneIdx = findCol(['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CELULAR', 'PHONE_NUMBER', 'TEL', 'MOBILE']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
     const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
 
     const dischargeDateStr = state.confirm?.dischargeDate || '';
-    const dDate = parseDate(dischargeDateStr);
-    const todayStr = new Date().toISOString().split('T')[0];
+
+    // Buscar pagamentos bancários vinculados à armazenagem em 1 consulta única
+    const storagePmtsByAllocKey = new Map();
+    try {
+        const allStoragePmts = await getPaymentsByAllocatedPrefix('ARMAZEM - ');
+        if (Array.isArray(allStoragePmts)) {
+            allStoragePmts.forEach(p => {
+                const key = String(p.allocated_to || '').trim().toUpperCase();
+                if (!key) return;
+                if (!storagePmtsByAllocKey.has(key)) storagePmtsByAllocKey.set(key, []);
+                storagePmtsByAllocKey.get(key).push(p);
+            });
+        }
+    } catch (e) {
+        console.warn('[WAREHOUSE MODAL] Aviso ao carregar vínculos bancários de armazém:', e);
+    }
     
     let noIdx = columns.findIndex(c => {
         const h = String(c || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -4272,12 +4383,9 @@ export function openWarehouseStatusModal() {
 
     groupedUndelivered.forEach((client, key) => {
         let totalDutyBalance = 0;
-        let totalDuty = 0;
-        let totalPrepaid = 0;
         let totalFreightBalance = 0;
         let totalQuantity = 0;
         let isDutyConfirmed = true;
-        let hasPaymentAfterDischarge = false;
 
         client.rows.forEach(r => {
             const bal = balanceIdx !== -1 ? parseFloat(String(r[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
@@ -4293,76 +4401,35 @@ export function openWarehouseStatusModal() {
             
             const qty = packagesIdx !== -1 ? parseFloat(String(r[packagesIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
             totalQuantity += qty;
-
-            const dVal = dutyIdx !== -1 ? parseFloat(String(r[dutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-            const pVal = dutyPrepaidIdx !== -1 ? parseFloat(String(r[dutyPrepaidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-            totalDuty += dVal;
-            totalPrepaid += pVal;
-
-            pagIndices.forEach(pIdx => {
-                const dateStr = r[pIdx];
-                if (dateStr && String(dateStr).trim() !== '' && String(dateStr).trim() !== '—') {
-                    const pDate = parseDate(dateStr);
-                    if (pDate && dDate && pDate.getTime() > dDate.getTime()) {
-                        hasPaymentAfterDischarge = true;
-                    }
-                }
-            });
         });
         
         if (totalDutyBalance > 1.0) isDutyConfirmed = false;
         const isFreightConfirmed = totalFreightBalance <= 1.0;
 
-        // Dados operacionais da primeira linha
-        const firstRow = client.rows[0] || [];
-        const deliverDateVal = deliverDateIdx !== -1 ? (firstRow[deliverDateIdx] || '') : '';
-        const storagePaidVal = storagePaidIdx !== -1 ? String(firstRow[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
+        const baseAllocKey = `${client.no || ''} - ${projectName.trim()}`.replace(/(^ - )|( - $)/g, '').trim();
+        const clientAllocKey = `ARMAZEM - ${baseAllocKey}`.toUpperCase();
+        const clientBankStoragePmts = storagePmtsByAllocKey.has(clientAllocKey) ? storagePmtsByAllocKey.get(clientAllocKey) : [];
 
-        // Regra de antecipação
-        const isFullyPaid = (totalDutyBalance <= 1.0);
-        const isAnticipated = (totalPrepaid >= totalDuty) || (isFullyPaid && !hasPaymentAfterDischarge);
-
-        // Dias decorridos
-        const deliverDateStr = deliverDateVal && deliverDateVal !== '—' ? deliverDateVal : '';
-        const targetEndDateStr = deliverDateStr || todayStr;
-        const targetEndDate = parseDate(targetEndDateStr);
-
-        let daysDiff = 0;
-        if (dDate && targetEndDate) {
-            const timeDiff = targetEndDate.getTime() - dDate.getTime();
-            daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
-        }
-
-        // Regra de cálculo de armazenagem
-        let storageCost = 0;
-        if (dischargeDateStr) {
-            if (isAnticipated) {
-                if (daysDiff <= 3) {
-                    storageCost = 0;
-                } else {
-                    storageCost = (daysDiff - 3) * 1000;
-                }
-            } else {
-                if (daysDiff <= 3) {
-                    storageCost = daysDiff * 500;
-                } else {
-                    storageCost = 1500 + (daysDiff - 3) * 1000;
-                }
-            }
-        }
-
-        const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
-        const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? String(client.rows[0]?.[motivoIsencaoIdx] || '').trim() : '';
-        const storageInfo = parseStorageInfo(storagePaidVal, storageCost, motivoIsencaoVal, false);
-        storageCost = storageInfo.cost;
+        const storageCalc = calculateClientStorage({
+            rows: client.rows,
+            columns,
+            dischargeDateStr,
+            bankPayments: clientBankStoragePmts
+        });
+        const storageInfo = storageCalc.storageInfo;
+        const storageCost = storageInfo.cost;
         const isStoragePaid = storageInfo.isPaid;
+        const isStoragePartial = storageInfo.isPartial;
+        const storageRemaining = storageInfo.remainingBalance;
+        const daysDiff = storageCalc.daysDiff;
 
         grandTotalQuantity += totalQuantity;
         grandTotalStorage += storageCost;
         if (isStoragePaid) {
             grandTotalPaidStorage += storageCost;
         } else {
-            grandTotalPendingStorage += storageCost;
+            grandTotalPaidStorage += storageInfo.paidAmount || 0;
+            grandTotalPendingStorage += storageRemaining;
         }
 
         // Extrair contacto/telefone do cliente
@@ -4470,6 +4537,8 @@ export function openWarehouseStatusModal() {
             isFreightConfirmed,
             storageCost,
             isStoragePaid,
+            isStoragePartial,
+            storageRemaining,
             daysDiff
         });
     });
@@ -4560,12 +4629,14 @@ export function openWarehouseStatusModal() {
                     <td class="px-3 py-2 text-center whitespace-nowrap">${dutyBadge}</td>
                     <td class="px-3 py-2 text-center whitespace-nowrap">${freightBadge}</td>
                     <td class="px-4 py-2 text-right whitespace-nowrap">
-                        <span class="text-[11px] font-black ${item.storageCost > 0 ? (item.isStoragePaid ? 'text-green-700' : 'text-slate-900') : 'text-slate-400'}">
+                        <span class="text-[11px] font-black ${item.storageCost > 0 ? (item.isStoragePaid ? 'text-green-700' : (item.isStoragePartial ? 'text-amber-700' : 'text-slate-900')) : 'text-slate-400'}">
                             ${formatMZN(item.storageCost)}
                         </span>
                         ${item.storageCost > 0 ? (item.isStoragePaid 
                             ? '<span class="ml-1 text-[8px] font-bold text-green-700 bg-green-100 px-1 py-0.5 rounded uppercase">Pago</span>' 
-                            : '<span class="ml-1 text-[8px] font-bold text-red-700 bg-red-100 px-1 py-0.5 rounded uppercase">Pendente</span>') 
+                            : (item.isStoragePartial
+                                ? `<span class="ml-1 text-[8px] font-bold text-amber-800 bg-amber-100 px-1 py-0.5 rounded uppercase" title="Falta pagar ${formatMZN(item.storageRemaining)}">Parcial</span>`
+                                : '<span class="ml-1 text-[8px] font-bold text-red-700 bg-red-100 px-1 py-0.5 rounded uppercase">Pendente</span>'))
                         : ''}
                     </td>
                 </tr>
@@ -4810,130 +4881,171 @@ window.openClientWithLoader = function(groupId) {
 /**
  * Garante que a coluna NOTA CONTACTO existe no GSheet e em memória
  */
-export async function ensureContactNoteColumn() {
-    const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
-    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
-    const targets = ['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE'].map(cleanString);
-    
-    let idx = columns.findIndex(c => targets.includes(cleanString(c)));
-    if (idx !== -1) return idx;
+const _ensureColumnLocks = new Map();
 
-    // Criar coluna 'NOTA CONTACTO' no cabeçalho
-    const colName = 'NOTA CONTACTO';
-    const newColumns = [...columns, colName];
-    idx = newColumns.length - 1;
-
-    let cleanSheetName = '';
-    if (state.confirm.range && state.confirm.range.includes('!')) {
-        cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
+/**
+ * Garante a existência de uma coluna opcional/estrutural na folha ativa, evitando duplicação por concorrência.
+ * Quando options.insertAfterTargets é fornecido, insere a nova coluna imediatamente após a coluna âncora no GSheet e desloca a matriz local.
+ */
+export async function ensureConfirmColumn(canonicalHeader, matchTargets, options = {}) {
+    const lockKey = `${state.confirm?.sheetId || 'local'}::${canonicalHeader}`;
+    if (_ensureColumnLocks.has(lockKey)) {
+        return _ensureColumnLocks.get(lockKey);
     }
-    const sheetPrefix = cleanSheetName ? `'${cleanSheetName}'!` : '';
-    const lastColLetter = getColLetter(idx);
-    const range = `${sheetPrefix}${lastColLetter}1`;
 
-    try {
-        state.confirm.columns = newColumns;
-        if (state.confirm.data && state.confirm.data.length > 0) {
-            state.confirm.data[0] = newColumns;
-            for (let i = 1; i < state.confirm.data.length; i++) {
-                if (state.confirm.data[i] && Array.isArray(state.confirm.data[i])) {
-                    while (state.confirm.data[i].length < newColumns.length) {
-                        state.confirm.data[i].push('');
+    const taskPromise = (async () => {
+        const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
+        const existingIdx = findWarehouseCol(columns, matchTargets);
+        if (existingIdx !== -1) return existingIdx;
+
+        let cleanSheetName = '';
+        if (state.confirm.range && state.confirm.range.includes('!')) {
+            cleanSheetName = state.confirm.range.split('!')[0].replace(/^'+|'+$/g, '').trim();
+        } else if (state.confirm.sheetTitle) {
+            cleanSheetName = String(state.confirm.sheetTitle).trim();
+        }
+
+        const insertAfterTargets = options.insertAfterTargets;
+        if (Array.isArray(insertAfterTargets) && insertAfterTargets.length > 0) {
+            const anchorIdx = findWarehouseCol(columns, insertAfterTargets);
+            const desiredIdx = anchorIdx !== -1 ? anchorIdx + 1 : columns.length;
+            let effectiveIdx = desiredIdx;
+
+            if (state.confirm.sheetId) {
+                try {
+                    const res = await insertGSheetColumn(state.confirm.sheetId, cleanSheetName, desiredIdx, canonicalHeader);
+                    if (res && typeof res.columnIndex === 'number') {
+                        effectiveIdx = res.columnIndex;
+                    }
+                    if (res && res.alreadyExists) {
+                        const alreadyIdx = findWarehouseCol(columns, matchTargets);
+                        if (alreadyIdx !== -1) return alreadyIdx;
+                    }
+                } catch (e) {
+                    console.warn(`Erro ao inserir coluna ${canonicalHeader} no GSheet:`, e.message);
+                }
+            }
+
+            const spliceAt = (arr, idx, fillVal) => {
+                if (!Array.isArray(arr)) return;
+                while (arr.length < idx) arr.push('');
+                arr.splice(idx, 0, fillVal);
+            };
+
+            const origCols = state.confirm.columns;
+            if (Array.isArray(origCols)) {
+                spliceAt(origCols, effectiveIdx, canonicalHeader);
+            } else {
+                const cloned = [...columns];
+                spliceAt(cloned, effectiveIdx, canonicalHeader);
+                state.confirm.columns = cloned;
+            }
+
+            if (Array.isArray(state.confirm.data) && state.confirm.data.length > 0) {
+                state.confirm.data.forEach((row, rIdx) => {
+                    if (rIdx === 0 && row === origCols) return;
+                    if (Array.isArray(row)) spliceAt(row, effectiveIdx, rIdx === 0 ? canonicalHeader : '');
+                });
+            }
+
+            if (Array.isArray(state.confirm.notes)) {
+                state.confirm.notes.forEach(noteRow => {
+                    if (Array.isArray(noteRow)) spliceAt(noteRow, effectiveIdx, '');
+                });
+            }
+
+            const syncGroupedRows = (clientsList) => {
+                if (!Array.isArray(clientsList)) return;
+                clientsList.forEach(gc => {
+                    if (!Array.isArray(gc.rows)) return;
+                    gc.rows.forEach(rObj => {
+                        const backing = state.confirm.data?.[rObj.originalIndex];
+                        if (rObj.originalRow && rObj.originalRow !== backing && Array.isArray(rObj.originalRow)) {
+                            spliceAt(rObj.originalRow, effectiveIdx, '');
+                        }
+                    });
+                });
+            };
+            syncGroupedRows(state.confirm.groupedClients);
+            if (window.currentActiveClient) syncGroupedRows([window.currentActiveClient]);
+
+            return effectiveIdx;
+        }
+
+        // Modo append no final do cabeçalho
+        const newColumns = [...columns, canonicalHeader];
+        const idx = newColumns.length - 1;
+        const sheetPrefix = cleanSheetName ? `'${cleanSheetName.replace(/'/g, "''")}'!` : '';
+        const lastColLetter = getColLetter(idx);
+        const range = `${sheetPrefix}${lastColLetter}1`;
+
+        try {
+            state.confirm.columns = newColumns;
+            if (state.confirm.data && state.confirm.data.length > 0) {
+                state.confirm.data[0] = newColumns;
+                for (let i = 1; i < state.confirm.data.length; i++) {
+                    if (state.confirm.data[i] && Array.isArray(state.confirm.data[i])) {
+                        while (state.confirm.data[i].length < newColumns.length) {
+                            state.confirm.data[i].push('');
+                        }
                     }
                 }
             }
+            if (state.confirm.sheetId) {
+                await updateGSheet(state.confirm.sheetId, range, [[canonicalHeader]]);
+            }
+        } catch (e) {
+            console.warn(`Erro ao criar coluna ${canonicalHeader} no GSheet:`, e.message);
         }
-        await updateGSheet(state.confirm.sheetId, range, [[colName]]);
-    } catch (e) {
-        console.warn('Erro ao criar coluna NOTA CONTACTO no GSheet:', e.message);
-    }
 
-    return idx;
+        return idx;
+    })();
+
+    _ensureColumnLocks.set(lockKey, taskPromise);
+    try {
+        return await taskPromise;
+    } finally {
+        _ensureColumnLocks.delete(lockKey);
+    }
+}
+
+export function ensureContactNoteColumn() {
+    return ensureConfirmColumn('NOTA CONTACTO', ['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
 }
 window.ensureContactNoteColumn = ensureContactNoteColumn;
 
-export async function ensureViaturaColumn() {
-    const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
-    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
-    const targets = ['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE'].map(cleanString);
-    
-    let idx = columns.findIndex(c => targets.includes(cleanString(c)));
-    if (idx !== -1) return idx;
-
-    // Criar coluna 'VIATURA / MATRÍCULA' no cabeçalho
-    const colName = 'VIATURA / MATRÍCULA';
-    const newColumns = [...columns, colName];
-    idx = newColumns.length - 1;
-
-    let cleanSheetName = '';
-    if (state.confirm.range && state.confirm.range.includes('!')) {
-        cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
-    }
-    const sheetPrefix = cleanSheetName ? `'${cleanSheetName}'!` : '';
-    const lastColLetter = getColLetter(idx);
-    const range = `${sheetPrefix}${lastColLetter}1`;
-
-    try {
-        state.confirm.columns = newColumns;
-        if (state.confirm.data && state.confirm.data.length > 0) {
-            state.confirm.data[0] = newColumns;
-            for (let i = 1; i < state.confirm.data.length; i++) {
-                if (state.confirm.data[i] && Array.isArray(state.confirm.data[i])) {
-                    while (state.confirm.data[i].length < newColumns.length) {
-                        state.confirm.data[i].push('');
-                    }
-                }
-            }
-        }
-        await updateGSheet(state.confirm.sheetId, range, [[colName]]);
-    } catch (e) {
-        console.warn('Erro ao criar coluna VIATURA / MATRÍCULA no GSheet:', e.message);
-    }
-
-    return idx;
+export function ensureViaturaColumn() {
+    return ensureConfirmColumn('VIATURA / MATRÍCULA', ['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
 }
 window.ensureViaturaColumn = ensureViaturaColumn;
 
-export async function ensureMotivoIsencaoColumn() {
-    const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
-    const cleanString = (str) => String(str || '').toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9]/g, "").trim();
-    const targets = ['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO'].map(cleanString);
-    
-    let idx = columns.findIndex(c => targets.includes(cleanString(c)));
-    if (idx !== -1) return idx;
-
-    const colName = 'MOTIVO ISENCAO ARMAZENAGEM';
-    const newColumns = [...columns, colName];
-    idx = newColumns.length - 1;
-
-    let cleanSheetName = '';
-    if (state.confirm.range && state.confirm.range.includes('!')) {
-        cleanSheetName = state.confirm.range.split('!')[0].replace(/'/g, '');
-    }
-    const sheetPrefix = cleanSheetName ? `'${cleanSheetName}'!` : '';
-    const lastColLetter = getColLetter(idx);
-    const range = `${sheetPrefix}${lastColLetter}1`;
-
-    try {
-        state.confirm.columns = newColumns;
-        if (state.confirm.data && state.confirm.data.length > 0) {
-            state.confirm.data[0] = newColumns;
-            for (let i = 1; i < state.confirm.data.length; i++) {
-                if (state.confirm.data[i] && Array.isArray(state.confirm.data[i])) {
-                    while (state.confirm.data[i].length < newColumns.length) {
-                        state.confirm.data[i].push('');
-                    }
-                }
-            }
-        }
-        await updateGSheet(state.confirm.sheetId, range, [[colName]]);
-    } catch (e) {
-        console.warn('Erro ao criar coluna MOTIVO ISENCAO ARMAZENAGEM no GSheet:', e.message);
-    }
-
-    return idx;
+export function ensureMotivoIsencaoColumn() {
+    return ensureConfirmColumn('MOTIVO ISENCAO ARMAZENAGEM', ['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
 }
 window.ensureMotivoIsencaoColumn = ensureMotivoIsencaoColumn;
+
+export function ensureStorageValueColumn() {
+    return ensureConfirmColumn(
+        'STORAGE VALUE',
+        ['STORAGE VALUE', 'VALOR ARMAZENAGEM', 'ARMAZENAGEM VALOR', 'STORAGE_VALUE'],
+        { insertAfterTargets: ['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID'] }
+    );
+}
+window.ensureStorageValueColumn = ensureStorageValueColumn;
+
+export async function ensureDespachoCopyColumns() {
+    await ensureConfirmColumn(
+        'COPIA DESPACHO',
+        ['COPIA DESPACHO', 'COPIA DE DESPACHO', 'DESPACHO COPY', 'COPIA_DESPACHO'],
+        { insertAfterTargets: ['DELIVERED', 'ENTREGUE', 'STORAGE VALUE', 'STORAGE PAID'] }
+    );
+    return ensureConfirmColumn(
+        'COPIA DESPACHO VALOR',
+        ['COPIA DESPACHO VALOR', 'VALOR COPIA DESPACHO', 'COPIA DESPACHO VALUE', 'DESPACHO VALUE', 'DESPACHO VALOR'],
+        { insertAfterTargets: ['COPIA DESPACHO', 'COPIA DE DESPACHO', 'DESPACHO COPY', 'COPIA_DESPACHO'] }
+    );
+}
+window.ensureDespachoCopyColumns = ensureDespachoCopyColumns;
 
 /**
  * Abre o modal de edição de nota de contacto do cliente
@@ -7908,15 +8020,27 @@ export function openPaymentMiniFilter(combinedInfo, defaultBank = '', defaultAmo
     // Garantir que os filtros adicionais 5, 6 e 7 iniciem ocultos por padrão (exceto se houver defaultTerm)
     toggleMiniFilterExtraFilters(Boolean(defaultTerm));
 
-    // 1. Fonte Primária: Saldo e Totais para Duty ou Frete
+    // 1. Fonte Primária: Saldo e Totais para Duty, Frete ou Armazém
     const isFreight = window.paymentReconciliationContext === 'FREIGHT';
+    const isFeeContext = window.paymentReconciliationContext === 'STORAGE' || window.paymentReconciliationContext === 'DESPACHO';
     const clientRows = window.currentClientRows || window.currentActiveClient?.rows || [];
 
     let totalExpected = 0;
     let alreadyPaid = 0;
     let expectedAmount = 0;
 
-    if (isFreight) {
+    if (isFeeContext) {
+        const feeCtx = window.feeReconciliationContext || window.storageReconciliationContext || {};
+        totalExpected = parseFloat(feeCtx.totalExpected) || parseFloat(defaultAmount) || 0;
+        alreadyPaid = parseFloat(feeCtx.alreadyPaid) || 0;
+        if (feeCtx.remainingBalance !== undefined && feeCtx.remainingBalance !== null) {
+            expectedAmount = Math.max(0, parseFloat(feeCtx.remainingBalance) || 0);
+        } else if (parseFloat(defaultAmount) > 0) {
+            expectedAmount = parseFloat(defaultAmount);
+        } else {
+            expectedAmount = Math.max(0, totalExpected - alreadyPaid);
+        }
+    } else if (isFreight) {
         totalExpected = clientRows.reduce((sum, r) => sum + (parseFloat(r.amtFreight) || 0), 0);
         alreadyPaid = clientRows.reduce((sum, r) => sum + (parseFloat(r.pdFreight) || 0), 0);
         const freightBal = clientRows.reduce((sum, r) => sum + (parseFloat(r.balFreight) || 0), 0);
@@ -9028,7 +9152,102 @@ export async function confirmPaymentSelection() {
                 .trim();
 
             const isFreight = window.paymentReconciliationContext === 'FREIGHT';
+            const feeKey = (window.paymentReconciliationContext === 'STORAGE' || window.paymentReconciliationContext === 'DESPACHO')
+                ? window.paymentReconciliationContext
+                : null;
 
+            if (feeKey) {
+                const feeCfg = CLIENT_FEE_CONFIG[feeKey];
+                const feeCtx = window.feeReconciliationContext || window.storageReconciliationContext || {};
+                const feeAllocatedTo = feeCtx.allocatedToKey || (combinedInfo.startsWith(`${feeCfg.prefix} -`) ? combinedInfo : `${feeCfg.prefix} - ${combinedInfo}`);
+                const clientNo = window.currentActiveClient?.no || (window.currentClientRows?.[0]?.no) || '';
+                const clientName = window.currentActiveClient?.displayName || (window.currentClientRows?.[0]?.client) || '';
+                const sheetId = state.confirm?.sheetId || '';
+
+                await feeCfg.ensureColumnsFn();
+                const updatedCols = state.confirm.columns || [];
+                const sortedClientRows = [...window.currentClientRows].sort((a, b) => a.originalIndex - b.originalIndex);
+                const newlyAllocatedSum = usedPayments.reduce((sum, p) => sum + p.amount, 0);
+
+                let existingAllocatedOtherSum = 0;
+                try {
+                    const existingPmts = await getPaymentsByAllocatedTo(feeAllocatedTo);
+                    if (existingPmts && existingPmts.length > 0) {
+                        existingAllocatedOtherSum = existingPmts
+                            .filter(p => !usedPayments.some(u => u.id === p.id))
+                            .reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+                    }
+                } catch (fetchErr) {
+                    console.warn(`[confirmPaymentSelection][${feeKey}] Aviso ao consultar vínculos existentes:`, fetchErr);
+                }
+
+                const totalBankFunds = existingAllocatedOtherSum + newlyAllocatedSum;
+                let agreedCost = parseFloat(feeCtx.agreedCost);
+                let standardCost = parseFloat(feeCtx.standardCost);
+                if (isNaN(agreedCost) || isNaN(standardCost)) {
+                    if (feeKey === 'DESPACHO') {
+                        const calc = calculateClientDespachoCopy({
+                            rows: sortedClientRows,
+                            columns: updatedCols,
+                            defaultPrice: getDespachoCopyDefaultPrice(),
+                            bankPayments: []
+                        });
+                        if (isNaN(standardCost)) standardCost = calc.defaultPrice;
+                        if (isNaN(agreedCost)) agreedCost = calc.cost > 0 ? calc.cost : calc.defaultPrice;
+                    } else {
+                        const calc = calculateClientStorage({
+                            rows: sortedClientRows,
+                            columns: updatedCols,
+                            dischargeDateStr: state.confirm?.dischargeDate || '',
+                            bankPayments: []
+                        });
+                        if (isNaN(standardCost)) standardCost = calc.standardCost;
+                        if (isNaN(agreedCost)) agreedCost = calc.storageInfo.cost;
+                    }
+                }
+
+                const remainingAfter = Math.max(0, agreedCost - totalBankFunds);
+                const isFullyPaidAfter = (agreedCost === 0 && totalBankFunds > 0) || (agreedCost > 0 && remainingAfter <= 0.05) || (agreedCost === 0 && feeKey === 'STORAGE');
+                const { statusCellVal, valueCellVal } = formatFeeSheetStatus({
+                    isRequested: true,
+                    targetCost: agreedCost,
+                    standardCost,
+                    bankPaidAmount: totalBankFunds,
+                    manualStatus: 'NAO',
+                    zeroCostPendingLabel: feeCfg.zeroCostPendingLabel,
+                    preferAmountOnPaid: feeCfg.preferAmountOnPaid
+                });
+
+                await syncClientFeeToGSheet(feeKey, window.currentActiveClient, {
+                    statusCellVal,
+                    valueCellVal,
+                    emitStatus: isFullyPaidAfter ? 'PAGO' : 'PARCIAL'
+                });
+
+                if (usedPayments.length > 0) {
+                    try {
+                        for (const up of usedPayments) {
+                            await markPaymentReconciled(up.id, feeAllocatedTo, up.amount);
+                        }
+                    } catch (pbErr) {
+                        console.warn(`[PocketBase][${feeKey}] Falha ao registar conciliação no PocketBase:`, pbErr);
+                    }
+                }
+
+                try {
+                    logConfirmAudit(sheetId, clientNo, clientName, 'PAGAMENTO_VINCULADO', {
+                        tipo: feeCfg.auditLabel,
+                        allocatedAmount,
+                        totalBankPaid: totalBankFunds,
+                        feeValue: valueCellVal,
+                        status: isFullyPaidAfter ? 'PAGO' : 'PARCIAL',
+                        payments: usedPayments.map(p => ({ id: p.id, date: p.date, ref: p.ref, amount: p.amount })),
+                        comment: document.getElementById('mini-filter-comment')?.value || ''
+                    }).catch(auditErr => console.warn('[Audit] Erro ao registar auditoria:', auditErr));
+                } catch (auditErr) {
+                    console.warn('[Audit] Erro ao disparar auditoria:', auditErr);
+                }
+            } else {
             let statusIdx = -1, pag1Idx = -1, pag2Idx = -1, pag3Idx = -1, obsIdx = -1, paidIdx = -1, balanceIdx = -1, amountIdx = -1;
             let bankFreightIdx = -1, notaFreightIdx = -1, notaDutyIdx = -1, bankDutyIdx = -1;
 
@@ -9523,6 +9742,7 @@ export async function confirmPaymentSelection() {
                     console.warn('[Audit] Erro ao disparar auditoria de pagamento:', auditErr);
                 }
             }
+            }
         }
 
         closePaymentMiniFilter();
@@ -9574,6 +9794,8 @@ export async function confirmPaymentSelection() {
     } finally {
         window.paymentReconciliationContext = null;
         window.freightExtrasContext = null;
+        window.storageReconciliationContext = null;
+        window.feeReconciliationContext = null;
         setLoader(false);
         setBtnLoading(btn, false);
     }
@@ -9609,6 +9831,8 @@ export function closePaymentMiniFilter() {
     // Limpar o contexto de vínculo para evitar conflitos com Duty
     window.paymentReconciliationContext = null;
     window.freightExtrasContext = null;
+    window.storageReconciliationContext = null;
+    window.feeReconciliationContext = null;
 }
 
 // --- MÓDULO DEFINIÇÕES (USERS) ---
@@ -11834,98 +12058,457 @@ export async function saveFreightModal() {
  * Verifica e cria colunas de Armazém em falta no GSheet
  */
 
-export function parseStorageInfo(storagePaidStr, calculatedCost, motivoIsencaoStr, isDelivered = false) {
-    const rawPaid = String(storagePaidStr || '').trim().toUpperCase();
-    const rawMotivo = String(motivoIsencaoStr || '').trim();
-    const isExempt = (!!rawMotivo && !rawMotivo.includes('[EXTRAORDINÁRIA]')) || rawPaid === 'ISENTO';
-
-    if (isExempt) {
-        return {
-            cost: 0,
-            originalCost: calculatedCost,
-            isExempt: true,
-            isNegotiated: false,
-            isPaid: true,
-            statusText: 'ISENTO'
-        };
-    }
-
-    // Identificar se a string é apenas um valor numérico por defeito da folha (ex: "0", "0.00", "0,00", "-", "—", "")
-    const isRawNumericDefault = /^(0|0\.00?|0,00?|-|—)?$/.test(rawPaid);
-
-    let negotiatedAmount = null;
-    if (!isRawNumericDefault) {
-        // Formato com parênteses: "(1500 MT)", "(1500)", "PAGO (1500 MT)", "PENDENTE (1500 MT)"
-        const parenMatch = rawPaid.match(/\(\s*([0-9.,]+)\s*(?:MT|MZN)?\s*\)/i);
-        if (parenMatch && parenMatch[1]) {
-            let clean = parenMatch[1].trim();
-            if (clean.includes('.') && clean.includes(',')) clean = clean.replace(/\./g, '').replace(',', '.');
-            else if (clean.includes(',') && !/^\d{1,3},\d{3}$/.test(clean)) clean = clean.replace(',', '.');
-            else clean = clean.replace(/,/g, '');
-            const parsed = parseFloat(clean);
-            if (!isNaN(parsed) && parsed >= 0) {
-                negotiatedAmount = parsed;
-            }
-        } else {
-            // Formato com sufixo monetário explícito: "1500 MT", "PAGO 1500 MT", "PENDENTE 1500 MZN"
-            const mtMatch = rawPaid.match(/(?:PAGO|PENDENTE)?\s*([0-9.,]+)\s*(?:MT|MZN)/i);
-            if (mtMatch && mtMatch[1]) {
-                let clean = mtMatch[1].trim();
-                if (clean.includes('.') && clean.includes(',')) clean = clean.replace(/\./g, '').replace(',', '.');
-                else if (clean.includes(',') && !/^\d{1,3},\d{3}$/.test(clean)) clean = clean.replace(',', '.');
-                else clean = clean.replace(/,/g, '');
-                const parsed = parseFloat(clean);
-                if (!isNaN(parsed) && parsed >= 0) {
-                    negotiatedAmount = parsed;
-                }
-            }
-        }
-    }
-
-    const effectiveCost = negotiatedAmount !== null ? negotiatedAmount : calculatedCost;
-    const isNegotiated = negotiatedAmount !== null && Math.abs(negotiatedAmount - calculatedCost) > 1;
-
-    let isPaid = false;
-    if (effectiveCost === 0) {
-        isPaid = true;
-    } else {
-        if (rawPaid.includes('PAGO') && !rawPaid.includes('PENDENTE')) {
-            isPaid = true;
-        } else if (rawPaid === 'SIM' || rawPaid === 'OK') {
-            isPaid = true;
-        } else if (rawPaid.includes('SIM') && !rawPaid.includes('NAO') && !rawPaid.includes('PENDENTE')) {
-            isPaid = true;
-        } else if (rawPaid.includes('LIVRE')) {
-            // "LIVRE" só é pago se o custo calculado for 0 ou se já foi entregue dentro do prazo
-            isPaid = isDelivered || calculatedCost === 0;
-        } else {
-            isPaid = false;
-        }
-    }
-
-    return {
-        cost: effectiveCost,
-        originalCost: calculatedCost,
-        isExempt: false,
-        isNegotiated: isNegotiated,
-        isPaid: isPaid,
-        statusText: isPaid ? (effectiveCost === 0 ? 'LIVRE' : 'PAGO') : 'PENDENTE'
-    };
-}
+export { parseStorageInfo, calculateClientStorage };
 window.parseStorageInfo = parseStorageInfo;
+window.calculateClientStorage = calculateClientStorage;
+
+const CLIENT_FEE_CONFIG = {
+    STORAGE: {
+        prefix: 'ARMAZEM',
+        auditLabel: 'Armazém',
+        statusTargets: ['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID'],
+        valueTargets: ['STORAGE VALUE', 'VALOR ARMAZENAGEM', 'ARMAZENAGEM VALOR', 'STORAGE_VALUE'],
+        ensureColumnsFn: () => ensureStorageValueColumn(),
+        zeroCostPendingLabel: 'NAO',
+        preferAmountOnPaid: false
+    },
+    DESPACHO: {
+        prefix: 'DESPACHO',
+        auditLabel: 'Cópia de Despacho',
+        statusTargets: ['COPIA DESPACHO', 'COPIA DE DESPACHO', 'DESPACHO COPY', 'COPIA_DESPACHO'],
+        valueTargets: ['COPIA DESPACHO VALOR', 'VALOR COPIA DESPACHO', 'COPIA DESPACHO VALUE', 'DESPACHO VALUE', 'DESPACHO VALOR'],
+        ensureColumnsFn: () => ensureDespachoCopyColumns(),
+        zeroCostPendingLabel: 'PENDENTE',
+        preferAmountOnPaid: true
+    }
+};
+
+function getActiveConfirmSheetName() {
+    let sheetName = 'Sheet1';
+    if (state.confirm?.range && state.confirm.range.includes('!')) {
+        sheetName = state.confirm.range.split('!')[0];
+    } else if (state.confirm?.sheetTitle) {
+        sheetName = String(state.confirm.sheetTitle);
+    }
+    return (sheetName || 'Sheet1').replace(/^'+|'+$/g, '').trim();
+}
+
+async function syncClientFeeToGSheet(feeKey, client, { statusCellVal, valueCellVal, emitStatus = null } = {}) {
+    const cfg = CLIENT_FEE_CONFIG[feeKey];
+    if (!cfg || !client || !client.rows || client.rows.length === 0) return;
+    const sheetId = state.confirm?.sheetId || '';
+    const columns = state.confirm.columns || [];
+    const statusIdx = findWarehouseCol(columns, cfg.statusTargets);
+    const valueIdx = findWarehouseCol(columns, cfg.valueTargets);
+    if (statusIdx === -1 && valueIdx === -1) return;
+
+    const sheetName = getActiveConfirmSheetName();
+    const sortedRows = [...client.rows].sort((a, b) => a.originalIndex - b.originalIndex);
+    const batchUpdates = [];
+    const localUpdates = [];
+
+    sortedRows.forEach((r, idx) => {
+        const originalIndex = r.originalIndex;
+        const rowNum = originalIndex + 1;
+        const rawRow = (state.confirm?.data && state.confirm.data[originalIndex]) || r.originalRow || [];
+        const rowData = [...rawRow];
+        const maxNeededIdx = Math.max(statusIdx, valueIdx);
+        while (rowData.length <= maxNeededIdx) rowData.push('');
+
+        if (statusIdx !== -1 && statusCellVal !== undefined) {
+            rowData[statusIdx] = statusCellVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(statusIdx)}${rowNum}`), values: [[statusCellVal]] });
+        }
+        if (valueIdx !== -1 && valueCellVal !== undefined) {
+            const cellVal = idx === 0 ? valueCellVal : '';
+            rowData[valueIdx] = cellVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(valueIdx)}${rowNum}`), values: [[cellVal]] });
+        }
+        if (r.originalRow) {
+            while (r.originalRow.length <= maxNeededIdx) r.originalRow.push('');
+            if (statusIdx !== -1 && statusCellVal !== undefined) r.originalRow[statusIdx] = statusCellVal;
+            if (valueIdx !== -1 && valueCellVal !== undefined) r.originalRow[valueIdx] = idx === 0 ? valueCellVal : '';
+        }
+        localUpdates.push({ originalIndex, rowData });
+    });
+
+    if (sheetId && batchUpdates.length > 0) {
+        await updateGSheetBatch(sheetId, batchUpdates);
+    }
+
+    localUpdates.forEach(item => {
+        if (state.confirm?.data) state.confirm.data[item.originalIndex] = item.rowData;
+        if (sheetId) {
+            emitConfirmEvent(sheetId, item.originalIndex, 'UPDATE', {
+                ...(emitStatus ? { status: emitStatus } : {}),
+                rowData: item.rowData
+            });
+        }
+    });
+}
+
+/**
+ * Sincroniza o estado de pagamento no GSheet (ARMAZEM ou DESPACHO) após desalocar um vínculo bancário.
+ */
+async function syncClientFeeAfterUnallocate(feeKey, client, allocatedToKey) {
+    const cfg = CLIENT_FEE_CONFIG[feeKey];
+    if (!cfg || !client || !client.rows || client.rows.length === 0 || !state.confirm?.sheetId) return;
+    const remainingPmts = allocatedToKey ? await getPaymentsByAllocatedTo(allocatedToKey) : [];
+    const remainingBankSum = remainingPmts.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const columns = state.confirm.columns || [];
+
+    if (feeKey === 'DESPACHO') {
+        const calc = calculateClientDespachoCopy({
+            rows: client.rows,
+            columns,
+            defaultPrice: getDespachoCopyDefaultPrice(),
+            bankPayments: []
+        });
+        const keepRequested = calc.isRequested || remainingBankSum > 0;
+        const { statusCellVal, valueCellVal } = formatFeeSheetStatus({
+            isRequested: keepRequested,
+            targetCost: keepRequested ? (calc.cost > 0 ? calc.cost : calc.defaultPrice) : 0,
+            standardCost: calc.defaultPrice,
+            bankPaidAmount: remainingBankSum,
+            manualStatus: 'NAO',
+            zeroCostPendingLabel: cfg.zeroCostPendingLabel,
+            preferAmountOnPaid: cfg.preferAmountOnPaid
+        });
+        await syncClientFeeToGSheet('DESPACHO', client, { statusCellVal, valueCellVal });
+        return;
+    }
+
+    const calc = calculateClientStorage({
+        rows: client.rows,
+        columns,
+        dischargeDateStr: state.confirm?.dischargeDate || '',
+        bankPayments: remainingPmts
+    });
+    const info = calc.storageInfo;
+    const { statusCellVal, valueCellVal } = formatFeeSheetStatus({
+        isRequested: true,
+        isExempt: info.isExempt,
+        isDelivered: calc.isDelivered,
+        targetCost: info.cost,
+        standardCost: calc.standardCost,
+        bankPaidAmount: remainingBankSum,
+        manualStatus: 'NAO',
+        zeroCostPendingLabel: cfg.zeroCostPendingLabel,
+        preferAmountOnPaid: cfg.preferAmountOnPaid
+    });
+    await syncClientFeeToGSheet('STORAGE', client, { statusCellVal, valueCellVal });
+}
+
+function resolveClientAllocatedKey(prefix, client) {
+    let projectName = 'Folha';
+    const breadcrumbSpan = document.querySelector('#confirm-breadcrumb > span.hover\\:text-black.cursor-pointer.transition-colors');
+    if (breadcrumbSpan) {
+        projectName = breadcrumbSpan.innerText.trim();
+    } else if (document.getElementById('confirm-project-active-name')) {
+        projectName = document.getElementById('confirm-project-active-name').innerText.trim();
+    }
+    const baseCombinedInfo = `${client.no || ''} - ${projectName}`.replace(/(^ - )|( - $)/g, '').trim();
+    return `${prefix} - ${baseCombinedInfo}`;
+}
+
+function openFeeBankReconciliation(feeKey, { client, standardCost, agreedCost, existingPayments }) {
+    const cfg = CLIENT_FEE_CONFIG[feeKey];
+    if (!cfg || !client) return;
+    const alreadyPaid = (existingPayments || []).reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    const remainingBalance = Math.max(0, agreedCost - alreadyPaid);
+
+    if (remainingBalance <= 0.05) {
+        toast(`O valor total de ${cfg.auditLabel.toLowerCase()} já se encontra vinculado e coberto no banco.`, 'info');
+        return;
+    }
+
+    const allocatedToKey = resolveClientAllocatedKey(cfg.prefix, client);
+    const ctxPayload = {
+        feeKey,
+        allocatedToKey,
+        standardCost,
+        agreedCost,
+        totalExpected: agreedCost,
+        alreadyPaid,
+        remainingBalance,
+        isNegotiated: Math.abs(agreedCost - standardCost) > 1
+    };
+
+    window.paymentReconciliationContext = feeKey;
+    window.feeReconciliationContext = ctxPayload;
+    if (feeKey === 'STORAGE') window.storageReconciliationContext = ctxPayload;
+
+    const noteLabel = alreadyPaid > 0
+        ? `${cfg.auditLabel}: ${formatMZN(agreedCost)} (Vinculado: ${formatMZN(alreadyPaid)} | Falta: ${formatMZN(remainingBalance)})`
+        : `${cfg.auditLabel}: ${formatMZN(agreedCost)}`;
+
+    openPaymentMiniFilter(
+        allocatedToKey,
+        '',
+        remainingBalance,
+        '',
+        client.displayName || '',
+        window.currentActiveClientState?.clientPhone || '',
+        noteLabel
+    );
+}
+
+/**
+ * Abre a reconciliação bancária dedicada para vincular o valor de armazenagem a um movimento bancário.
+ */
+export function vincularPagamentoArmazem() {
+    if (!window.currentActiveClient) {
+        toast('Nenhum cliente selecionado.', 'warning');
+        return;
+    }
+    const client = window.currentActiveClient;
+    const container = document.getElementById('armazem-form-container') || document;
+    const payInput = container.querySelector('#input-storage-pay-amount');
+    const isExempt = Boolean(container.querySelector('#check-has-isencao')?.checked || window.currentClientStorageInfo?.isExempt);
+    if (isExempt) {
+        toast('Cliente isento de taxa de armazenagem (0,00 MT).', 'info');
+        return;
+    }
+
+    const columns = state.confirm?.columns || [];
+    const baseCalc = calculateClientStorage({
+        rows: client.rows,
+        columns,
+        dischargeDateStr: state.confirm?.dischargeDate || '',
+        bankPayments: window.currentClientStoragePayments || []
+    });
+
+    const standardCost = payInput ? (parseFloat(payInput.getAttribute('data-standard-cost')) || baseCalc.standardCost) : baseCalc.standardCost;
+    const agreedCost = (payInput && !payInput.disabled && payInput.value !== '')
+        ? (parseFloat(payInput.value) || 0)
+        : baseCalc.storageInfo.cost;
+
+    if (agreedCost <= 0) {
+        toast('Não há taxa de armazenagem a cobrar neste momento.', 'info');
+        return;
+    }
+
+    openFeeBankReconciliation('STORAGE', {
+        client,
+        standardCost,
+        agreedCost,
+        existingPayments: window.currentClientStoragePayments || []
+    });
+}
+window.vincularPagamentoArmazem = vincularPagamentoArmazem;
+
+export function updateDespachoCardCalculations() {
+    const card = document.getElementById('despacho-copy-card');
+    if (!card) return;
+
+    const client = window.currentActiveClient;
+    const chk = card.querySelector('#check-despacho-solicitado');
+    const amountInput = card.querySelector('#input-despacho-amount');
+    const statusSelect = card.querySelector('#select-despacho-paid');
+    const fieldsWrap = card.querySelector('#despacho-fields-wrap');
+    const statusBadge = card.querySelector('#despacho-status-badge');
+    const remainingEl = card.querySelector('#despacho-remaining-label');
+    const vincularBtn = card.querySelector('#btn-despacho-vincular-banco');
+
+    const defaultPrice = getDespachoCopyDefaultPrice();
+    const despachoPmts = window.currentClientDespachoPayments || [];
+    const bankPaidAmount = despachoPmts.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+
+    if (chk && !chk.checked && bankPaidAmount > 0) {
+        chk.checked = true;
+        toast('Existe pagamento bancário vinculado à Cópia de Despacho. Desaloque primeiro nos Detalhes de Reconciliação para desactivar.', 'warning');
+    }
+
+    const isRequested = Boolean(chk?.checked);
+    if (fieldsWrap) fieldsWrap.classList.toggle('opacity-50', !isRequested);
+    if (amountInput) amountInput.disabled = !isRequested;
+    if (statusSelect) statusSelect.disabled = !isRequested;
+
+    if (isRequested && amountInput && (amountInput.value === '' || parseFloat(amountInput.value) === 0) && amountInput.dataset.userEdited !== 'true') {
+        amountInput.value = String(defaultPrice);
+    }
+
+    const calc = calculateClientDespachoCopy({
+        rows: client?.rows || [],
+        columns: state.confirm?.columns || [],
+        defaultPrice,
+        bankPayments: despachoPmts,
+        overrides: {
+            isRequested,
+            explicitAgreedCost: isRequested && amountInput && amountInput.value !== '' ? (parseFloat(amountInput.value) || 0) : null,
+            despachoStatusVal: !isRequested ? 'NAO_SOLICITADO' : (statusSelect ? statusSelect.value : '')
+        }
+    });
+
+    if (window.currentClientDespachoInfo !== undefined) {
+        window.currentClientDespachoInfo = calc;
+    }
+
+    if (statusBadge) {
+        if (!calc.isRequested) {
+            statusBadge.textContent = 'Opcional / Não Solicitada';
+            statusBadge.className = 'text-[9px] font-black uppercase px-2.5 py-0.5 rounded-lg border bg-slate-100 text-slate-600 border-slate-200';
+        } else if (calc.isPaid) {
+            statusBadge.textContent = `Pago (${formatMZN(calc.cost)})`;
+            statusBadge.className = 'text-[9px] font-black uppercase px-2.5 py-0.5 rounded-lg border bg-emerald-50 text-emerald-700 border-emerald-200';
+        } else if (calc.isPartial) {
+            statusBadge.textContent = `Parcial • Falta ${formatMZN(calc.remainingBalance)}`;
+            statusBadge.className = 'text-[9px] font-black uppercase px-2.5 py-0.5 rounded-lg border bg-amber-50 text-amber-800 border-amber-200';
+        } else {
+            statusBadge.textContent = `Pendente (${formatMZN(calc.cost)})`;
+            statusBadge.className = 'text-[9px] font-black uppercase px-2.5 py-0.5 rounded-lg border bg-rose-50 text-rose-700 border-rose-200 animate-pulse';
+        }
+    }
+
+    if (remainingEl) {
+        if (calc.isRequested && calc.cost > 0 && calc.remainingBalance > 0.05) {
+            remainingEl.textContent = `Falta: ${formatMZN(calc.remainingBalance)}`;
+            remainingEl.classList.remove('hidden');
+        } else {
+            remainingEl.classList.add('hidden');
+        }
+    }
+
+    if (vincularBtn) {
+        const showBtn = calc.cost > 0 && (!calc.isPaid || calc.remainingBalance > 0.05) && isRequested;
+        vincularBtn.classList.toggle('hidden', !showBtn);
+    }
+}
+window.updateDespachoCardCalculations = updateDespachoCardCalculations;
+
+export function toggleDespachoConfigRow() {
+    const row = document.getElementById('despacho-default-config-row');
+    if (row) row.classList.toggle('hidden');
+}
+window.toggleDespachoConfigRow = toggleDespachoConfigRow;
+
+export function applyDespachoDefaultPrice() {
+    const inp = document.getElementById('input-despacho-default-price');
+    const badge = document.getElementById('despacho-default-price-label');
+    if (!inp) return;
+    const saved = setDespachoCopyDefaultPrice(inp.value);
+    inp.value = String(saved);
+    if (badge) badge.textContent = formatMZN(saved);
+
+    const clientAmountInp = document.getElementById('input-despacho-amount');
+    if (clientAmountInp && clientAmountInp.dataset.userEdited !== 'true' && !window.currentClientDespachoInfo?.isCustomAmount) {
+        clientAmountInp.value = String(saved);
+    }
+    toggleDespachoConfigRow();
+    updateDespachoCardCalculations();
+    toast(`Valor padrão da Cópia de Despacho atualizado para ${formatMZN(saved)}`, 'success');
+}
+window.applyDespachoDefaultPrice = applyDespachoDefaultPrice;
+
+export function vincularPagamentoDespacho() {
+    if (!window.currentActiveClient) {
+        toast('Nenhum cliente selecionado.', 'warning');
+        return;
+    }
+    const client = window.currentActiveClient;
+    const card = document.getElementById('despacho-copy-card');
+    const chk = card?.querySelector('#check-despacho-solicitado');
+    if (chk && !chk.checked) {
+        chk.checked = true;
+        updateDespachoCardCalculations();
+    }
+
+    const defaultPrice = getDespachoCopyDefaultPrice();
+    const amountInput = card?.querySelector('#input-despacho-amount');
+    const agreedCost = (amountInput && amountInput.value !== '')
+        ? (parseFloat(amountInput.value) || 0)
+        : (window.currentClientDespachoInfo?.cost > 0 ? window.currentClientDespachoInfo.cost : defaultPrice);
+
+    if (agreedCost <= 0) {
+        toast('Defina um valor maior que 0,00 MT para a Cópia de Despacho antes de vincular.', 'warning');
+        return;
+    }
+
+    openFeeBankReconciliation('DESPACHO', {
+        client,
+        standardCost: defaultPrice,
+        agreedCost,
+        existingPayments: window.currentClientDespachoPayments || []
+    });
+}
+window.vincularPagamentoDespacho = vincularPagamentoDespacho;
+
+export async function saveDespachoCopy(buttonEl) {
+    const client = window.currentActiveClient;
+    if (!client || !client.rows || client.rows.length === 0) {
+        toast('Nenhum cliente selecionado.', 'warning');
+        return;
+    }
+    const card = document.getElementById('despacho-copy-card');
+    if (!card) return;
+
+    const chk = card.querySelector('#check-despacho-solicitado');
+    const amountInput = card.querySelector('#input-despacho-amount');
+    const statusSelect = card.querySelector('#select-despacho-paid');
+    const despachoPayments = window.currentClientDespachoPayments || [];
+    const bankPaidAmount = despachoPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+
+    const isRequested = Boolean(chk?.checked) || bankPaidAmount > 0;
+    const defaultPrice = getDespachoCopyDefaultPrice();
+    const enteredCost = (amountInput && amountInput.value !== '')
+        ? Math.max(0, parseFloat(amountInput.value) || 0)
+        : defaultPrice;
+    const manualStatus = statusSelect ? statusSelect.value : 'NAO';
+
+    const { statusCellVal, valueCellVal } = formatFeeSheetStatus({
+        isRequested,
+        targetCost: isRequested ? enteredCost : 0,
+        standardCost: defaultPrice,
+        bankPaidAmount,
+        manualStatus,
+        zeroCostPendingLabel: 'PENDENTE',
+        preferAmountOnPaid: true
+    });
+
+    try {
+        if (buttonEl) setBtnLoading(buttonEl, true);
+        await ensureDespachoCopyColumns();
+        await syncClientFeeToGSheet('DESPACHO', client, {
+            statusCellVal,
+            valueCellVal,
+            emitStatus: statusCellVal
+        });
+
+        logConfirmAudit(state.confirm.sheetId, client.no, client.displayName, 'COPIA_DESPACHO_ATUALIZADA', {
+            solicitada: isRequested,
+            valor: valueCellVal,
+            estado: statusCellVal,
+            totalBanco: bankPaidAmount
+        }).catch(err => console.warn('[Audit] Erro ao registar auditoria de cópia de despacho:', err));
+
+        await showConfirmDetail(client, window.currentActiveClientIndex);
+        toast('Cópia de Despacho gravada com sucesso!', 'success');
+    } catch (err) {
+        console.error('[DESPACHO] Erro ao gravar Cópia de Despacho:', err);
+        toast('Erro ao gravar Cópia de Despacho: ' + err.message, 'error');
+    } finally {
+        if (buttonEl) setBtnLoading(buttonEl, false);
+    }
+}
+window.saveDespachoCopy = saveDespachoCopy;
 
 export async function checkAndCreateWarehouseColumns() {
-    const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
-    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
+    let columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
+
+    // Se STORAGE PAID já existir mas faltar STORAGE VALUE, inserir estruturalmente logo após STORAGE PAID
+    const hasStoragePaid = findWarehouseCol(columns, ['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']) !== -1;
+    const hasStorageValue = findWarehouseCol(columns, ['STORAGE VALUE', 'VALOR ARMAZENAGEM', 'ARMAZENAGEM VALOR', 'STORAGE_VALUE']) !== -1;
+    if (hasStoragePaid && !hasStorageValue) {
+        await ensureStorageValueColumn();
+        columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
+    }
+
+    const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'STORAGE VALUE', 'DELIVERED'];
     
     const missing = [];
     required.forEach(req => {
-        const found = columns.findIndex(c => {
-            const clean = String(c || '').toUpperCase().trim();
-            if (req === 'CONTACTO') return clean === 'CONTACTO' || clean === 'CONTACT';
-            return clean === req;
-        });
-        if (found === -1) {
+        const targets = req === 'CONTACTO' ? ['CONTACTO', 'CONTACT'] : [req];
+        if (findWarehouseCol(columns, targets) === -1) {
             missing.push(req);
         }
     });
@@ -11995,34 +12578,7 @@ window.checkAndCreateWarehouseColumns = checkAndCreateWarehouseColumns;
  * Renderiza o painel operacional de Armazém nos detalhes do cliente
  */
 export function parseDate(dateStr) {
-    if (!dateStr || dateStr === '—' || dateStr === '-' || dateStr === 'Invalid Date') return null;
-    if (dateStr instanceof Date) {
-        return isNaN(dateStr.getTime()) ? null : dateStr;
-    }
-    const trimmed = String(dateStr).trim();
-    if (!trimmed || trimmed === '—' || trimmed === '-' || trimmed === 'Invalid Date') return null;
-
-    // Formato YYYY-MM-DD (com ou sem timestamp/timezone)
-    const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (isoMatch) {
-        return new Date(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3]), 0, 0, 0, 0);
-    }
-
-    // Formato DD/MM/YYYY ou DD-MM-YYYY (com ou sem timestamp)
-    const slashMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-    if (slashMatch) {
-        return new Date(Number(slashMatch[3]), Number(slashMatch[2]) - 1, Number(slashMatch[1]), 0, 0, 0, 0);
-    }
-
-    // Fallback nativo
-    const clean = trimmed.replace(' ', 'T');
-    const parsed = new Date(clean);
-    if (!isNaN(parsed.getTime())) {
-        const d = new Date(parsed);
-        d.setHours(0, 0, 0, 0);
-        return d;
-    }
-    return null;
+    return parseWarehouseDate(dateStr);
 }
 
 window.updateArmazemSaldo = function() {
@@ -12201,29 +12757,22 @@ export function updateArmazemCalculations() {
     const client = window.currentActiveClient;
     if (!client) return;
 
-    // 2. Calcular dias decorridos e custo padrão
-    const dischargeDateStr = state.confirm?.dischargeDate || '';
-    const dDate = parseDate(dischargeDateStr);
-
+    // 2. Calcular dias decorridos e custo padrão (sem parar o relógio até o cliente estar ENTREGUE)
+    const storagePayments = window.currentClientStoragePayments || [];
+    const isDeliveredVal = container.querySelector('input[name="delivered"]')?.value === 'SIM';
     const deliverDateInput = container.querySelector('input[name="deliverDate"]');
-    const targetEndDateStr = (deliverDateInput && deliverDateInput.value) ? deliverDateInput.value : new Date().toISOString().split('T')[0];
-    const targetEndDate = parseDate(targetEndDateStr);
-
-    let daysDiff = 0;
-    if (dDate && targetEndDate) {
-        const timeDiff = targetEndDate.getTime() - dDate.getTime();
-        daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
-    }
-
-    const isAnticipated = client.isAnticipated !== undefined ? client.isAnticipated : false;
-    let standardCost = 0;
-    if (dischargeDateStr) {
-        if (isAnticipated) {
-            standardCost = daysDiff <= 3 ? 0 : (daysDiff - 3) * 1000;
-        } else {
-            standardCost = daysDiff <= 3 ? daysDiff * 500 : 1500 + (daysDiff - 3) * 1000;
+    const storageCalc = calculateClientStorage({
+        rows: client.rows,
+        columns: state.confirm?.columns || [],
+        dischargeDateStr: state.confirm?.dischargeDate || '',
+        bankPayments: storagePayments,
+        overrides: {
+            isDelivered: isDeliveredVal,
+            deliverDateVal: deliverDateInput?.value || ''
         }
-    }
+    });
+    const standardCost = storageCalc.standardCost;
+    const bankPaidAmount = storageCalc.bankPaidAmount || 0;
 
     if (storagePayAmountInput) {
         storagePayAmountInput.setAttribute('data-standard-cost', String(standardCost));
@@ -12251,7 +12800,9 @@ export function updateArmazemCalculations() {
 
         if (window.currentClientStorageInfo) {
             window.currentClientStorageInfo.cost = 0;
+            window.currentClientStorageInfo.remainingBalance = 0;
             window.currentClientStorageInfo.isPaid = true;
+            window.currentClientStorageInfo.isPartial = false;
             window.currentClientStorageInfo.isExempt = true;
         }
         const miniStorageBtn = document.getElementById('btn-confirm-storage-mini');
@@ -12274,7 +12825,6 @@ export function updateArmazemCalculations() {
     if (storagePayAmountInput) storagePayAmountInput.disabled = false;
     if (storagePaidSelect) storagePaidSelect.disabled = false;
 
-    // Se custo padrão é 0 (dentro dos 3 dias livres)
     if (standardCost === 0) {
         if (storagePayAmountInput && (!storagePayAmountInput.value || parseFloat(storagePayAmountInput.value) === 0)) {
             storagePayAmountInput.value = '0';
@@ -12284,7 +12834,9 @@ export function updateArmazemCalculations() {
 
         if (window.currentClientStorageInfo) {
             window.currentClientStorageInfo.cost = 0;
+            window.currentClientStorageInfo.remainingBalance = 0;
             window.currentClientStorageInfo.isPaid = true;
+            window.currentClientStorageInfo.isPartial = false;
             window.currentClientStorageInfo.isExempt = false;
         }
         const miniStorageBtn = document.getElementById('btn-confirm-storage-mini');
@@ -12297,7 +12849,7 @@ export function updateArmazemCalculations() {
         return;
     }
 
-    // Se custo padrão > 0, verificar negociação
+    // Se custo padrão > 0, verificar negociação & reconciliação bancária
     let payAmount = storagePayAmountInput ? parseFloat(storagePayAmountInput.value) : standardCost;
     if (isNaN(payAmount) || payAmount < 0) {
         payAmount = standardCost;
@@ -12315,29 +12867,47 @@ export function updateArmazemCalculations() {
         }
     }
 
-    const isPaid = storagePaidSelect && storagePaidSelect.value === 'SIM';
-    const statusText = isPaid ? 'Pago' : 'Pendente';
-    const statusColor = isPaid ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse';
+    const selectedStatus = storagePaidSelect ? storagePaidSelect.value : 'NAO';
+    const remainingBalance = Math.max(0, payAmount - bankPaidAmount);
+    const isPaid = selectedStatus === 'SIM' || (bankPaidAmount >= payAmount - 0.05 && payAmount > 0);
+    const isPartial = !isPaid && (selectedStatus === 'PARCIAL' || (bankPaidAmount > 0 && remainingBalance > 0.05));
+    const statusText = isPaid ? 'Pago' : (isPartial ? `Parcial - Falta ${formatMZN(remainingBalance)}` : 'Pendente');
+    const statusColor = isPaid
+        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        : (isPartial ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse');
 
     if (storagePaymentSection) storagePaymentSection.classList.remove('hidden');
 
+    const vincularBtn = container.querySelector('#btn-armazem-vincular-banco');
+    if (vincularBtn) {
+        const showVincular = !isDeliveredVal && !isExempt && (!isPaid || remainingBalance > 0.05);
+        vincularBtn.classList.toggle('hidden', !showVincular);
+    }
+
     if (window.currentClientStorageInfo) {
         window.currentClientStorageInfo.cost = payAmount;
+        window.currentClientStorageInfo.paidAmount = isPaid ? payAmount : bankPaidAmount;
+        window.currentClientStorageInfo.remainingBalance = isPaid ? 0 : remainingBalance;
         window.currentClientStorageInfo.isPaid = isPaid;
+        window.currentClientStorageInfo.isPartial = isPartial;
         window.currentClientStorageInfo.isExempt = false;
         window.currentClientStorageInfo.isNegotiated = isNegotiated;
     }
+
     const miniStorageBtn = document.getElementById('btn-confirm-storage-mini');
     const miniStorageStatus = document.getElementById('confirm-storage-mini-status');
     if (miniStorageBtn && miniStorageStatus) {
-        if (payAmount <= 0) {
+        if (payAmount <= 0 && bankPaidAmount <= 0) {
             miniStorageBtn.classList.add('hidden');
         } else {
             const confirmTab = document.getElementById('btn-tab-confirm');
             if (confirmTab && confirmTab.classList.contains('bg-white')) {
                 miniStorageBtn.classList.remove('hidden');
             }
-            if (!isPaid) {
+            if (isPartial) {
+                miniStorageStatus.innerText = `PARCIAL (FALTA ${formatMZN(remainingBalance)})`;
+                miniStorageStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 font-extrabold';
+            } else if (!isPaid) {
                 miniStorageStatus.innerText = `PENDENTE (${formatMZN(payAmount)})`;
                 miniStorageStatus.className = 'text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 font-extrabold animate-pulse';
             } else {
@@ -12355,7 +12925,7 @@ export function updateArmazemCalculations() {
 window.updateArmazemCalculations = updateArmazemCalculations;
 window.updateArmazemSaldo = updateArmazemCalculations;
 
-export async function renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed) {
+export async function renderArmazemDetails(client, totalBalanceFreight, totalAmountFreight, allConfirmed, storagePayments = null, despachoPayments = null) {
     const container = document.getElementById('armazem-operations-container');
     if (!container) return;
 
@@ -12379,27 +12949,39 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             return trimmed;
         };
 
-        // Detetar índices das colunas
-        const columns = state.confirm?.columns || [];
-        const cleanString = (str) => String(str || '')
-            .toUpperCase()
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/[^A-Z0-9]/g, "")
-            .trim();
+        let columns = state.confirm?.columns || [];
+        const findCol = (targets, opts) => findWarehouseCol(columns, targets, opts);
 
-        const findCol = (targets) => {
-            const cleanedTargets = targets.map(cleanString);
-            for (const target of cleanedTargets) {
-                const idx = columns.findIndex(c => cleanString(c) === target);
-                if (idx !== -1) return idx;
+        // Verificar se todas as colunas base de armazém existem
+        const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
+        const hasAll = required.every(req => findCol(req === 'CONTACTO' ? ['CONTACTO', 'CONTACT'] : [req]) !== -1);
+
+        if (!hasAll) {
+            container.innerHTML = `
+                <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center">
+                    <p class="text-xs font-bold text-slate-500 mb-4 uppercase">Para gerir o Armazém e custos, é necessário criar as colunas de controlo (Discharge, Deliver, Deliver Date, Deliver To, Contacto, Storage Paid, Storage Value, Delivered) no GSheet.</p>
+                    <button onclick="window.checkAndCreateWarehouseColumns()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
+                        Criar Colunas de Armazém
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        // Inserir automaticamente STORAGE VALUE logo após STORAGE PAID caso falte numa folha existente
+        if (findCol(['STORAGE VALUE', 'VALOR ARMAZENAGEM', 'ARMAZENAGEM VALOR', 'STORAGE_VALUE']) === -1) {
+            const sheetKey = state.confirm?.sheetId || 'local';
+            window._storageValueEnsureAttempted = window._storageValueEnsureAttempted || {};
+            if (!window._storageValueEnsureAttempted[sheetKey]) {
+                window._storageValueEnsureAttempted[sheetKey] = true;
+                try {
+                    await ensureStorageValueColumn();
+                    columns = state.confirm?.columns || columns;
+                } catch (svErr) {
+                    console.warn('[WAREHOUSE] Aviso ao garantir coluna STORAGE VALUE:', svErr);
+                }
             }
-            for (const target of cleanedTargets) {
-                const idx = columns.findIndex(c => cleanString(c).includes(target));
-                if (idx !== -1) return idx;
-            }
-            return -1;
-        };
+        }
 
         const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
         const packagesIdx = findCol(['PACKAGES']);
@@ -12411,37 +12993,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
         const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
         const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
-        const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
-        const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
-        const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
-        const pag1Idx = findCol(['PAG 1', 'PAG1']);
-        const pag2Idx = findCol(['PAG 2', 'PAG2']);
-        const pag3Idx = findCol(['PAG 3', 'PAG3']);
         const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
         const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
-
-        // Verificar se todas as colunas de armazém existem
-        const required = ['DISCHARGE', 'DELIVER', 'DELIVER DATE', 'DELIVER TO', 'CONTACTO', 'STORAGE PAID', 'DELIVERED'];
-        const hasAll = required.every(req => {
-            const idx = columns.findIndex(c => {
-                const clean = String(c || '').toUpperCase().trim();
-                if (req === 'CONTACTO') return clean === 'CONTACTO' || clean === 'CONTACT';
-                return clean === req;
-            });
-            return idx !== -1;
-        });
-
-        if (!hasAll) {
-            container.innerHTML = `
-                <div class="bg-slate-50 border border-slate-200 p-6 rounded-2xl text-center">
-                    <p class="text-xs font-bold text-slate-500 mb-4 uppercase">Para gerir o Armazém e custos, é necessário criar as colunas de controlo (Discharge, Deliver, Deliver Date, Deliver To, Contacto, Storage Paid, Delivered) no GSheet.</p>
-                    <button onclick="window.checkAndCreateWarehouseColumns()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest px-6 py-3 rounded-xl transition-all shadow-md active:scale-95 cursor-pointer">
-                        Criar Colunas de Armazém
-                    </button>
-                </div>
-            `;
-            return;
-        }
 
         // Regras de negócio para autorização de entrega:
         const isDutyConfirmed = allConfirmed;
@@ -12502,71 +13055,184 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const isExtraordinaria = String(motivoIsencaoVal).includes('[EXTRAORDINÁRIA]');
         const allowDelivery = isExtraordinaria || (isDutyConfirmed && isFreightPaid);
 
-        // --- CÁLCULO DE CUSTO DE ARMAZENAGEM ---
-        const dischargeDateStr = state.confirm?.dischargeDate || ''; // YYYY-MM-DD
-        const dDate = parseDate(dischargeDateStr);
-        
-        // Determinar se o pagamento do Duty foi antecipado
-        let totalDuty = 0;
-        let totalPrepaid = 0;
-        let totalBalance = 0;
-        let hasPaymentAfterDischarge = false;
+        // --- CÁLCULO UNIFICADO DE CUSTO DE ARMAZENAGEM ---
+        const dischargeDateStr = state.confirm?.dischargeDate || '';
+        const effectiveStoragePmts = Array.isArray(storagePayments)
+            ? storagePayments
+            : (window.currentClientStoragePayments || []);
+        window.currentClientStoragePayments = effectiveStoragePmts;
 
-        client.rows.forEach(r => {
-            const rowData = r.originalRow;
-            const dVal = dutyIdx !== -1 ? parseFloat(String(rowData[dutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-            const pVal = dutyPrepaidIdx !== -1 ? parseFloat(String(rowData[dutyPrepaidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-            const bVal = balanceIdx !== -1 ? parseFloat(String(rowData[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-            
-            totalDuty += dVal;
-            totalPrepaid += pVal;
-            totalBalance += bVal;
-            
-            // Analisar datas nas colunas PAG 1, 2, 3
-            const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(idx => idx !== -1);
-            pagIndices.forEach(idx => {
-                const dateStr = rowData[idx];
-                if (dateStr && String(dateStr).trim() !== '' && String(dateStr).trim() !== '—') {
-                    const pDate = parseDate(dateStr);
-                    if (pDate && dDate && pDate.getTime() > dDate.getTime()) {
-                        hasPaymentAfterDischarge = true;
-                    }
-                }
-            });
+        const storageCalc = calculateClientStorage({
+            rows: client.rows,
+            columns,
+            dischargeDateStr,
+            bankPayments: effectiveStoragePmts
         });
 
-        const isFullyPaid = (totalBalance <= 1.0);
-        const isAnticipated = (totalPrepaid >= totalDuty) || (isFullyPaid && !hasPaymentAfterDischarge);
-
-        // Calcular dias decorridos
-        const deliverDateStr = deliverDateVal && deliverDateVal !== '—' ? deliverDateVal : '';
-        const todayStr = new Date().toISOString().split('T')[0];
-        const targetEndDateStr = deliverDateStr || todayStr;
-        const targetEndDate = parseDate(targetEndDateStr);
-        
-        let daysDiff = 0;
-        if (dDate && targetEndDate) {
-            const timeDiff = targetEndDate.getTime() - dDate.getTime();
-            daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
-        }
-
+        const isAnticipated = storageCalc.isAnticipated;
+        const daysDiff = storageCalc.daysDiff;
+        const standardStorageCost = storageCalc.standardCost;
+        const bankPaidAmount = storageCalc.bankPaidAmount || 0;
         client.isAnticipated = isAnticipated;
 
-        let standardStorageCost = 0;
-        if (dischargeDateStr) {
-            if (isAnticipated) {
-                standardStorageCost = daysDiff <= 3 ? 0 : (daysDiff - 3) * 1000;
-            } else {
-                standardStorageCost = daysDiff <= 3 ? daysDiff * 500 : 1500 + (daysDiff - 3) * 1000;
-            }
-        }
-
-        const storageInfo = parseStorageInfo(storagePaidVal, standardStorageCost, motivoIsencaoVal, isDelivered);
+        const storageInfo = storageCalc.storageInfo;
         window.currentClientStorageInfo = storageInfo;
+
+        const effectiveDespachoPmts = Array.isArray(despachoPayments)
+            ? despachoPayments
+            : (window.currentClientDespachoPayments || []);
+        window.currentClientDespachoPayments = effectiveDespachoPmts;
+
+        const defaultDespachoPrice = getDespachoCopyDefaultPrice();
+        const despachoCalc = calculateClientDespachoCopy({
+            rows: client.rows,
+            columns,
+            defaultPrice: defaultDespachoPrice,
+            bankPayments: effectiveDespachoPmts
+        });
+        window.currentClientDespachoInfo = despachoCalc;
+
+        const buildDespachoCopyCardHtml = () => {
+            const linkedRowsHtml = effectiveDespachoPmts.length > 0
+                ? `
+                    <div class="pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                        <span class="text-[9px] font-black uppercase text-slate-400">Pagamentos Bancários Vinculados:</span>
+                        ${effectiveDespachoPmts.map(p => {
+                            const refClean = String(p.reference || p.description || '—').replace(/\[Vinculado:[^\]]+\]/g, '').trim();
+                            const dt = p.date ? p.date.split(' ')[0] : '—';
+                            return `<span class="inline-flex items-center gap-1.5 text-[9.5px] font-bold bg-teal-50 text-teal-800 border border-teal-200 px-2.5 py-1 rounded-lg" title="${refClean.replace(/"/g, '&quot;')}">
+                                <span>🏦 ${getPaymentBankDisplay(p)}</span>
+                                <span class="text-teal-500">•</span>
+                                <span class="font-mono text-[9px]">${dt}</span>
+                                <span class="text-teal-500">•</span>
+                                <span class="font-black">${formatMZN(p.amount)}</span>
+                            </span>`;
+                        }).join('')}
+                    </div>
+                `
+                : '';
+
+            let statusBadgeClass = 'bg-slate-100 text-slate-600 border-slate-200';
+            let statusBadgeText = 'Opcional / Não Solicitada';
+            if (despachoCalc.isRequested) {
+                if (despachoCalc.isPaid) {
+                    statusBadgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
+                    statusBadgeText = `Pago (${formatMZN(despachoCalc.cost)})`;
+                } else if (despachoCalc.isPartial) {
+                    statusBadgeClass = 'bg-amber-50 text-amber-800 border-amber-200';
+                    statusBadgeText = `Parcial • Falta ${formatMZN(despachoCalc.remainingBalance)}`;
+                } else {
+                    statusBadgeClass = 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse';
+                    statusBadgeText = `Pendente (${formatMZN(despachoCalc.cost)})`;
+                }
+            }
+
+            const inputAmtVal = despachoCalc.isRequested ? despachoCalc.cost : defaultDespachoPrice;
+            const showVincularDespacho = despachoCalc.isRequested && despachoCalc.cost > 0 && (!despachoCalc.isPaid || despachoCalc.remainingBalance > 0.05);
+
+            return `
+                <div id="despacho-copy-card" class="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3.5 mt-4">
+                    <div class="flex items-center justify-between flex-wrap gap-2.5 border-b border-slate-100 pb-3">
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                            <span class="p-1.5 rounded-xl bg-teal-50 text-teal-700 border border-teal-200/80">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                            </span>
+                            <div>
+                                <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Cópia de Despacho (Opcional)</h4>
+                                <p class="text-[10px] text-slate-400 font-semibold">Pagamento adicional caso o cliente solicite a cópia do despacho</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button type="button" onclick="ui.toggleDespachoConfigRow()"
+                                class="text-[9px] font-bold uppercase px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer transition-all inline-flex items-center gap-1"
+                                title="Alterar o valor padrão pré-definido da Cópia de Despacho">
+                                <span>Valor padrão: <strong id="despacho-default-price-label" class="text-slate-800">${formatMZN(defaultDespachoPrice)}</strong></span>
+                                <span>⚙️</span>
+                            </button>
+                            <span id="despacho-status-badge" class="text-[9px] font-black uppercase px-2.5 py-0.5 rounded-lg border ${statusBadgeClass}">
+                                ${statusBadgeText}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div id="despacho-default-config-row" class="hidden bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center justify-between flex-wrap gap-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-black uppercase text-slate-600">Valor Pré-definido (MZN):</span>
+                            <input type="number" id="input-despacho-default-price" value="${defaultDespachoPrice}" min="0" step="50"
+                                class="w-28 text-center py-1.5 px-2 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-teal-500">
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="ui.applyDespachoDefaultPrice()"
+                                class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[9px] font-black uppercase cursor-pointer transition-all">
+                                Aplicar Padrão
+                            </button>
+                            <button type="button" onclick="ui.toggleDespachoConfigRow()"
+                                class="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-500 border border-slate-200 rounded-xl text-[9px] font-bold uppercase cursor-pointer">
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                        <div class="col-span-1 md:col-span-4">
+                            <label class="inline-flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-teal-50/40 border border-slate-200 rounded-xl cursor-pointer transition-all w-full">
+                                <input type="checkbox" id="check-despacho-solicitado" ${despachoCalc.isRequested ? 'checked' : ''}
+                                    onchange="ui.updateDespachoCardCalculations()"
+                                    class="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer">
+                                <span class="text-[10.5px] font-black uppercase text-slate-700">Cliente solicitou cópia</span>
+                            </label>
+                        </div>
+
+                        <div id="despacho-fields-wrap" class="col-span-1 md:col-span-5 flex items-center gap-2 ${despachoCalc.isRequested ? '' : 'opacity-50'}">
+                            <div class="flex-1 min-w-[95px]">
+                                <label class="block text-[8.5px] font-black uppercase text-slate-400 mb-1">Valor (MZN)</label>
+                                <input type="number" id="input-despacho-amount" value="${inputAmtVal}" min="0" step="50"
+                                    data-user-edited="${despachoCalc.isCustomAmount ? 'true' : 'false'}"
+                                    oninput="this.dataset.userEdited='true'; ui.updateDespachoCardCalculations()"
+                                    ${!despachoCalc.isRequested ? 'disabled' : ''}
+                                    class="w-full text-center py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:border-teal-500 outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400">
+                            </div>
+                            <div class="w-[120px] shrink-0">
+                                <label class="block text-[8.5px] font-black uppercase text-slate-400 mb-1">Estado</label>
+                                <select id="select-despacho-paid" onchange="ui.updateDespachoCardCalculations()"
+                                    ${!despachoCalc.isRequested ? 'disabled' : ''}
+                                    class="w-full text-center py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold focus:border-teal-500 outline-none transition-all ${despachoCalc.isPaid ? 'text-emerald-700 bg-emerald-50' : (despachoCalc.isPartial ? 'text-amber-800 bg-amber-50' : 'text-slate-700')} disabled:bg-slate-100 disabled:text-slate-400">
+                                    <option value="NAO" ${(!despachoCalc.isPaid && !despachoCalc.isPartial) ? 'selected' : ''}>❌ PENDENTE</option>
+                                    <option value="PARCIAL" ${despachoCalc.isPartial ? 'selected' : ''}>⏳ PARCIAL</option>
+                                    <option value="SIM" ${despachoCalc.isPaid ? 'selected' : ''}>✅ PAGO</option>
+                                </select>
+                            </div>
+                            <span id="despacho-remaining-label" class="text-[9px] font-black text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 self-end mb-0.5 ${(despachoCalc.isRequested && despachoCalc.cost > 0 && despachoCalc.remainingBalance > 0.05) ? '' : 'hidden'}">
+                                Falta: ${formatMZN(despachoCalc.remainingBalance)}
+                            </span>
+                        </div>
+
+                        <div class="col-span-1 md:col-span-3 flex items-center justify-end gap-1.5 flex-wrap">
+                            <button type="button" onclick="ui.saveDespachoCopy(this)"
+                                class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1 h-[34px]"
+                                title="Gravar estado e valor da Cópia de Despacho na planilha">
+                                <span>Guardar</span>
+                            </button>
+                            <button type="button" id="btn-despacho-vincular-banco" onclick="ui.vincularPagamentoDespacho()"
+                                class="${showVincularDespacho ? '' : 'hidden'} px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1 h-[34px]"
+                                title="Vincular pagamento bancário da Cópia de Despacho">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                <span>Vincular</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    ${linkedRowsHtml}
+                </div>
+            `;
+        };
+        const despachoCopyCardHtml = buildDespachoCopyCardHtml();
         const isExempt = storageInfo.isExempt;
         const isNegotiated = storageInfo.isNegotiated;
         const storageCost = storageInfo.cost;
         const isStoragePaid = storageInfo.isPaid;
+        const isStoragePartial = storageInfo.isPartial;
+        const storageRemaining = storageInfo.remainingBalance;
         const isStorageBlocked = storageCost > 0 && !isStoragePaid && !isExempt;
 
         const hasDeliveryInfoSaved = totalDelivered > 0 && 
@@ -12768,8 +13434,10 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </span>
                 `;
             } else if (storageCost > 0 || standardStorageCost > 0) {
-                const statusColor = isStoragePaid ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse';
-                const textStatus = isStoragePaid ? 'Pago' : 'Pendente';
+                const statusColor = isStoragePaid
+                    ? 'bg-green-50 text-green-700 border-green-200'
+                    : (isStoragePartial ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-red-50 text-red-700 border-red-200 animate-pulse');
+                const textStatus = isStoragePaid ? 'Pago' : (isStoragePartial ? `Parcial - Falta ${formatMZN(storageRemaining)}` : 'Pendente');
                 storageBadgesHtml = `
                     <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
                         Dias: <strong class="text-slate-700 ml-1 font-extrabold">${daysDiff}d</strong>
@@ -12893,8 +13561,9 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
                     <div class="col-span-1 md:col-span-2">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Data Entrega</label>
-                        <input type="date" name="deliverDate" value="${formatDateForInput(deliverDateVal)}" 
-                            onchange="window.updateArmazemCalculations()"
+                        <input type="date" name="deliverDate" value="${formatDateForInput(deliverDateVal)}" data-user-edited="false"
+                            oninput="this.dataset.userEdited='true'"
+                            onchange="this.dataset.userEdited='true'; window.updateArmazemCalculations()"
                             ${!isEditable ? 'disabled' : ''}
                             class="w-full text-center py-2 px-2 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
@@ -12963,32 +13632,45 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
 
                     <div id="storage-payment-section" class="col-span-1 md:col-span-3 ${isExempt || (storageCost === 0 && !isNegotiated) ? 'hidden' : ''}">
-                        <div class="flex items-center justify-between mb-1.5">
+                        <div class="flex items-center justify-between mb-1.5 gap-1">
                             <label class="block text-[9px] font-black uppercase text-slate-400">Armazenagem (MZN)</label>
-                            <span id="storage-negotiate-badge" class="text-[8px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 ${isNegotiated ? '' : 'hidden'}">
-                                🤝 Negociado
-                            </span>
+                            <div class="flex items-center gap-1">
+                                ${bankPaidAmount > 0 ? `<span class="text-[8px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200" title="Valor já vinculado ao extrato bancário">🏦 ${formatMZN(bankPaidAmount)}</span>` : ''}
+                                <span id="storage-negotiate-badge" class="text-[8px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 ${isNegotiated ? '' : 'hidden'}">
+                                    🤝 Negociado
+                                </span>
+                            </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-1.5">
-                            <div class="relative">
+                        <div class="flex items-center gap-1.5">
+                            <div class="relative flex-1 min-w-[78px]">
                                 <input type="number" id="input-storage-pay-amount" name="storagePayAmount" 
                                     value="${isExempt ? 0 : storageCost}" min="0" step="100" 
                                     data-standard-cost="${standardStorageCost}"
-                                    oninput="window.updateArmazemCalculations()"
+                                    data-user-edited="false"
+                                    oninput="this.dataset.userEdited='true'; window.updateArmazemCalculations()"
                                     ${!isEditable || isExempt ? 'disabled' : ''}
                                     placeholder="${formatMZN(standardStorageCost)}"
-                                    title="Pode negociar o valor a pagar aqui se acordado com o cliente"
-                                    class="w-full text-center py-2 px-2 bg-white border border-slate-200 rounded-xl text-[11px] font-black text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable || isExempt ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                                    title="Valor da armazenagem a pagar (gravado na coluna STORAGE VALUE)"
+                                    class="w-full text-center py-2 px-1.5 bg-white border border-slate-200 rounded-xl text-[11px] font-black text-slate-800 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable || isExempt ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                             </div>
-                            <div>
+                            <div class="w-[105px] shrink-0">
                                 <select name="storagePaid" 
                                     onchange="window.updateArmazemCalculations()"
                                     ${!isEditable || isExempt ? 'disabled' : ''}
-                                    class="w-full text-center py-2 px-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${isStoragePaid ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'} ${!isEditable || isExempt ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
-                                    <option value="NAO" ${!isStoragePaid ? 'selected' : ''}>❌ PENDENTE</option>
+                                    class="w-full text-center py-2 px-1.5 bg-white border border-slate-200 rounded-xl text-[10px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${isStoragePaid ? 'text-emerald-700 bg-emerald-50' : (isStoragePartial ? 'text-amber-800 bg-amber-50' : 'text-rose-700 bg-rose-50')} ${!isEditable || isExempt ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                                    <option value="NAO" ${(!isStoragePaid && !isStoragePartial) ? 'selected' : ''}>❌ PENDENTE</option>
+                                    <option value="PARCIAL" ${isStoragePartial ? 'selected' : ''}>⏳ PARCIAL</option>
                                     <option value="SIM" ${isStoragePaid ? 'selected' : ''}>✅ PAGO</option>
                                 </select>
                             </div>
+                            ${isEditable && !isExempt ? `
+                            <button type="button" id="btn-armazem-vincular-banco" onclick="ui.vincularPagamentoArmazem()"
+                                class="${(!isStoragePaid || storageRemaining > 0.05) ? '' : 'hidden'} px-2.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1 shrink-0 h-[34px]"
+                                title="Vincular pagamento de armazenagem a um extrato bancário">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                <span>Vincular</span>
+                            </button>
+                            ` : ''}
                         </div>
                     </div>
 
@@ -13027,6 +13709,12 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4 mt-4">
                 <div class="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-3">
                     <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Resumo de Armazenagem Acumulada</h4>
+                    ${(!isExempt && (!isStoragePaid || storageRemaining > 0.05) && storageCost > 0) ? `
+                    <button type="button" onclick="ui.vincularPagamentoArmazem()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                        <span>Vincular Armazenagem</span>
+                    </button>
+                    ` : ''}
                 </div>
                 <div class="flex flex-wrap items-center gap-2.5 text-xs">
                     ${dischargeDateBadge}
@@ -13034,6 +13722,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                 </div>
             </div>
             `}
+            ${despachoCopyCardHtml}
         `;
 
         // Restaurar valores em edição se o operador estava a preencher
@@ -13176,48 +13865,30 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
         }
     }
 
-    const storagePayAmountInput = container.querySelector('#input-storage-pay-amount');
-    const standardCost = storagePayAmountInput ? parseFloat(storagePayAmountInput.getAttribute('data-standard-cost') || '0') : 0;
-    const enteredAmount = storagePayAmountInput ? (parseFloat(storagePayAmountInput.value) || 0) : standardCost;
-
-    let storagePaidVal = 'NAO';
-    if (isIsencaoChecked) {
-        storagePaidVal = 'ISENTO';
-    } else if (standardCost === 0) {
-        const isDeliveredNow = (deliverVal && deliverDateVal) || (container.querySelector('input[name="delivered"]')?.value === 'SIM');
-        storagePaidVal = isDeliveredNow ? 'LIVRE' : 'NAO';
-    } else {
-        const paidStatus = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
-        const isPaid = paidStatus === 'SIM';
-        const isNegotiated = Math.abs(enteredAmount - standardCost) > 1;
-
-        if (isNegotiated) {
-            storagePaidVal = isPaid ? `PAGO (${enteredAmount} MT)` : `PENDENTE (${enteredAmount} MT)`;
-        } else {
-            storagePaidVal = isPaid ? 'SIM' : 'NAO';
-        }
+    const client = window.currentActiveClient;
+    if (!client) {
+        toast('Erro: Cliente ativo não encontrado.', 'error');
+        return;
     }
 
-    const columns = state.confirm.columns || [];
-    const cleanString = (str) => String(str || '')
-        .toUpperCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^A-Z0-9]/g, "")
-        .trim();
+    const despachoCard = document.getElementById('despacho-copy-card');
+    const despachoRequestedChk = despachoCard?.querySelector('#check-despacho-solicitado');
+    const despachoAmountInp = despachoCard?.querySelector('#input-despacho-amount');
+    const despachoPaidSel = despachoCard?.querySelector('#select-despacho-paid');
+    const despachoBankPmts = window.currentClientDespachoPayments || [];
+    const despachoBankSum = despachoBankPmts.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+    const hasExistingDespachoCols = findWarehouseCol(state.confirm.columns || [], ['COPIA DESPACHO', 'COPIA DE DESPACHO', 'DESPACHO COPY', 'COPIA_DESPACHO']) !== -1;
+    const isDespachoRequestedNow = Boolean(despachoRequestedChk?.checked) || despachoBankSum > 0;
 
-    const findCol = (targets) => {
-        const cleanedTargets = targets.map(cleanString);
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c) === target);
-            if (idx !== -1) return idx;
-        }
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c).includes(target));
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    };
+    // Garantir colunas opcionais & STORAGE VALUE ANTES de resolver índices finais
+    if (notaContactoVal) await ensureContactNoteColumn();
+    if (viaturaVal) await ensureViaturaColumn();
+    if (motivoIsencaoVal) await ensureMotivoIsencaoColumn();
+    await ensureStorageValueColumn();
+    if (isDespachoRequestedNow || hasExistingDespachoCols) await ensureDespachoCopyColumns();
+
+    const columns = state.confirm.columns || [];
+    const findCol = (targets, opts) => findWarehouseCol(columns, targets, opts);
 
     const packagesIdx = findCol(['PACKAGES']);
     const dischargeIdx = findCol(['DISCHARGE']);
@@ -13225,29 +13896,30 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliverDateIdx = findCol(['DELIVER DATE']);
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
-    let motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
+    const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
     const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
+    const storageValueIdx = findCol(['STORAGE VALUE', 'VALOR ARMAZENAGEM', 'ARMAZENAGEM VALOR', 'STORAGE_VALUE']);
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
-    let contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
-    if (contactNoteIdx === -1 && notaContactoVal) {
-        contactNoteIdx = await ensureContactNoteColumn();
-    }
-    let viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
-    if (viaturaIdx === -1 && viaturaVal) {
-        viaturaIdx = await ensureViaturaColumn();
-    }
-    if (motivoIsencaoIdx === -1 && motivoIsencaoVal) {
-        motivoIsencaoIdx = await ensureMotivoIsencaoColumn();
-    }
+    const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
+    const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
+    const despachoStatusIdx = findCol(['COPIA DESPACHO', 'COPIA DE DESPACHO', 'DESPACHO COPY', 'COPIA_DESPACHO']);
+    const despachoValueIdx = findCol(['COPIA DESPACHO VALOR', 'VALOR COPIA DESPACHO', 'COPIA DESPACHO VALUE', 'DESPACHO VALUE', 'DESPACHO VALOR']);
+    const defaultDespachoPrice = getDespachoCopyDefaultPrice();
+    const enteredDespachoAmount = (despachoAmountInp && despachoAmountInp.value !== '')
+        ? Math.max(0, parseFloat(despachoAmountInp.value) || 0)
+        : defaultDespachoPrice;
+    const despachoFormatted = formatFeeSheetStatus({
+        isRequested: isDespachoRequestedNow,
+        targetCost: isDespachoRequestedNow ? enteredDespachoAmount : 0,
+        standardCost: defaultDespachoPrice,
+        bankPaidAmount: despachoBankSum,
+        manualStatus: despachoPaidSel ? despachoPaidSel.value : 'NAO',
+        zeroCostPendingLabel: 'PENDENTE',
+        preferAmountOnPaid: true
+    });
 
     if (dischargeIdx === -1 || deliverIdx === -1 || deliverDateIdx === -1 || deliverToIdx === -1 || contactoIdx === -1 || storagePaidIdx === -1 || deliveredIdx === -1) {
         toast('Erro: Colunas de Armazém não encontradas.', 'error');
-        return;
-    }
-
-    const client = window.currentActiveClient;
-    if (!client) {
-        toast('Erro: Cliente ativo não encontrado.', 'error');
         return;
     }
 
@@ -13255,6 +13927,54 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const firstRowData = state.confirm?.data?.[firstRowIndex] || [];
     const deliveredInput = container.querySelector('input[name="delivered"]');
     const deliveredVal = deliveredInput ? deliveredInput.value.trim().toUpperCase() : (deliveredIdx !== -1 && firstRowData[deliveredIdx] ? String(firstRowData[deliveredIdx]).trim().toUpperCase() : 'NAO');
+    const isDeliveredNow = deliveredVal === 'SIM' || deliveredVal === 'ENTREGUE' || deliveredVal === 'YES';
+
+    const storagePayments = window.currentClientStoragePayments || [];
+    const bankPaidAmount = storagePayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+    const liveCalc = calculateClientStorage({
+        rows: client.rows,
+        columns,
+        dischargeDateStr: state.confirm?.dischargeDate || '',
+        bankPayments: storagePayments,
+        overrides: {
+            isDelivered: isDeliveredNow,
+            deliverDateVal: deliverDateValRaw
+        }
+    });
+
+    const storagePayAmountInput = container.querySelector('#input-storage-pay-amount');
+    const standardCost = storagePayAmountInput
+        ? (parseFloat(storagePayAmountInput.getAttribute('data-standard-cost')) || liveCalc.standardCost)
+        : liveCalc.standardCost;
+    const enteredAmount = (storagePayAmountInput && storagePayAmountInput.value !== '')
+        ? (parseFloat(storagePayAmountInput.value) || 0)
+        : standardCost;
+
+    let storagePaidVal = 'NAO';
+    let storageValueVal = 0;
+
+    if (isIsencaoChecked) {
+        storagePaidVal = 'ISENTO';
+        storageValueVal = 0;
+    } else if (standardCost === 0 && enteredAmount === 0) {
+        storagePaidVal = isDeliveredNow ? 'LIVRE' : 'NAO';
+        storageValueVal = 0;
+    } else {
+        storageValueVal = enteredAmount;
+        const paidStatus = storagePaidInput ? storagePaidInput.value.trim().toUpperCase() : 'NAO';
+        const isPaid = paidStatus === 'SIM' || (bankPaidAmount >= enteredAmount - 0.05 && enteredAmount > 0);
+        const isNegotiated = Math.abs(enteredAmount - standardCost) > 1;
+
+        if (bankPaidAmount > 0 && bankPaidAmount < enteredAmount - 0.05 && paidStatus !== 'SIM') {
+            storagePaidVal = isNegotiated
+                ? `PARCIAL (${bankPaidAmount} / ${enteredAmount} MT)`
+                : `PARCIAL (${bankPaidAmount} MT)`;
+        } else if (isNegotiated) {
+            storagePaidVal = isPaid ? `PAGO (${enteredAmount} MT)` : `PENDENTE (${enteredAmount} MT)`;
+        } else {
+            storagePaidVal = isPaid ? 'SIM' : 'NAO';
+        }
+    }
 
     const totalDischargeInput = dischargeVal !== '' ? parseFloat(dischargeVal) : null;
     const totalDeliverInput = deliverVal !== '' ? parseFloat(deliverVal) : null;
@@ -13338,9 +14058,23 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             rowData[storagePaidIdx] = storagePaidVal;
             batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(storagePaidIdx)}${rowNum}`), values: [[storagePaidVal]] });
         }
+        if (storageValueIdx !== -1) {
+            const svCellVal = idx === 0 ? storageValueVal : '';
+            rowData[storageValueIdx] = svCellVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(storageValueIdx)}${rowNum}`), values: [[svCellVal]] });
+        }
         if (deliveredIdx !== -1) {
             rowData[deliveredIdx] = deliveredVal;
             batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(deliveredIdx)}${rowNum}`), values: [[deliveredVal]] });
+        }
+        if (despachoStatusIdx !== -1 && (isDespachoRequestedNow || hasExistingDespachoCols)) {
+            rowData[despachoStatusIdx] = despachoFormatted.statusCellVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(despachoStatusIdx)}${rowNum}`), values: [[despachoFormatted.statusCellVal]] });
+        }
+        if (despachoValueIdx !== -1 && (isDespachoRequestedNow || hasExistingDespachoCols)) {
+            const dvCellVal = idx === 0 ? despachoFormatted.valueCellVal : '';
+            rowData[despachoValueIdx] = dvCellVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(despachoValueIdx)}${rowNum}`), values: [[dvCellVal]] });
         }
 
         updatedClientRows.push({ rowIndex, rowData });
@@ -13378,6 +14112,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             viatura: viaturaVal,
             notaContacto: notaContactoVal,
             armazenagemPago: storagePaidVal,
+            valorArmazenagem: storageValueVal,
             isencao: motivoIsencaoVal,
             statusEntrega: deliveredVal
         }).catch(err => console.warn('[Audit] Erro ao registar auditoria de armazém:', err));
@@ -13406,6 +14141,11 @@ export async function confirmDelivery(originalIndex, buttonEl) {
     const deliverToInput = container.querySelector('input[name="deliverTo"]');
     const contactoInput = container.querySelector('input[name="contacto"]');
 
+    const todayStr = formatLocalYMD(new Date());
+    if (deliverDateInput && (!deliverDateInput.value.trim() || (deliverDateInput.dataset.userEdited !== 'true' && deliverDateInput.value.trim() < todayStr))) {
+        deliverDateInput.value = todayStr;
+    }
+
     const deliverVal = deliverInput ? deliverInput.value.trim() : '';
     const deliverDateVal = deliverDateInput ? deliverDateInput.value.trim() : '';
     const deliverToVal = deliverToInput ? deliverToInput.value.trim() : '';
@@ -13428,19 +14168,52 @@ export async function confirmDelivery(originalIndex, buttonEl) {
         return;
     }
 
-    // Verificar se há armazenagem pendente antes de confirmar entrega
+    // Recalcular custo final exato na data de entrega antes de congelar
+    const client = window.currentActiveClient;
+    const storagePayments = window.currentClientStoragePayments || [];
+    const bankPaidAmount = storagePayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+    const deliveryCalc = client ? calculateClientStorage({
+        rows: client.rows,
+        columns: state.confirm?.columns || [],
+        dischargeDateStr: state.confirm?.dischargeDate || '',
+        bankPayments: storagePayments,
+        overrides: { isDelivered: true, deliverDateVal }
+    }) : null;
+
     const isExemptCheck = container.querySelector('#check-has-isencao')?.checked;
     const storagePaidSelectCheck = container.querySelector('select[name="storagePaid"]');
-    const isStoragePaidCheck = storagePaidSelectCheck && storagePaidSelectCheck.value === 'SIM';
     const storagePayAmountInputCheck = container.querySelector('#input-storage-pay-amount');
-    const storageAmountCheck = storagePayAmountInputCheck ? (parseFloat(storagePayAmountInputCheck.value) || 0) : 0;
+    if (storagePayAmountInputCheck && deliveryCalc) {
+        storagePayAmountInputCheck.setAttribute('data-standard-cost', String(deliveryCalc.standardCost));
+        if (storagePayAmountInputCheck.dataset.userEdited !== 'true' && !isExemptCheck) {
+            storagePayAmountInputCheck.value = String(deliveryCalc.standardCost);
+        }
+    }
+
+    const storageAmountCheck = isExemptCheck
+        ? 0
+        : (storagePayAmountInputCheck && storagePayAmountInputCheck.value !== ''
+            ? (parseFloat(storagePayAmountInputCheck.value) || 0)
+            : (deliveryCalc?.standardCost || 0));
+    const remainingAtDelivery = Math.max(0, storageAmountCheck - bankPaidAmount);
+    const isStoragePaidCheck = isExemptCheck
+        || storageAmountCheck === 0
+        || (storagePaidSelectCheck && storagePaidSelectCheck.value === 'SIM')
+        || (bankPaidAmount >= storageAmountCheck - 0.05 && storageAmountCheck > 0);
     
-    if (storageAmountCheck > 0 && !isStoragePaidCheck && !isExemptCheck) {
-        toast(`Erro: Armazenagem de ${formatMZN(storageAmountCheck)} pendente. Registar pagamento de armazenagem antes de confirmar a entrega.`, 'error');
+    if (storageAmountCheck > 0 && !isStoragePaidCheck) {
+        toast(`Erro: Armazenagem de ${formatMZN(remainingAtDelivery > 0 ? remainingAtDelivery : storageAmountCheck)} pendente. Registar ou vincular pagamento de armazenagem antes de confirmar a entrega.`, 'error');
         return;
     }
 
-    if (!confirm('Deseja confirmar a entrega da carga? Esta ação irá bloquear futuras edições.')) {
+    const storageConfirmNote = (!isExemptCheck && storageAmountCheck > 0)
+        ? `\nArmazenagem final congelada: ${formatMZN(storageAmountCheck)}`
+        : '';
+    const dInfo = window.currentClientDespachoInfo;
+    const despachoWarnNote = (dInfo && dInfo.isRequested && !dInfo.isPaid && dInfo.cost > 0)
+        ? `\n⚠️ Aviso: Cópia de Despacho solicitada ainda tem saldo pendente de ${formatMZN(dInfo.remainingBalance)}.`
+        : '';
+    if (!confirm(`Deseja confirmar a entrega da carga na data ${formatDateDisplay(deliverDateVal)}?${storageConfirmNote}${despachoWarnNote}\nEsta ação irá parar a contagem de dias e bloquear futuras edições.`)) {
         return;
     }
 
@@ -13520,25 +14293,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const clientNo = client.no || '—';
 
     const columns = state.confirm.columns || [];
-    const cleanString = (str) => String(str || '')
-        .toUpperCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^A-Z0-9]/g, "")
-        .trim();
-
-    const findCol = (targets) => {
-        const cleanedTargets = targets.map(cleanString);
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c) === target);
-            if (idx !== -1) return idx;
-        }
-        for (const target of cleanedTargets) {
-            const idx = columns.findIndex(c => cleanString(c).includes(target));
-            if (idx !== -1) return idx;
-        }
-        return -1;
-    };
+    const findCol = (targets, opts) => findWarehouseCol(columns, targets, opts);
 
     const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
     const packagesIdx = findCol(['PACKAGES']);
@@ -13547,13 +14302,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const deliverDateIdx = findCol(['DELIVER DATE']);
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
-    const storagePaidIdx = findCol(['STORAGE PAID', 'ARMAZENAGEM PAGO', 'STORAGE_PAID']);
-    const dutyIdx = findCol(['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
-    const dutyPrepaidIdx = findCol(['DUTY PREPAID', 'PREPAID']);
-    const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
-    const pag1Idx = findCol(['PAG 1', 'PAG1']);
-    const pag2Idx = findCol(['PAG 2', 'PAG2']);
-    const pag3Idx = findCol(['PAG 3', 'PAG3']);
+    const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
     const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
     const descIdx = findCol(['DESCRIPTION', 'DESCRICAO', 'DESCRICÃO', 'DESC', 'MERCADORIA', 'CARGO', 'PRODUTO', 'ARTIGO', 'CONTEUDO', 'NATUREZA', 'GOODS', 'ITEM']);
 
@@ -13643,72 +14392,38 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
 
     const totalCarga = totalDischarged > 0 ? totalDischarged : totalOriginal;
 
-    const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
-
-    // --- CÁLCULO DE ARMAZENAGEM PARA IMPRESSÃO ---
+    // --- CÁLCULO UNIFICADO DE ARMAZENAGEM PARA IMPRESSÃO ---
     const dischargeDateStr = state.confirm?.dischargeDate || '';
     const dDate = parseDate(dischargeDateStr);
     const dischargeDateDisplay = dDate 
         ? dDate.toLocaleDateString('pt-PT') 
         : (dischargeDateStr && dischargeDateStr !== '—' && dischargeDateStr !== 'Invalid Date' ? dischargeDateStr : '—');
-    
-    let totalDuty = 0;
-    let totalPrepaid = 0;
-    let totalBalance = 0;
-    let hasPaymentAfterDischarge = false;
 
-    client.rows.forEach(r => {
-        const rowData = r.originalRow;
-        const dVal = dutyIdx !== -1 ? parseFloat(String(rowData[dutyIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-        const pVal = dutyPrepaidIdx !== -1 ? parseFloat(String(rowData[dutyPrepaidIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-        const bVal = balanceIdx !== -1 ? parseFloat(String(rowData[balanceIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0 : 0;
-        
-        totalDuty += dVal;
-        totalPrepaid += pVal;
-        totalBalance += bVal;
-        
-        const pagIndices = [pag1Idx, pag2Idx, pag3Idx].filter(idx => idx !== -1);
-        pagIndices.forEach(idx => {
-            const dateStr = rowData[idx];
-            if (dateStr && String(dateStr).trim() !== '' && String(dateStr).trim() !== '—') {
-                const pDate = parseDate(dateStr);
-                if (pDate && dDate && pDate.getTime() > dDate.getTime()) {
-                    hasPaymentAfterDischarge = true;
-                }
-            }
-        });
+    const deliveredFlagRaw = deliveredIdx !== -1 ? String(firstRowData[deliveredIdx] || '').trim().toUpperCase() : 'NAO';
+    const isDeliveredPrint = (deliveredFlagRaw === 'SIM' || deliveredFlagRaw === 'ENTREGUE' || deliveredFlagRaw === 'YES');
+    const storageCalcPrint = calculateClientStorage({
+        rows: client.rows,
+        columns,
+        dischargeDateStr,
+        bankPayments: window.currentClientStoragePayments || [],
+        overrides: {
+            isDelivered: isDeliveredPrint,
+            deliverDateVal: deliveryDate
+        }
     });
 
-    const isFullyPaid = (totalBalance <= 1.0);
-    const isAnticipated = (totalPrepaid >= totalDuty) || (isFullyPaid && !hasPaymentAfterDischarge);
-
-    const targetEndDate = parseDate(deliveryDate || new Date().toISOString().split('T')[0]);
-    let daysDiff = 0;
-    if (dDate && targetEndDate) {
-        const timeDiff = targetEndDate.getTime() - dDate.getTime();
-        daysDiff = Math.max(0, Math.floor(timeDiff / (1000 * 60 * 60 * 24)));
-    }
-
-    let standardStorageCost = 0;
-    if (dischargeDateStr) {
-        if (isAnticipated) {
-            standardStorageCost = daysDiff <= 3 ? 0 : (daysDiff - 3) * 1000;
-        } else {
-            standardStorageCost = daysDiff <= 3 ? daysDiff * 500 : 1500 + (daysDiff - 3) * 1000;
-        }
-    }
-
-    const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
-    const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? String(firstRowData[motivoIsencaoIdx] || '').trim() : '';
-
-    const storageInfo = parseStorageInfo(storagePaidVal, standardStorageCost, motivoIsencaoVal);
+    const isAnticipated = storageCalcPrint.isAnticipated;
+    const daysDiff = storageCalcPrint.daysDiff;
+    const storageInfo = storageCalcPrint.storageInfo;
     const storageCost = storageInfo.cost;
     const isStoragePaid = storageInfo.isPaid;
     let textStoragePaid = 'PENDENTE';
     if (storageInfo.isExempt) {
         textStoragePaid = 'ISENTO (0,00 MZN)';
     } else if (storageInfo.isNegotiated) {
-        textStoragePaid = isStoragePaid ? 'LIVRE / PAGO (NEGOCIADO)' : 'PENDENTE (NEGOCIADO)';
+        textStoragePaid = isStoragePaid ? 'LIVRE / PAGO (NEGOCIADO)' : (storageInfo.isPartial ? 'PARCIAL (NEGOCIADO)' : 'PENDENTE (NEGOCIADO)');
+    } else if (storageInfo.isPartial) {
+        textStoragePaid = `PARCIAL (PAGO ${formatMZN(storageInfo.paidAmount)})`;
     } else {
         textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
     }
