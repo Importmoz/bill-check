@@ -3,7 +3,7 @@
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
 import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, unallocatePayment, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, insertGSheetColumn, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByAllocatedPrefix, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
-import { cleanHeaderString, findWarehouseCol, formatLocalYMD, parseWarehouseDate, formatFeeSheetStatus, parseStorageInfo, calculateClientStorage, parseDespachoCopyInfo, calculateClientDespachoCopy } from './warehouseStorage.js';
+import { cleanHeaderString, findWarehouseCol, formatLocalYMD, parseWarehouseDate, hasValidDischargeDate, formatFeeSheetStatus, parseStorageInfo, calculateClientStorage, parseDespachoCopyInfo, calculateClientDespachoCopy } from './warehouseStorage.js?v=20261112_01';
 
 const DESPACHO_DEFAULT_PRICE_KEY = 'despacho_copy_default_price';
 
@@ -12254,9 +12254,28 @@ function openFeeBankReconciliation(feeKey, { client, standardCost, agreedCost, e
 }
 
 /**
+ * Verifica se a data de descarga do projeto ativo está definida.
+ * @returns {boolean}
+ */
+export function hasProjectDischargeDate() {
+    return hasValidDischargeDate(state.confirm?.dischargeDate);
+}
+
+/**
+ * Bloqueia preenchimento/gravação na aba de Armazém enquanto a data de descarga não estiver definida.
+ * @returns {boolean}
+ */
+function requireProjectDischargeDate() {
+    if (hasProjectDischargeDate()) return true;
+    toast('Defina a Data de Descarga do projeto antes de preencher qualquer campo na aba de Armazém.', 'warning');
+    return false;
+}
+
+/**
  * Abre a reconciliação bancária dedicada para vincular o valor de armazenagem a um movimento bancário.
  */
 export function vincularPagamentoArmazem() {
+    if (!requireProjectDischargeDate()) return;
     if (!window.currentActiveClient) {
         toast('Nenhum cliente selecionado.', 'warning');
         return;
@@ -12301,6 +12320,7 @@ export function updateDespachoCardCalculations() {
     const card = document.getElementById('despacho-copy-card');
     if (!card) return;
 
+    const hasDischargeDate = hasProjectDischargeDate();
     const client = window.currentActiveClient;
     const chk = card.querySelector('#check-despacho-solicitado');
     const amountInput = card.querySelector('#input-despacho-amount');
@@ -12309,6 +12329,8 @@ export function updateDespachoCardCalculations() {
     const statusBadge = card.querySelector('#despacho-status-badge');
     const remainingEl = card.querySelector('#despacho-remaining-label');
     const vincularBtn = card.querySelector('#btn-despacho-vincular-banco');
+    const guardarBtn = card.querySelector('#btn-despacho-guardar');
+    const configBtn = card.querySelector('#btn-despacho-config-toggle');
 
     const defaultPrice = getDespachoCopyDefaultPrice();
     const despachoPmts = window.currentClientDespachoPayments || [];
@@ -12320,11 +12342,14 @@ export function updateDespachoCardCalculations() {
     }
 
     const isRequested = Boolean(chk?.checked);
-    if (fieldsWrap) fieldsWrap.classList.toggle('opacity-50', !isRequested);
-    if (amountInput) amountInput.disabled = !isRequested;
-    if (statusSelect) statusSelect.disabled = !isRequested;
+    if (chk) chk.disabled = !hasDischargeDate;
+    if (fieldsWrap) fieldsWrap.classList.toggle('opacity-50', !hasDischargeDate || !isRequested);
+    if (amountInput) amountInput.disabled = !hasDischargeDate || !isRequested;
+    if (statusSelect) statusSelect.disabled = !hasDischargeDate || !isRequested;
+    if (guardarBtn) guardarBtn.disabled = !hasDischargeDate;
+    if (configBtn) configBtn.disabled = !hasDischargeDate;
 
-    if (isRequested && amountInput && (amountInput.value === '' || parseFloat(amountInput.value) === 0) && amountInput.dataset.userEdited !== 'true') {
+    if (hasDischargeDate && isRequested && amountInput && (amountInput.value === '' || parseFloat(amountInput.value) === 0) && amountInput.dataset.userEdited !== 'true') {
         amountInput.value = String(defaultPrice);
     }
 
@@ -12370,19 +12395,21 @@ export function updateDespachoCardCalculations() {
     }
 
     if (vincularBtn) {
-        const showBtn = calc.cost > 0 && (!calc.isPaid || calc.remainingBalance > 0.05) && isRequested;
+        const showBtn = hasDischargeDate && calc.cost > 0 && (!calc.isPaid || calc.remainingBalance > 0.05) && isRequested;
         vincularBtn.classList.toggle('hidden', !showBtn);
     }
 }
 window.updateDespachoCardCalculations = updateDespachoCardCalculations;
 
 export function toggleDespachoConfigRow() {
+    if (!requireProjectDischargeDate()) return;
     const row = document.getElementById('despacho-default-config-row');
     if (row) row.classList.toggle('hidden');
 }
 window.toggleDespachoConfigRow = toggleDespachoConfigRow;
 
 export function applyDespachoDefaultPrice() {
+    if (!requireProjectDischargeDate()) return;
     const inp = document.getElementById('input-despacho-default-price');
     const badge = document.getElementById('despacho-default-price-label');
     if (!inp) return;
@@ -12401,6 +12428,7 @@ export function applyDespachoDefaultPrice() {
 window.applyDespachoDefaultPrice = applyDespachoDefaultPrice;
 
 export function vincularPagamentoDespacho() {
+    if (!requireProjectDischargeDate()) return;
     if (!window.currentActiveClient) {
         toast('Nenhum cliente selecionado.', 'warning');
         return;
@@ -12434,6 +12462,7 @@ export function vincularPagamentoDespacho() {
 window.vincularPagamentoDespacho = vincularPagamentoDespacho;
 
 export async function saveDespachoCopy(buttonEl) {
+    if (!requireProjectDischargeDate()) return;
     const client = window.currentActiveClient;
     if (!client || !client.rows || client.rows.length === 0) {
         toast('Nenhum cliente selecionado.', 'warning');
@@ -12596,6 +12625,7 @@ window.updateArmazemSaldo = function() {
 
 
 export function fillSameClientData() {
+    if (!requireProjectDischargeDate()) return;
     const client = window.currentActiveClient;
     if (!client) {
         toast('Nenhum cliente ativo selecionado.', 'warning');
@@ -12642,6 +12672,10 @@ export function fillSameClientData() {
 window.fillSameClientData = fillSameClientData;
 
 export function toggleViaturaField(checkbox) {
+    if (!requireProjectDischargeDate()) {
+        if (checkbox) checkbox.checked = !checkbox.checked;
+        return;
+    }
     const container = checkbox.closest('.col-span-1') || checkbox.closest('.col-span-3') || checkbox.parentElement?.parentElement || document;
     const inputContainer = container.querySelector('#viatura-input-container');
     const hint = container.querySelector('#viatura-badge-hint');
@@ -12665,6 +12699,10 @@ export function toggleViaturaField(checkbox) {
 window.toggleViaturaField = toggleViaturaField;
 
 export function toggleIsencao(checkbox) {
+    if (!requireProjectDischargeDate()) {
+        if (checkbox) checkbox.checked = !checkbox.checked;
+        return;
+    }
     const container = document.getElementById('armazem-form-container') || document;
     const isencaoFields = container.querySelector('#isencao-fields-container');
     const isencaoHint = container.querySelector('#isencao-active-hint');
@@ -12700,6 +12738,7 @@ export function toggleIsencao(checkbox) {
 window.toggleIsencao = toggleIsencao;
 
 export function handleIsencaoChange(selectEl) {
+    if (!requireProjectDischargeDate()) return;
     const container = document.getElementById('armazem-form-container') || document;
     const motivoInput = container.querySelector('input[name="motivoIsencao"]');
     if (!motivoInput) return;
@@ -12716,6 +12755,7 @@ export function handleIsencaoChange(selectEl) {
 window.handleIsencaoChange = handleIsencaoChange;
 
 export function resetStorageAmount() {
+    if (!requireProjectDischargeDate()) return;
     const container = document.getElementById('armazem-form-container') || document;
     const input = container.querySelector('#input-storage-pay-amount');
     if (input) {
@@ -12776,6 +12816,17 @@ export function updateArmazemCalculations() {
 
     if (storagePayAmountInput) {
         storagePayAmountInput.setAttribute('data-standard-cost', String(standardCost));
+    }
+
+    // Sem data de descarga definida: manter todos os controlos do Armazém bloqueados
+    if (!hasProjectDischargeDate()) {
+        container.querySelectorAll('input, select, button').forEach(el => {
+            if (!el.hasAttribute('data-allow-without-discharge')) {
+                el.disabled = true;
+            }
+        });
+        if (storagePaymentSection) storagePaymentSection.classList.add('opacity-50', 'pointer-events-none');
+        return;
     }
 
     // 3. Verificar se há Isenção ativa
@@ -13057,6 +13108,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
 
         // --- CÁLCULO UNIFICADO DE CUSTO DE ARMAZENAGEM ---
         const dischargeDateStr = state.confirm?.dischargeDate || '';
+        const hasDischargeDate = hasValidDischargeDate(dischargeDateStr);
         const effectiveStoragePmts = Array.isArray(storagePayments)
             ? storagePayments
             : (window.currentClientStoragePayments || []);
@@ -13128,10 +13180,11 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             }
 
             const inputAmtVal = despachoCalc.isRequested ? despachoCalc.cost : defaultDespachoPrice;
-            const showVincularDespacho = despachoCalc.isRequested && despachoCalc.cost > 0 && (!despachoCalc.isPaid || despachoCalc.remainingBalance > 0.05);
+            const showVincularDespacho = hasDischargeDate && despachoCalc.isRequested && despachoCalc.cost > 0 && (!despachoCalc.isPaid || despachoCalc.remainingBalance > 0.05);
+            const despachoControlsDisabled = !hasDischargeDate || !despachoCalc.isRequested;
 
             return `
-                <div id="despacho-copy-card" class="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3.5 mt-4">
+                <div id="despacho-copy-card" class="${!hasDischargeDate ? 'bg-slate-50/70 opacity-75' : 'bg-white'} border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3.5 mt-4">
                     <div class="flex items-center justify-between flex-wrap gap-2.5 border-b border-slate-100 pb-3">
                         <div class="flex items-center gap-2.5 flex-wrap">
                             <span class="p-1.5 rounded-xl bg-teal-50 text-teal-700 border border-teal-200/80">
@@ -13143,9 +13196,11 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             </div>
                         </div>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <button type="button" onclick="ui.toggleDespachoConfigRow()"
-                                class="text-[9px] font-bold uppercase px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 cursor-pointer transition-all inline-flex items-center gap-1"
-                                title="Alterar o valor padrão pré-definido da Cópia de Despacho">
+                            ${!hasDischargeDate ? '<span class="text-[9px] font-black uppercase px-2.5 py-0.5 rounded-lg border bg-amber-50 text-amber-800 border-amber-200">🔒 Requer Data de Descarga</span>' : ''}
+                            <button type="button" id="btn-despacho-config-toggle" onclick="ui.toggleDespachoConfigRow()"
+                                ${!hasDischargeDate ? 'disabled' : ''}
+                                class="text-[9px] font-bold uppercase px-2.5 py-1 rounded-lg border border-slate-200 transition-all inline-flex items-center gap-1 ${!hasDischargeDate ? 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-60' : 'bg-slate-50 hover:bg-slate-100 text-slate-600 cursor-pointer'}"
+                                title="${!hasDischargeDate ? 'Defina a Data de Descarga primeiro' : 'Alterar o valor padrão pré-definido da Cópia de Despacho'}">
                                 <span>Valor padrão: <strong id="despacho-default-price-label" class="text-slate-800">${formatMZN(defaultDespachoPrice)}</strong></span>
                                 <span>⚙️</span>
                             </button>
@@ -13159,11 +13214,13 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         <div class="flex items-center gap-2">
                             <span class="text-[10px] font-black uppercase text-slate-600">Valor Pré-definido (MZN):</span>
                             <input type="number" id="input-despacho-default-price" value="${defaultDespachoPrice}" min="0" step="50"
-                                class="w-28 text-center py-1.5 px-2 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-teal-500">
+                                ${!hasDischargeDate ? 'disabled' : ''}
+                                class="w-28 text-center py-1.5 px-2 bg-white border border-slate-300 rounded-xl text-xs font-black text-slate-800 outline-none focus:border-teal-500 disabled:bg-slate-100 disabled:text-slate-400">
                         </div>
                         <div class="flex items-center gap-1.5">
-                            <button type="button" onclick="ui.applyDespachoDefaultPrice()"
-                                class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[9px] font-black uppercase cursor-pointer transition-all">
+                            <button type="button" id="btn-despacho-apply-default" onclick="ui.applyDespachoDefaultPrice()"
+                                ${!hasDischargeDate ? 'disabled' : ''}
+                                class="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-xl text-[9px] font-black uppercase cursor-pointer transition-all">
                                 Aplicar Padrão
                             </button>
                             <button type="button" onclick="ui.toggleDespachoConfigRow()"
@@ -13175,28 +13232,29 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
 
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
                         <div class="col-span-1 md:col-span-4">
-                            <label class="inline-flex items-center gap-2 px-3 py-2 bg-slate-50 hover:bg-teal-50/40 border border-slate-200 rounded-xl cursor-pointer transition-all w-full">
+                            <label class="inline-flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl transition-all w-full ${!hasDischargeDate ? 'cursor-not-allowed opacity-60' : 'hover:bg-teal-50/40 cursor-pointer'}">
                                 <input type="checkbox" id="check-despacho-solicitado" ${despachoCalc.isRequested ? 'checked' : ''}
+                                    ${!hasDischargeDate ? 'disabled' : ''}
                                     onchange="ui.updateDespachoCardCalculations()"
-                                    class="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer">
+                                    class="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 ${!hasDischargeDate ? 'cursor-not-allowed' : 'cursor-pointer'}">
                                 <span class="text-[10.5px] font-black uppercase text-slate-700">Cliente solicitou cópia</span>
                             </label>
                         </div>
 
-                        <div id="despacho-fields-wrap" class="col-span-1 md:col-span-5 flex items-center gap-2 ${despachoCalc.isRequested ? '' : 'opacity-50'}">
+                        <div id="despacho-fields-wrap" class="col-span-1 md:col-span-5 flex items-center gap-2 ${despachoControlsDisabled ? 'opacity-50' : ''}">
                             <div class="flex-1 min-w-[95px]">
                                 <label class="block text-[8.5px] font-black uppercase text-slate-400 mb-1">Valor (MZN)</label>
                                 <input type="number" id="input-despacho-amount" value="${inputAmtVal}" min="0" step="50"
                                     data-user-edited="${despachoCalc.isCustomAmount ? 'true' : 'false'}"
                                     oninput="this.dataset.userEdited='true'; ui.updateDespachoCardCalculations()"
-                                    ${!despachoCalc.isRequested ? 'disabled' : ''}
-                                    class="w-full text-center py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:border-teal-500 outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400">
+                                    ${despachoControlsDisabled ? 'disabled' : ''}
+                                    class="w-full text-center py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-xs font-black text-slate-800 focus:border-teal-500 outline-none transition-all disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed">
                             </div>
                             <div class="w-[120px] shrink-0">
                                 <label class="block text-[8.5px] font-black uppercase text-slate-400 mb-1">Estado</label>
                                 <select id="select-despacho-paid" onchange="ui.updateDespachoCardCalculations()"
-                                    ${!despachoCalc.isRequested ? 'disabled' : ''}
-                                    class="w-full text-center py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold focus:border-teal-500 outline-none transition-all ${despachoCalc.isPaid ? 'text-emerald-700 bg-emerald-50' : (despachoCalc.isPartial ? 'text-amber-800 bg-amber-50' : 'text-slate-700')} disabled:bg-slate-100 disabled:text-slate-400">
+                                    ${despachoControlsDisabled ? 'disabled' : ''}
+                                    class="w-full text-center py-1.5 px-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold focus:border-teal-500 outline-none transition-all ${despachoCalc.isPaid ? 'text-emerald-700 bg-emerald-50' : (despachoCalc.isPartial ? 'text-amber-800 bg-amber-50' : 'text-slate-700')} disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed">
                                     <option value="NAO" ${(!despachoCalc.isPaid && !despachoCalc.isPartial) ? 'selected' : ''}>❌ PENDENTE</option>
                                     <option value="PARCIAL" ${despachoCalc.isPartial ? 'selected' : ''}>⏳ PARCIAL</option>
                                     <option value="SIM" ${despachoCalc.isPaid ? 'selected' : ''}>✅ PAGO</option>
@@ -13208,9 +13266,10 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         </div>
 
                         <div class="col-span-1 md:col-span-3 flex items-center justify-end gap-1.5 flex-wrap">
-                            <button type="button" onclick="ui.saveDespachoCopy(this)"
-                                class="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1 h-[34px]"
-                                title="Gravar estado e valor da Cópia de Despacho na planilha">
+                            <button type="button" id="btn-despacho-guardar" onclick="ui.saveDespachoCopy(this)"
+                                ${!hasDischargeDate ? 'disabled' : ''}
+                                class="px-3 py-2 rounded-xl text-[9.5px] font-black uppercase tracking-wider transition-all shadow-xs flex items-center gap-1 h-[34px] ${!hasDischargeDate ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-slate-800 hover:bg-slate-900 text-white active:scale-95 cursor-pointer'}"
+                                title="${!hasDischargeDate ? 'Defina a Data de Descarga primeiro' : 'Gravar estado e valor da Cópia de Despacho na planilha'}">
                                 <span>Guardar</span>
                             </button>
                             <button type="button" id="btn-despacho-vincular-banco" onclick="ui.vincularPagamentoDespacho()"
@@ -13244,7 +13303,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                                      String(contactoVal).trim() !== '—';
 
         const canEmitGuia = allowDelivery && !isStorageBlocked;
-        const isEditable = !isDelivered;
+        const isEditable = !isDelivered && hasDischargeDate;
 
         const formatDateForDisplay = (dateStr) => {
             if (!dateStr) return '';
@@ -13252,9 +13311,22 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             return p ? p.toLocaleDateString('pt-PT') : dateStr;
         };
 
+        const dischargeMissingBannerHtml = !hasDischargeDate ? `
+            <div class="bg-amber-50 border border-amber-200 text-amber-900 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-amber-500">
+                <div class="p-2 bg-amber-100 rounded-xl text-amber-600 flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                </div>
+                <div>
+                    <h4 class="font-black text-xs uppercase tracking-wider text-amber-900">Data de Descarga Não Definida 🔒</h4>
+                    <p class="text-[11px] text-amber-800 font-semibold mt-1">Os campos da aba de Armazém permanecem bloqueados até que a <strong>Data de Descarga</strong> seja definida na disponibilização da carga.</p>
+                </div>
+            </div>
+        ` : '';
+
         let bannerHtml = '';
         if (isDelivered) {
             bannerHtml = `
+                ${dischargeMissingBannerHtml ? `<div class="mb-3">${dischargeMissingBannerHtml}</div>` : ''}
                 <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 p-4 rounded-3xl flex items-start gap-3 border-l-4 border-l-emerald-500">
                     <div class="p-2 bg-emerald-100 rounded-xl text-emerald-600 flex-shrink-0">
                         <svg class="w-5 h-5 text-emerald-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -13265,6 +13337,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
                 </div>
             `;
+        } else if (!hasDischargeDate && allowDelivery) {
+            bannerHtml = dischargeMissingBannerHtml;
         } else if (allowDelivery) {
             if (isExtraordinaria) {
                 const motivoExtraMatch = String(motivoIsencaoVal).match(/\[EXTRAORDINÁRIA\](.*)/);
@@ -13319,6 +13393,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             }
         } else {
             bannerHtml = `
+                ${dischargeMissingBannerHtml ? `<div class="mb-3">${dischargeMissingBannerHtml}</div>` : ''}
                 <div class="bg-red-50 border border-red-200 text-red-800 p-4 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-l-4 border-l-red-500">
                     <div class="flex items-start gap-3">
                         <div class="p-2 bg-red-100 rounded-xl text-red-600 flex-shrink-0">
@@ -13335,7 +13410,9 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         </div>
                     </div>
                     ${isAdmin ? `
-                    <button onclick="ui.forceExtraordinaryDelivery(${firstRowIndex}, this)" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center gap-1.5 flex-shrink-0 mt-3 md:mt-0">
+                    <button onclick="ui.forceExtraordinaryDelivery(${firstRowIndex}, this)"
+                        ${!hasDischargeDate ? 'disabled title="Defina a Data de Descarga primeiro"' : ''}
+                        class="${!hasDischargeDate ? 'bg-red-300 opacity-60 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 active:scale-95 cursor-pointer'} text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all shadow-md flex items-center gap-1.5 flex-shrink-0 mt-3 md:mt-0">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
                         Forçar Entrega Extraordinária
                     </button>
@@ -13343,6 +13420,13 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                 </div>
             `;
         }
+
+        const adminPrinterBtnHtml = isAdmin ? `
+            <button data-allow-without-discharge="true" onclick="ui.openQuickPrinterModal()" 
+                class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </button>
+        ` : '';
 
         let buttonsHtml = '';
         const btnSpan = (storageCost === 0 && !isNegotiated) ? 'md:col-span-3' : 'md:col-span-2';
@@ -13363,12 +13447,18 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
                         Guia Dupla
                     </button>
-                    ${isAdmin ? `
-                        <button onclick="ui.openQuickPrinterModal()" 
-                            class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                        </button>
-                    ` : ''}
+                    ${adminPrinterBtnHtml}
+                </div>
+            `;
+        } else if (!hasDischargeDate) {
+            buttonsHtml = `
+                <div class="${btnSpan} flex gap-1.5 flex-wrap md:flex-nowrap">
+                    <button type="button" disabled
+                        class="flex-1 py-2 px-3 bg-slate-300 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-not-allowed opacity-70 h-[38px]" title="Bloqueado: Aguardando definição da Data de Descarga">
+                        <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        Gravar (Bloqueado)
+                    </button>
+                    ${adminPrinterBtnHtml}
                 </div>
             `;
         } else {
@@ -13381,12 +13471,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                             Gravar
                         </button>
-                        ${isAdmin ? `
-                            <button onclick="ui.openQuickPrinterModal()" 
-                                class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                            </button>
-                        ` : ''}
+                        ${adminPrinterBtnHtml}
                     </div>
                 `;
             } else {
@@ -13403,12 +13488,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             <svg class="w-3.5 h-3.5 text-slate-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                             Actualizar
                         </button>
-                        ${isAdmin ? `
-                            <button onclick="ui.openQuickPrinterModal()" 
-                                class="w-9 h-[38px] bg-slate-800 hover:bg-slate-900 text-slate-200 hover:text-white rounded-xl flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer flex-shrink-0 border border-slate-700" title="Configurar Impressora Ativa (Armazém)">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                            </button>
-                        ` : ''}
+                        ${adminPrinterBtnHtml}
                     </div>
                 `;
             }
@@ -13416,14 +13496,13 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
 
         // Badges de Armazenagem
         const dischargeDateBadge = `
-            <span onclick="window.promptSetProjectDischargeDate()" class="text-slate-400 font-bold uppercase text-[9px] bg-amber-50 hover:bg-amber-100 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200 cursor-pointer transition-all active:scale-95 inline-flex items-center gap-1 select-none" title="Clique para alterar ou definir a Data de Descarga do projeto">
-                Descarga: <strong class="text-amber-900 font-extrabold">${dischargeDateStr ? formatDateForDisplay(dischargeDateStr) : 'NÃO DEFINIDA ⚠️'}</strong>
-                <svg class="w-3 h-3 text-amber-600 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+            <span class="font-bold uppercase text-[9px] bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200 inline-flex items-center gap-1 select-none" title="Data de Descarga definida na disponibilização da carga">
+                Descarga: <strong class="text-amber-900 font-extrabold">${hasDischargeDate ? formatDateForDisplay(dischargeDateStr) : 'NÃO DEFINIDA ⚠️'}</strong>
             </span>
         `;
 
         let storageBadgesHtml = '';
-        if (dischargeDateStr) {
+        if (hasDischargeDate) {
             if (isExempt) {
                 storageBadgesHtml = `
                     <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
@@ -13470,7 +13549,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         // Preservar valores já digitados pelo operador no formulário se ainda não tiverem sido gravados
         let draftValues = null;
         const currentForm = container.querySelector('#armazem-form-container');
-        if (currentForm) {
+        if (currentForm && hasDischargeDate) {
             const hasFocus = currentForm.contains(document.activeElement);
             const activeId = document.activeElement ? (document.activeElement.name || document.activeElement.id) : null;
             const selStart = document.activeElement?.selectionStart;
@@ -13540,7 +13619,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
                 </div>
                 
-                <div id="armazem-form-container" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+                <div id="armazem-form-container" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100 ${!hasDischargeDate ? 'opacity-70' : ''}">
                     <!-- Linha 1: Informações de Carga & Destinatário -->
                     <div class="col-span-1 md:col-span-2">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Descarregado</label>
@@ -13593,8 +13672,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     <!-- Linha 2: Veículo, Isenção, Armazenagem e Notas -->
                     <div class="col-span-1 md:col-span-3">
                         <div class="flex items-center justify-between mb-1.5">
-                            <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-500 cursor-pointer hover:text-indigo-600 transition-colors">
-                                <input type="checkbox" id="check-has-viatura" onchange="ui.toggleViaturaField(this)" ${viaturaVal ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                            <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-500 ${!isEditable ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:text-indigo-600'} transition-colors">
+                                <input type="checkbox" id="check-has-viatura" onchange="ui.toggleViaturaField(this)" ${viaturaVal ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 ${!isEditable ? 'cursor-not-allowed' : 'cursor-pointer'}">
                                 <span>🚗 Veículo / Matrícula</span>
                             </label>
                             <span class="text-[8px] text-slate-400 font-bold ${viaturaVal ? 'hidden' : ''}" id="viatura-badge-hint">(A pé / Sem carro)</span>
@@ -13608,8 +13687,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
 
                     <div class="col-span-1 md:col-span-4">
                         <div class="flex items-center justify-between mb-1.5">
-                            <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-500 cursor-pointer hover:text-indigo-600 transition-colors">
-                                <input type="checkbox" id="check-has-isencao" onchange="ui.toggleIsencao(this)" ${isExempt ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                            <label class="flex items-center gap-1.5 text-[9px] font-black uppercase text-slate-500 ${!isEditable ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:text-indigo-600'} transition-colors">
+                                <input type="checkbox" id="check-has-isencao" onchange="ui.toggleIsencao(this)" ${isExempt ? 'checked' : ''} ${!isEditable ? 'disabled' : ''} class="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 ${!isEditable ? 'cursor-not-allowed' : 'cursor-pointer'}">
                                 <span>🎁 Adicionar Isenção (0 MT)</span>
                             </label>
                             <span class="text-[8px] text-emerald-600 font-bold ${isExempt ? '' : 'hidden'}" id="isencao-active-hint">✅ Armazenagem = 0 MT</span>
@@ -13709,7 +13788,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4 mt-4">
                 <div class="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-3">
                     <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Resumo de Armazenagem Acumulada</h4>
-                    ${(!isExempt && (!isStoragePaid || storageRemaining > 0.05) && storageCost > 0) ? `
+                    ${(hasDischargeDate && !isExempt && (!isStoragePaid || storageRemaining > 0.05) && storageCost > 0) ? `
                     <button type="button" onclick="ui.vincularPagamentoArmazem()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[9px] font-black uppercase tracking-wider transition-all shadow-xs active:scale-95 cursor-pointer flex items-center gap-1.5">
                         <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
                         <span>Vincular Armazenagem</span>
@@ -13726,7 +13805,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         `;
 
         // Restaurar valores em edição se o operador estava a preencher
-        if (draftValues) {
+        if (draftValues && hasDischargeDate) {
             const newForm = container.querySelector('#armazem-form-container');
             if (newForm) {
                 if (draftValues.discharge !== undefined && draftValues.discharge !== '') {
@@ -13817,6 +13896,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
  * Grava dados da linha operacional do Armazém no GSheet
  */
 export async function saveArmazemRow(originalIndex, buttonEl) {
+    if (!requireProjectDischargeDate()) return;
     const container = buttonEl.closest('#armazem-operations-container') || buttonEl.closest('#armazem-form-container') || document;
     if (!container) return;
 
@@ -14133,6 +14213,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
  * Confirma a entrega da carga (marca como ENTREGUE) e bloqueia edições
  */
 export async function confirmDelivery(originalIndex, buttonEl) {
+    if (!requireProjectDischargeDate()) return;
     const container = buttonEl.closest('#armazem-operations-container') || buttonEl.closest('#armazem-form-container') || document;
     if (!container) return;
 
@@ -14254,6 +14335,7 @@ export async function reopenDelivery(originalIndex, buttonEl) {
  * Força a entrega extraordinária, ignorando restrições de Duty e Frete
  */
 export async function forceExtraordinaryDelivery(originalIndex, buttonEl) {
+    if (!requireProjectDischargeDate()) return;
     const reason = prompt('Motivo da Entrega Extraordinária (Ex: Autorização superior, Erro bancário):');
     if (!reason || reason.trim() === '') {
         toast('Erro: É obrigatório justificar a Entrega Extraordinária.', 'warning');

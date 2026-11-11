@@ -84,6 +84,16 @@ export function parseWarehouseDate(dateStr) {
     return null;
 }
 
+/**
+ * Indica se a data de descarga do projeto foi definida e é válida.
+ * Enquanto estiver vazia ou inválida, nenhum preenchimento na aba de Armazém é permitido.
+ * @param {string|Date|null|undefined} dischargeDateStr
+ * @returns {boolean}
+ */
+export function hasValidDischargeDate(dischargeDateStr) {
+    return parseWarehouseDate(dischargeDateStr) !== null;
+}
+
 function parseLocaleMoney(raw) {
     if (raw === undefined || raw === null) return null;
     let clean = String(raw).replace(/(?:MT|MZN)/gi, '').trim();

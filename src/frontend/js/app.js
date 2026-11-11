@@ -3,7 +3,7 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js?v=20261111_01';
+import * as ui from './ui.js?v=20261112_01';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
 
