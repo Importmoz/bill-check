@@ -3,7 +3,8 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js?v=20261112_01';
+import * as ui from './ui.js?v=20261112_02';
+import * as etaUi from './etaUi.js?v=20261112_25';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
 
@@ -286,7 +287,7 @@ async function showHub() {
             const role = user.role || 'USER';
             const permissions = user.permissions || [];
             
-            const modules = ['BILL', 'FINANCE', 'TEAM', 'TERM', 'CONFIRM', 'EXTRACTOS', 'QUOTE'];
+            const modules = ['BILL', 'FINANCE', 'TEAM', 'TERM', 'CONFIRM', 'EXTRACTOS', 'QUOTE', 'ETA'];
             modules.forEach(mod => {
                 const card = document.getElementById(`card-module-${mod}`);
                 if (card) {
@@ -3318,6 +3319,34 @@ function showSystemUpdateNotification(newVersion, updates) {
         banner.classList.add('translate-y-0', 'opacity-100');
     }, 100);
 }
+
+// --- MÓDULO ETA (RASTREAMENTO DE CARGAS EM TRÂNSITO) ---
+async function showEta() {
+    if (!checkModulePermission('ETA')) return ui.toast('Acesso negado ao módulo ETA.', 'error');
+    ui.showView('view-eta-dashboard');
+    await etaUi.refreshEtaRecords({ showLoading: true }, ui);
+}
+
+window.showEta = showEta;
+window.refreshEta = () => etaUi.refreshEtaRecords({ showLoading: true }, ui);
+window.toggleEtaFilters = () => etaUi.toggleEtaFilters();
+window.toggleEtaKpis = () => etaUi.toggleEtaKpis();
+window.exportEtaScreenshot = () => etaUi.exportEtaTableScreenshot(ui);
+window.handleEtaFilterChange = () => etaUi.handleEtaFilterChange();
+window.applyEtaQuickFilter = (kind) => etaUi.applyEtaQuickFilter(kind);
+window.clearEtaFilters = () => etaUi.clearEtaFilters();
+window.openNewEtaModal = () => etaUi.openNewEtaModal();
+window.editEtaRecord = (id) => etaUi.editEtaRecord(id);
+window.closeEtaFormModal = () => etaUi.closeEtaFormModal();
+window.submitEtaForm = (e) => etaUi.submitEtaForm(e, ui);
+window.deleteEtaRecord = (id) => etaUi.deleteEtaRecordById(id, ui);
+window.handleEtaFormStatusChange = () => etaUi.handleEtaFormStatusChange();
+window.openEtaDetailModal = (id) => etaUi.openEtaDetailModal(id);
+window.closeEtaDetailModal = () => etaUi.closeEtaDetailModal();
+window.quickUpdateEtaStatus = () => etaUi.quickUpdateEtaStatus(ui);
+window.openEtaDiagnosticsModal = () => etaUi.openEtaDiagnosticsModal();
+window.closeEtaDiagnosticsModal = () => etaUi.closeEtaDiagnosticsModal();
+window.runEtaDiagnostics = () => etaUi.runEtaDiagnostics();
 
 window.showQuoteDashboard = showQuoteDashboard;
 window.showQuoteForm = showQuoteForm;

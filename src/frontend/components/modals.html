@@ -1589,3 +1589,153 @@
         </div>
     </div>
 </div>
+
+
+<!-- MODAL: ETA - NOVA / EDITAR PREVISÃO DE CARGA -->
+<div id="modal-eta-form" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4">
+    <div class="bg-white border-2 border-gray-600 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden animate-fade-in">
+        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+            <div class="flex items-center gap-2.5">
+                <div id="modal-eta-form-icon" class="shrink-0"></div>
+                <h3 id="modal-eta-form-title" class="text-sm font-black uppercase tracking-tight text-gray-900">Nova Previsão de Carga</h3>
+            </div>
+            <button type="button" onclick="closeEtaFormModal()" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-black hover:border-black transition-all font-bold text-xs cursor-pointer">✕</button>
+        </div>
+
+        <form id="form-eta-record" onsubmit="submitEtaForm(event)" class="p-6 space-y-4">
+            <input type="hidden" id="eta-form-id" value="" />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Referência *</label>
+                    <input type="text" id="eta-form-referencia" required placeholder="Ex: 645" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-900 focus:bg-white focus:border-teal-500 outline-none transition-all" />
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Previsão de Chegada <span id="eta-form-date-req">*</span></label>
+                    <input type="date" id="eta-form-date" required class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-900 focus:bg-white focus:border-teal-500 outline-none transition-all" />
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">BL/AWB/CM *</label>
+                <input type="text" id="eta-form-conhecimento" required placeholder="Ex: TIIU8477524" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold uppercase text-gray-900 focus:bg-white focus:border-teal-500 outline-none transition-all" />
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Agente *</label>
+                    <select id="eta-form-agente" required class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-900 focus:bg-white focus:border-teal-500 outline-none transition-all cursor-pointer"></select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-1.5">Estágio *</label>
+                    <select id="eta-form-status" required onchange="handleEtaFormStatusChange()" class="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-900 focus:bg-white focus:border-teal-500 outline-none transition-all cursor-pointer"></select>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2.5 pt-4 border-t border-gray-100">
+                <div class="flex items-center gap-2">
+                    <button type="button" id="btn-eta-form-delete" onclick="" class="hidden px-3.5 py-2.5 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 rounded-xl text-[11px] font-black uppercase tracking-widest transition-colors cursor-pointer">
+                        Apagar
+                    </button>
+                    <button type="button" id="btn-eta-form-history" onclick="" class="hidden px-3.5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-[11px] font-black uppercase tracking-widest transition-colors cursor-pointer">
+                        Histórico
+                    </button>
+                </div>
+                <div class="flex items-center gap-2.5 ml-auto">
+                    <button type="button" onclick="closeEtaFormModal()" class="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-[11px] font-black uppercase tracking-widest transition-colors cursor-pointer">
+                        Cancelar
+                    </button>
+                    <button type="submit" id="btn-eta-submit" class="px-5 py-2.5 bg-black hover:bg-gray-800 text-white rounded-xl text-[11px] font-black uppercase tracking-widest transition-all cursor-pointer shadow-sm">
+                        Guardar Previsão
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL: ETA - DETALHES & HISTÓRICO DE STATUS -->
+<div id="modal-eta-detail" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4">
+    <div class="bg-white border-2 border-gray-600 rounded-2xl max-w-xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-fade-in">
+        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70 shrink-0">
+            <div>
+                <span class="text-[9px] font-black uppercase tracking-widest text-teal-600 block">Detalhe da Carga</span>
+                <h3 id="eta-detail-title" class="text-base font-black uppercase tracking-tight text-gray-900">Ref. —</h3>
+            </div>
+            <button type="button" onclick="closeEtaDetailModal()" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-black hover:border-black transition-all font-bold text-xs cursor-pointer">✕</button>
+        </div>
+
+        <div class="p-6 overflow-y-auto custom-scrollbar space-y-5 flex-1">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 bg-gray-50 p-4 rounded-2xl border border-gray-100 text-xs">
+                <div>
+                    <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 block">Conhecimento</span>
+                    <span id="eta-detail-conhecimento" class="font-mono font-bold text-gray-900">—</span>
+                </div>
+                <div>
+                    <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 block">Agente</span>
+                    <span id="eta-detail-agente" class="font-bold text-gray-800">—</span>
+                </div>
+                <div>
+                    <span class="text-[9px] font-black uppercase tracking-widest text-gray-400 block">ETA Chegada</span>
+                    <span id="eta-detail-date" class="font-bold text-gray-900">—</span>
+                </div>
+            </div>
+
+            <div class="bg-teal-50/50 border border-teal-200/80 rounded-2xl p-4">
+                <label class="block text-[10px] font-black uppercase tracking-widest text-teal-800 mb-2">Atualizar Estágio Rápido</label>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <select id="eta-detail-status-select" class="flex-1 px-3 py-2 bg-white border border-teal-200 rounded-xl text-xs font-bold text-gray-900 outline-none focus:border-teal-600 cursor-pointer"></select>
+                    <button type="button" id="btn-eta-quick-status" onclick="quickUpdateEtaStatus()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer shrink-0">
+                        Aplicar Estágio
+                    </button>
+                </div>
+            </div>
+
+            <div>
+                <h4 class="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-3">Histórico de Atualizações</h4>
+                <div id="eta-detail-history" class="space-y-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar"></div>
+            </div>
+        </div>
+
+        <div class="px-6 py-3.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-2 shrink-0">
+            <div class="flex items-center gap-2">
+                <button type="button" id="btn-eta-detail-edit" onclick="" class="px-4 py-2 bg-white border border-gray-200 hover:border-black text-gray-700 hover:text-black rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+                    Editar Campos
+                </button>
+                <button type="button" id="btn-eta-detail-delete" onclick="" class="px-4 py-2 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white border border-rose-200 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer">
+                    Apagar
+                </button>
+            </div>
+            <button type="button" onclick="closeEtaDetailModal()" class="px-4 py-2 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer">
+                Fechar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL: ETA - DIAGNÓSTICO DE REDE & API -->
+<div id="modal-eta-diagnostics" class="modal-bg fixed inset-0 z-[120] hidden flex items-center justify-center p-4">
+    <div class="bg-white border-2 border-gray-600 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden animate-fade-in">
+        <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/70">
+            <div>
+                <h3 class="text-sm font-black uppercase tracking-tight text-gray-900">Diagnóstico de Rede ETA</h3>
+                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Verificação em tempo real da API PocketBase</p>
+            </div>
+            <button type="button" onclick="closeEtaDiagnosticsModal()" class="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-gray-200 text-gray-400 hover:text-black hover:border-black transition-all font-bold text-xs cursor-pointer">✕</button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div id="eta-diagnostics-results" class="space-y-2.5 text-xs">
+                <div class="p-4 rounded-xl bg-gray-50 border border-gray-200 text-gray-500 font-semibold text-center">
+                    Clique em "Executar Diagnóstico" para testar a ligação.
+                </div>
+            </div>
+            <div class="flex justify-end gap-2.5 pt-3 border-t border-gray-100">
+                <button type="button" onclick="closeEtaDiagnosticsModal()" class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer">
+                    Fechar
+                </button>
+                <button type="button" id="btn-eta-run-diagnostics" onclick="runEtaDiagnostics()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest cursor-pointer">
+                    Executar Diagnóstico
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

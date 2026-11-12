@@ -169,7 +169,16 @@ export const state = {
     },
     quotes: [],
     quotesSource: 'local',
-    pauta: null
+    pauta: null,
+    eta: {
+        records: [],
+        totalItems: 0,
+        includeFinished: false,
+        filters: { search: '', status: '', statusGroup: '', agente: '', arrivalBucket: '' },
+        lastSyncAt: null,
+        latencyMs: null,
+        error: null
+    }
 };
 
 /**
@@ -2842,4 +2851,71 @@ export async function fillConfirmClient(formData) {
         throw new Error(data.error || 'Erro ao preencher dados do cliente e artigos.');
     }
     return data;
+}
+
+// --- MÓDULO ETA (RASTREAMENTO DE CARGAS EM TRÂNSITO) ---
+
+export async function listEtaRecords({ includeFinished = false, sort = 'etachegada' } = {}) {
+    const params = new URLSearchParams({
+        includeFinished: String(Boolean(includeFinished)),
+        sort: String(sort || 'etachegada')
+    });
+    const res = await fetch(`/api/eta/records?${params.toString()}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.error || `Erro ao carregar registos ETA (HTTP ${res.status})`);
+    }
+    state.eta.records = Array.isArray(data.items) ? data.items : [];
+    state.eta.totalItems = typeof data.totalItems === 'number' ? data.totalItems : state.eta.records.length;
+    state.eta.includeFinished = Boolean(includeFinished);
+    state.eta.lastSyncAt = new Date().toISOString();
+    state.eta.latencyMs = data.latencyMs ?? null;
+    state.eta.error = null;
+    return data;
+}
+
+export async function createEtaRecord(payload) {
+    const res = await fetch('/api/eta/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.error || 'Erro ao criar previsão ETA.');
+    }
+    return data;
+}
+
+export async function updateEtaRecord(id, payload) {
+    const res = await fetch(`/api/eta/records/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.error || 'Erro ao atualizar registo ETA.');
+    }
+    return data;
+}
+
+export async function deleteEtaRecord(id) {
+    const res = await fetch(`/api/eta/records/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(data.error || 'Erro ao apagar registo ETA.');
+    }
+    return data;
+}
+
+export async function checkEtaHealth() {
+    const res = await fetch('/api/eta/health');
+    const data = await res.json().catch(() => ({}));
+    return {
+        httpStatus: res.status,
+        ...data
+    };
 }

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1e293b; height: 100vh; width: 100vw; margin: 0; padding: 0; overflow: hidden; }
 .excel-table { border: 2px solid #6b7280; border-collapse: collapse; width: 100%; background-color: white; }
 .excel-table th, .excel-table td { border: 1px solid #6b7280; padding: 4px 8px; color: black; vertical-align: middle; line-height: 1.2; }
@@ -261,4 +261,10 @@ input[type=number] {
 /* Override to ensure table content is never bold as requested */
 table td, table td *, table td input, table td select, table td textarea, table td div, table td span, table td a, table td p, table td button, table input {
     font-weight: 400 !important;
+}
+
+
+/* ETA: destacar apenas a referência em negrito */
+#eta-table-body td .eta-ref-bold {
+    font-weight: 600 !important;
 }

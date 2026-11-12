@@ -12,6 +12,7 @@ const financeRoutes = require('./src/backend/routes/financeRoutes');
 const billRoutes = require('./src/backend/routes/billRoutes');
 const confirmRoutes = require('./src/backend/routes/confirmRoutes');
 const printRoutes = require('./src/backend/routes/printRoutes');
+const etaRoutes = require('./src/backend/routes/etaRoutes');
 // Force reload: 2026-05-12 14:20
 
 const app = express();
@@ -107,7 +108,9 @@ app.get('/api/version', (req, res) => {
     'server.js',
     'src/frontend/js/ui.js',
     'src/frontend/js/app.js',
-    'src/frontend/js/api.js'
+    'src/frontend/js/api.js',
+    'src/frontend/js/etaHelpers.js',
+    'src/frontend/js/etaUi.js'
   ];
   filesToTrack.forEach(f => {
     try {
@@ -131,6 +134,7 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/bill', billRoutes);
 app.use('/api/confirm', confirmRoutes);
 app.use('/api/print', printRoutes);
+app.use('/api/eta', etaRoutes);
 
 // Rota base para SPA
 app.get(/.*/, (req, res) => {

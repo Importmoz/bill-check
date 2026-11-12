@@ -19,7 +19,8 @@ const VIEWS = [
     'view-table',
     'view-settings',
     'view-quote-dashboard',
-    'view-quote-form'
+    'view-quote-form',
+    'view-eta-dashboard'
 ];
 
 const MODALS = [
