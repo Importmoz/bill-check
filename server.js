@@ -64,7 +64,8 @@ app.use(express.static(path.join(__dirname, 'src', 'frontend'), {
 app.get('/config.js', (req, res) => {
   const pocketbaseUrl = process.env.POCKETBASE_URL || 'https://pocketbase.mycloudspaces.com';
   const config = {
-    POCKETBASE_URL: pocketbaseUrl
+    POCKETBASE_URL: pocketbaseUrl,
+    ETA_POCKETBASE_URL: process.env.ETA_POCKETBASE_URL || 'https://cloud.mycloudspaces.com/jupiter/pocketbase'
   };
   res.setHeader('Content-Type', 'application/javascript');
   res.send(`window.POCKETBASE_CONFIG = ${JSON.stringify(config, null, 2)};`);

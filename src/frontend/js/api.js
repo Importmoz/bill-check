@@ -8,6 +8,10 @@ const PB_URL = (window.POCKETBASE_CONFIG && window.POCKETBASE_CONFIG.POCKETBASE_
 export const pb = new PocketBase(PB_URL);
 pb.autoCancellation(false);
 
+const ETA_PB_URL = (window.POCKETBASE_CONFIG && window.POCKETBASE_CONFIG.ETA_POCKETBASE_URL) || 'https://cloud.mycloudspaces.com/jupiter/pocketbase';
+export const etaPb = new PocketBase(ETA_PB_URL);
+etaPb.autoCancellation(false);
+
 export function buildSearchFilter(term) {
     if (!term) return '';
     const keywords = term.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
@@ -177,7 +181,8 @@ export const state = {
         filters: { search: '', status: '', statusGroup: '', agente: '', arrivalBucket: '' },
         lastSyncAt: null,
         latencyMs: null,
-        error: null
+        error: null,
+        realtimeConnected: false
     }
 };
 
@@ -2918,4 +2923,44 @@ export async function checkEtaHealth() {
         httpStatus: res.status,
         ...data
     };
+}
+
+let etaUnsubscribe = null;
+
+export async function subscribeEtaEvents(callback) {
+    if (etaUnsubscribe) {
+        console.log("[SSE-ETA][RE-SUBSCRIÇÃO] Cancelando subscrição anterior...");
+        await unsubscribeEtaEvents();
+    }
+    
+    console.log("[SSE-ETA][CONEXÃO] Iniciando subscrição SSE no PocketBase para cargas (etaGeral)...");
+    try {
+        etaUnsubscribe = await etaPb.collection('etaGeral').subscribe('*', function (e) {
+            console.log(`[SSE-ETA][RECEÇÃO] Evento '${e.action}' no etaGeral:`, e.record?.referencia || e.record?.id);
+            if (typeof callback === 'function') {
+                callback(e);
+            }
+        });
+        state.eta.realtimeConnected = true;
+        console.log("[SSE-ETA][SUCESSO] Subscrição ETA em tempo real efetuada!");
+        return true;
+    } catch (err) {
+        console.error("[SSE-ETA][ERRO] Falha ao conectar ao SSE do ETA:", err);
+        state.eta.realtimeConnected = false;
+        return false;
+    }
+}
+
+export async function unsubscribeEtaEvents() {
+    if (etaUnsubscribe) {
+        console.log("[SSE-ETA][CANCELAR] Cancelando subscrição ETA ativa...");
+        try {
+            await etaPb.collection('etaGeral').unsubscribe('*');
+            etaUnsubscribe = null;
+            state.eta.realtimeConnected = false;
+            console.log("[SSE-ETA][SUCESSO] Subscrição ETA cancelada.");
+        } catch (err) {
+            console.error("[SSE-ETA][ERRO] Erro ao cancelar subscrição ETA:", err);
+        }
+    }
 }

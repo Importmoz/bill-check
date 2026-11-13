@@ -4,7 +4,7 @@
 import { initializeApp } from './init.js';
 import * as api from './api.js';
 import * as ui from './ui.js?v=20261112_02';
-import * as etaUi from './etaUi.js?v=20261112_25';
+import * as etaUi from './etaUi.js?v=20261113_01';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
 
@@ -3325,10 +3325,14 @@ async function showEta() {
     if (!checkModulePermission('ETA')) return ui.toast('Acesso negado ao módulo ETA.', 'error');
     ui.showView('view-eta-dashboard');
     await etaUi.refreshEtaRecords({ showLoading: true }, ui);
+    etaUi.startEtaRealtime(ui);
 }
 
 window.showEta = showEta;
 window.refreshEta = () => etaUi.refreshEtaRecords({ showLoading: true }, ui);
+window.handleEtaRealtimeEvent = (e) => etaUi.handleEtaRealtimeEvent(e);
+window.startEtaRealtime = () => etaUi.startEtaRealtime(ui);
+window.stopEtaRealtime = () => etaUi.stopEtaRealtime();
 window.toggleEtaFilters = () => etaUi.toggleEtaFilters();
 window.toggleEtaKpis = () => etaUi.toggleEtaKpis();
 window.exportEtaScreenshot = () => etaUi.exportEtaTableScreenshot(ui);

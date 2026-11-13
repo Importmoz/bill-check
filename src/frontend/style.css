@@ -268,3 +268,15 @@ table td, table td *, table td input, table td select, table td textarea, table 
 #eta-table-body td .eta-ref-bold {
     font-weight: 600 !important;
 }
+
+/* ETA: realce suave em tempo real quando um registo é criado ou atualizado */
+@keyframes etaRowFlash {
+    0% { background-color: rgba(20, 184, 166, 0.28); }
+    100% { background-color: #ffffff; }
+}
+.eta-row-highlight td {
+    animation: etaRowFlash 2s ease-out forwards !important;
+}
+.eta-card-highlight {
+    animation: etaRowFlash 2s ease-out forwards !important;
+}

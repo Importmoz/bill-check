@@ -385,3 +385,20 @@ export function computeEtaStats(records = [], todayRef = new Date()) {
         agents
     };
 }
+
+export function sortEtaRecords(records = []) {
+    return [...(Array.isArray(records) ? records : [])].sort((a, b) => {
+        const da = extractEtaYMD(a?.etachegada) || '9999-99-99';
+        const db = extractEtaYMD(b?.etachegada) || '9999-99-99';
+        const dateCmp = da.localeCompare(db);
+        if (dateCmp !== 0) return dateCmp;
+        const refA = String(a?.referencia || '').trim();
+        const refB = String(b?.referencia || '').trim();
+        const numA = parseInt(refA, 10);
+        const numB = parseInt(refB, 10);
+        if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+            return numA - numB;
+        }
+        return refA.localeCompare(refB, 'pt', { numeric: true });
+    });
+}

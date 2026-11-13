@@ -345,6 +345,12 @@ export function showView(viewId) {
         }
         window.activeConfirmLocks = {}; // Limpar memória de locks
     }
+
+    if (viewId !== 'view-eta-dashboard') {
+        if (typeof window.stopEtaRealtime === 'function') {
+            window.stopEtaRealtime();
+        }
+    }
     
     const el = document.getElementById(viewId);
     if (el) {

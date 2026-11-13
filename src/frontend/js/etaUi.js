@@ -1,7 +1,7 @@
 /**
  * Módulo de Interface (UI) para o módulo ETA (Cargas em Trânsito)
  */
-import { state, pb, listEtaRecords, createEtaRecord, updateEtaRecord, deleteEtaRecord, checkEtaHealth } from './api.js';
+import { state, pb, etaPb, listEtaRecords, createEtaRecord, updateEtaRecord, deleteEtaRecord, checkEtaHealth, subscribeEtaEvents, unsubscribeEtaEvents } from './api.js';
 import {
     ETA_AGENT_OPTIONS,
     ETA_STATUS_OPTIONS,
@@ -16,8 +16,9 @@ import {
     buildNewEtaPayload,
     buildUpdateEtaPayload,
     filterEtaRecords,
-    computeEtaStats
-} from './etaHelpers.js?v=20261112_02';
+    computeEtaStats,
+    sortEtaRecords
+} from './etaHelpers.js?v=20261113_01';
 
 let activeDetailRecordId = null;
 let etaLayoutObserver = null;
@@ -158,15 +159,27 @@ export function renderEtaDashboard() {
         }
     }
 
+    const liveBadge = document.getElementById('eta-live-badge');
+    if (liveBadge) {
+        if (state.eta.realtimeConnected) {
+            liveBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200';
+            liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Tempo Real';
+        } else {
+            liveBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gray-100 text-gray-500 border border-gray-200';
+            liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>A sincronizar...';
+        }
+    }
+
     const footerSummary = document.getElementById('eta-footer-summary');
     const footerLatency = document.getElementById('eta-footer-latency');
     if (footerSummary) {
         footerSummary.textContent = `A exibir ${filtered.length} de ${records.length} cargas carregadas`;
     }
     if (footerLatency) {
-        footerLatency.textContent = state.eta.latencyMs !== null
-            ? `API ETA • ${state.eta.latencyMs}ms`
-            : 'API Proxy: /api/eta';
+        const liveIndicator = state.eta.realtimeConnected
+            ? '<span class="inline-flex items-center gap-1 text-emerald-600 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Tempo Real Ativo</span>'
+            : '<span class="inline-flex items-center gap-1 text-gray-500 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Sincronizado</span>';
+        footerLatency.innerHTML = `${liveIndicator} • ${state.eta.latencyMs !== null ? `${state.eta.latencyMs}ms` : 'PocketBase'}`;
     }
 
     const tbody = document.getElementById('eta-table-body');
@@ -190,7 +203,7 @@ export function renderEtaDashboard() {
         const cellHover = 'bg-white border-y border-gray-200/90 group-hover:bg-teal-50/40 group-hover:border-teal-300 transition-colors align-middle';
 
         return `
-            <tr onclick="editEtaRecord('${safeId}')" class="group shadow-2xs cursor-pointer">
+            <tr onclick="editEtaRecord('${safeId}')" data-eta-id="${safeId}" class="group shadow-2xs cursor-pointer">
                 <td class="pl-1 pr-2 py-1 ${cellHover} border-l rounded-l-lg text-left">
                     <div class="flex items-center justify-start gap-2.5">
                         ${renderEtaIconHtml(item)}
@@ -217,7 +230,7 @@ export function renderEtaDashboard() {
         const safeId = escapeHtml(item.id);
 
         return `
-            <div onclick="editEtaRecord('${safeId}')" class="p-3 space-y-2.5 bg-white border border-gray-200/90 rounded-xl shadow-2xs hover:border-teal-300 transition-colors cursor-pointer">
+            <div onclick="editEtaRecord('${safeId}')" data-eta-id="${safeId}" class="p-3 space-y-2.5 bg-white border border-gray-200/90 rounded-xl shadow-2xs hover:border-teal-300 transition-colors cursor-pointer">
                 <div class="flex items-start justify-between gap-3">
                     <div class="flex items-center gap-2.5 min-w-0">
                         ${renderEtaIconHtml(item)}
@@ -258,6 +271,7 @@ export async function refreshEtaRecords({ showLoading = true } = {}, uiHelpers) 
     try {
         await listEtaRecords({ includeFinished, sort: 'etachegada' });
         renderEtaDashboard();
+        startEtaRealtime(uiHelpers);
     } catch (err) {
         console.error('[ETA REFRESH ERROR]', err);
         state.eta.error = err.message || 'Erro ao comunicar com o servidor ETA.';
@@ -265,6 +279,113 @@ export async function refreshEtaRecords({ showLoading = true } = {}, uiHelpers) 
         if (uiHelpers?.toast) uiHelpers.toast(state.eta.error, 'error');
     } finally {
         if (showLoading && uiHelpers?.setLoader) uiHelpers.setLoader(false);
+    }
+}
+
+export function handleEtaRealtimeEvent(e) {
+    if (!e || !e.record) return;
+    const action = e.action;
+    const rawRecord = e.record;
+    const incoming = {
+        ...rawRecord,
+        status: parseEtaStatus(rawRecord.status)
+    };
+
+    console.log(`[SSE-ETA][PROCESSAR] Ação '${action}' na carga Ref. ${incoming.referencia || incoming.id}`);
+
+    const records = state.eta.records || [];
+    const idx = records.findIndex(r => r.id === incoming.id);
+
+    if (action === 'delete') {
+        if (idx !== -1) {
+            records.splice(idx, 1);
+            state.eta.totalItems = Math.max(0, (state.eta.totalItems || records.length + 1) - 1);
+        }
+        if (activeDetailRecordId === incoming.id) {
+            closeEtaDetailModal();
+        }
+        const openFormId = document.getElementById('eta-form-id')?.value;
+        if (openFormId === incoming.id) {
+            closeEtaFormModal();
+        }
+    } else if (action === 'create') {
+        if (idx !== -1) {
+            records[idx] = incoming;
+        } else {
+            records.push(incoming);
+            state.eta.totalItems = Math.max(state.eta.totalItems || 0, records.length);
+        }
+        state.eta.records = sortEtaRecords(records);
+    } else if (action === 'update') {
+        if (idx !== -1) {
+            records[idx] = { ...records[idx], ...incoming };
+        } else {
+            records.push(incoming);
+            state.eta.totalItems = Math.max(state.eta.totalItems || 0, records.length);
+        }
+        state.eta.records = sortEtaRecords(records);
+        if (activeDetailRecordId === incoming.id) {
+            openEtaDetailModal(incoming.id);
+        }
+    }
+
+    state.eta.lastSyncAt = new Date().toISOString();
+
+    const viewEl = document.getElementById('view-eta-dashboard');
+    if (viewEl && !viewEl.classList.contains('hidden')) {
+        renderEtaDashboard();
+
+        if (action === 'create' || action === 'update') {
+            setTimeout(() => {
+                const tr = document.querySelector(`tr[data-eta-id="${incoming.id}"]`);
+                if (tr) {
+                    tr.classList.add('eta-row-highlight');
+                    setTimeout(() => tr.classList.remove('eta-row-highlight'), 2200);
+                }
+                const card = document.querySelector(`div[data-eta-id="${incoming.id}"]`);
+                if (card) {
+                    card.classList.add('eta-card-highlight');
+                    setTimeout(() => card.classList.remove('eta-card-highlight'), 2200);
+                }
+            }, 50);
+        }
+    }
+}
+
+let etaRealtimeActive = false;
+
+export async function startEtaRealtime(uiHelpers) {
+    if (etaRealtimeActive && state.eta.realtimeConnected) return;
+    etaRealtimeActive = true;
+    const ok = await subscribeEtaEvents((e) => {
+        handleEtaRealtimeEvent(e);
+    });
+    const liveBadge = document.getElementById('eta-live-badge');
+    const footerLatency = document.getElementById('eta-footer-latency');
+    if (liveBadge) {
+        if (ok) {
+            liveBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200';
+            liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Tempo Real';
+        } else {
+            liveBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200';
+            liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Reconectando...';
+        }
+    }
+    if (footerLatency) {
+        const liveIndicator = ok
+            ? '<span class="inline-flex items-center gap-1 text-emerald-600 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>Tempo Real Ativo</span>'
+            : '<span class="inline-flex items-center gap-1 text-amber-600 font-bold"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Reconectando...</span>';
+        footerLatency.innerHTML = `${liveIndicator} • ${state.eta.latencyMs !== null ? `${state.eta.latencyMs}ms` : 'PocketBase'}`;
+    }
+}
+
+export async function stopEtaRealtime() {
+    etaRealtimeActive = false;
+    await unsubscribeEtaEvents();
+    const liveBadge = document.getElementById('eta-live-badge');
+    if (liveBadge) {
+        liveBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-gray-100 text-gray-400 border border-gray-200';
+        liveBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-gray-400"></span>Pausa';
     }
 }
 
