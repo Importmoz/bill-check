@@ -38,6 +38,7 @@ export function findWarehouseCol(columns, targets, opts = {}) {
         if (idx !== -1) return idx;
     }
     for (const target of cleanedTargets) {
+        if (target.length <= 2) continue; // Evita que termos curtos como 'DU' ou 'NO' façam correspondências acidentais parciais com 'DUTY', 'NOTE', etc.
         const idx = columns.findIndex(c => !isExcluded(c) && cleanHeaderString(c).includes(target));
         if (idx !== -1) return idx;
     }

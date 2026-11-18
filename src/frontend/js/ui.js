@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, unallocatePayment, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, insertGSheetColumn, syncPendingChangesToGSheet, getPaymentsByAllocatedTo, getPaymentsByAllocatedPrefix, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, unallocatePayment, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, insertGSheetColumn, syncPendingChangesToGSheet, debouncedSyncToPocketBase, getPaymentsByAllocatedTo, getPaymentsByAllocatedPrefix, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
 import { cleanHeaderString, findWarehouseCol, formatLocalYMD, parseWarehouseDate, hasValidDischargeDate, formatFeeSheetStatus, parseStorageInfo, calculateClientStorage, parseDespachoCopyInfo, calculateClientDespachoCopy } from './warehouseStorage.js?v=20261112_01';
 
 const DESPACHO_DEFAULT_PRICE_KEY = 'despacho_copy_default_price';
@@ -3160,7 +3160,7 @@ export async function showConfirmDetail(client, clientIndex) {
     }
     
     // Novas colunas para Armazém e Frete
-    const packagesIdx = findColumnIndex(columns, ['PACKAGES']);
+    const packagesIdx = findColumnIndex(columns, ['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
     const unitFreightIdx = findColumnIndex(columns, ['UNIT CBM FREIGHT']);
     const amtFreightIdx = findColumnIndex(columns, ['AMOUNT FREIGHT']);
     const paidFreightIdx = findColumnIndex(columns, ['PAID FREIGHT']);
@@ -4901,7 +4901,7 @@ export async function ensureConfirmColumn(canonicalHeader, matchTargets, options
 
     const taskPromise = (async () => {
         const columns = state.confirm.columns || (state.confirm.data && state.confirm.data[0]) || [];
-        const existingIdx = findWarehouseCol(columns, matchTargets);
+        const existingIdx = findWarehouseCol(columns, matchTargets, options);
         if (existingIdx !== -1) return existingIdx;
 
         let cleanSheetName = '';
@@ -5052,6 +5052,26 @@ export async function ensureDespachoCopyColumns() {
     );
 }
 window.ensureDespachoCopyColumns = ensureDespachoCopyColumns;
+
+export function ensureDuColumn() {
+    return ensureConfirmColumn('DU', ['DESPACHO DU', 'NUMERO DU', 'Nº DU', 'NO DU', 'DOC UNICO', 'DOCUMENTO UNICO', 'DECLARACAO DU', 'DU'], { exclude: ['DUTY', 'CBM', 'AMOUNT', 'PREPAID', 'NOTA', 'UNIT'] });
+}
+window.ensureDuColumn = ensureDuColumn;
+
+export function ensureNuitColumn() {
+    return ensureConfirmColumn('NUIT', ['NUIT CLIENTE', 'NUIT', 'NIF']);
+}
+window.ensureNuitColumn = ensureNuitColumn;
+
+export function ensureLocalDescargaColumn() {
+    return ensureConfirmColumn('LOCAL DE DESCARGA', ['LOCAL DE DESCARGA', 'LOCAL DESCARGA', 'MORADA CLIENTE', 'MORADA', 'ENDERECO', 'DESTINO DE CARGA', 'DESTINO ENTREGA'], { exclude: ['DISCHARGE'] });
+}
+window.ensureLocalDescargaColumn = ensureLocalDescargaColumn;
+
+export function ensureLocalCargaColumn() {
+    return ensureConfirmColumn('LOCAL DE CARGA', ['LOCAL DE CARGA', 'LOCAL CARGA', 'LOCAL ORIGEM', 'ORIGEM CARGA'], { exclude: ['ARMAZENAGEM', 'ARMAZEM', 'NOTA', 'VALOR', 'PAGO', 'ISENCAO'] });
+}
+window.ensureLocalCargaColumn = ensureLocalCargaColumn;
 
 /**
  * Abre o modal de edição de nota de contacto do cliente
@@ -12138,12 +12158,19 @@ async function syncClientFeeToGSheet(feeKey, client, { statusCellVal, valueCellV
         localUpdates.push({ originalIndex, rowData });
     });
 
+    // Atualizar estado em memória local ANTES do envio do lote
+    localUpdates.forEach(item => {
+        if (state.confirm?.data) state.confirm.data[item.originalIndex] = item.rowData;
+    });
+
     if (sheetId && batchUpdates.length > 0) {
         await updateGSheetBatch(sheetId, batchUpdates);
     }
 
+    // Sincronizar snapshot atualizado no PocketBase
+    debouncedSyncToPocketBase(false);
+
     localUpdates.forEach(item => {
-        if (state.confirm?.data) state.confirm.data[item.originalIndex] = item.rowData;
         if (sheetId) {
             emitConfirmEvent(sheetId, item.originalIndex, 'UPDATE', {
                 ...(emitStatus ? { status: emitStatus } : {}),
@@ -12794,7 +12821,17 @@ export function updateArmazemCalculations() {
     const dischargeInput = container.querySelector('input[name="discharge"]');
     const deliverInput = container.querySelector('input[name="deliver"]');
     if (dischargeInput && deliverInput) {
-        const dVal = parseFloat(dischargeInput.value) || 0;
+        const client = window.currentActiveClient;
+        let totalOriginal = 0;
+        if (client && client.rows) {
+            const columns = state.confirm?.columns || [];
+            const pkgsIdx = findWarehouseCol(columns, ['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
+            client.rows.forEach(r => {
+                const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+                totalOriginal += pkgsIdx !== -1 ? (parseFloat(rowData[pkgsIdx]) || 0) : 0;
+            });
+        }
+        const dVal = dischargeInput.value !== '' ? (parseFloat(dischargeInput.value) || 0) : totalOriginal;
         const eVal = parseFloat(deliverInput.value) || 0;
         if (badgeSaldo) badgeSaldo.textContent = `${Math.max(0, dVal - eVal)} Vol`;
         if (badgeEntregue) badgeEntregue.textContent = `${eVal} Vol`;
@@ -13041,9 +13078,9 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         }
 
         const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
-        const packagesIdx = findCol(['PACKAGES']);
-        const dischargeIdx = findCol(['DISCHARGE']);
-        const deliverIdx = findCol(['DELIVER']);
+        const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
+        const dischargeIdx = findCol(['DISCHARGE', 'DESCARGA', 'DESCARREGADO']);
+        const deliverIdx = findCol(['DELIVER', 'ENTREGUE', 'ENTREGA'], { exclude: ['DATE', 'TO', 'STATUS', 'ED'] });
         const deliverDateIdx = findCol(['DELIVER DATE']);
         const deliverToIdx = findCol(['DELIVER TO']);
         const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
@@ -13052,6 +13089,19 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const motivoIsencaoIdx = findCol(['MOTIVO ISENCAO ARMAZENAGEM', 'MOTIVO ISENCAO', 'MOTIVO DE ISENCAO']);
         const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
         const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
+        const duIdx = findCol(
+            ['DESPACHO DU', 'NUMERO DU', 'Nº DU', 'NO DU', 'DOC UNICO', 'DOCUMENTO UNICO', 'DECLARACAO DU', 'DU'],
+            { exclude: ['DUTY', 'CBM', 'AMOUNT', 'PREPAID', 'NOTA', 'UNIT'] }
+        );
+        const nuitIdx = findCol(['NUIT CLIENTE', 'NUIT', 'NIF']);
+        const moradaIdx = findCol(
+            ['LOCAL DE DESCARGA', 'LOCAL DESCARGA', 'MORADA CLIENTE', 'MORADA', 'ENDERECO', 'DESTINO DE CARGA', 'DESTINO ENTREGA'],
+            { exclude: ['DISCHARGE'] }
+        );
+        const localCargaIdx = findCol(
+            ['LOCAL DE CARGA', 'LOCAL CARGA', 'LOCAL ORIGEM', 'ORIGEM CARGA'],
+            { exclude: ['ARMAZENAGEM', 'ARMAZEM', 'NOTA', 'VALOR', 'PAGO', 'ISENCAO'] }
+        );
 
         // Regras de negócio para autorização de entrega:
         const isDutyConfirmed = allConfirmed;
@@ -13062,10 +13112,11 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         let totalOriginal = 0;
         const ordersList = [];
         client.rows.forEach(r => {
-            const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
+            const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+            const orderNum = orderNumIdx !== -1 ? String(rowData[orderNumIdx] || '').trim() : '';
             if (orderNum && orderNum !== '—') ordersList.push(orderNum);
 
-            const pkgs = packagesIdx !== -1 ? parseFloat(r.originalRow[packagesIdx]) || 0 : 0;
+            const pkgs = packagesIdx !== -1 ? parseFloat(rowData[packagesIdx]) || 0 : 0;
             totalOriginal += pkgs;
         });
 
@@ -13078,34 +13129,75 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         let hasAnyDeliver = false;
 
         client.rows.forEach(r => {
+            const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
             if (dischargeIdx !== -1) {
-                const val = parseFloat(r.originalRow[dischargeIdx]);
-                if (!isNaN(val)) {
+                const val = parseFloat(rowData[dischargeIdx]);
+                if (!isNaN(val) && val > 0) {
                     totalDischarged += val;
                     hasAnyDischarge = true;
                 }
             }
             if (deliverIdx !== -1) {
-                const val = parseFloat(r.originalRow[deliverIdx]);
-                if (!isNaN(val)) {
+                const val = parseFloat(rowData[deliverIdx]);
+                if (!isNaN(val) && val > 0) {
                     totalDelivered += val;
                     hasAnyDeliver = true;
                 }
             }
         });
 
-        const dischargeVal = hasAnyDischarge ? totalDischarged : '';
-        const deliverVal = hasAnyDeliver ? totalDelivered : '';
+        // Se já foi gravado no GSheet/PB com valor > 0, usar o valor gravado.
+        // Se ainda não foi gravado (novo/pendente), sugerir por padrão a totalidade dos volumes do cliente (totalOriginal).
+        const dischargeVal = hasAnyDischarge ? totalDischarged : (totalOriginal > 0 ? totalOriginal : '');
+        const deliverVal = hasAnyDeliver ? totalDelivered : (hasAnyDischarge ? totalDischarged : (totalOriginal > 0 ? totalOriginal : ''));
 
-        // Ler valores textuais da primeira linha do cliente
+        // Ler valores textuais das linhas do cliente (preferindo valores não-vazios)
         const firstRowIndex = client.rows[0].originalIndex;
         const firstRowData = state.confirm?.data?.[firstRowIndex] || [];
-        const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
-        const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
-        const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
-        const motivoIsencaoVal = motivoIsencaoIdx !== -1 ? (firstRowData[motivoIsencaoIdx] || '') : '';
-        const contactNoteVal = contactNoteIdx !== -1 ? (firstRowData[contactNoteIdx] || '') : (client.contactNote || '');
-        const viaturaVal = viaturaIdx !== -1 ? (firstRowData[viaturaIdx] || '') : (client.viatura || '');
+        let deliverDateVal = '';
+        let deliverToVal = '';
+        let contactoVal = '';
+        let motivoIsencaoVal = '';
+        let viaturaVal = client.viatura || '';
+        let contactNoteVal = client.contactNote || '';
+        let duValRaw = '';
+        let clientNuitRaw = client.nuitVal || '';
+        let localDescargaRaw = client.moradaVal || '';
+        let localCargaRaw = client.localCargaVal || '';
+
+        for (const r of client.rows) {
+            const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+            if (!deliverDateVal && deliverDateIdx !== -1 && rowData[deliverDateIdx]) deliverDateVal = String(rowData[deliverDateIdx]).trim();
+            if (!deliverToVal && deliverToIdx !== -1 && rowData[deliverToIdx]) deliverToVal = String(rowData[deliverToIdx]).trim();
+            if (!contactoVal && contactoIdx !== -1 && rowData[contactoIdx]) contactoVal = String(rowData[contactoIdx]).trim();
+            if (!motivoIsencaoVal && motivoIsencaoIdx !== -1 && rowData[motivoIsencaoIdx]) motivoIsencaoVal = String(rowData[motivoIsencaoIdx]).trim();
+            if (!viaturaVal && viaturaIdx !== -1 && rowData[viaturaIdx]) viaturaVal = String(rowData[viaturaIdx]).trim();
+            if (!contactNoteVal && contactNoteIdx !== -1 && rowData[contactNoteIdx]) contactNoteVal = String(rowData[contactNoteIdx]).trim();
+            if (!duValRaw && duIdx !== -1 && rowData[duIdx]) {
+                const raw = String(rowData[duIdx]).trim();
+                if (raw && raw !== '11000' && raw !== '13500' && raw !== '—') duValRaw = raw;
+            }
+            if (!clientNuitRaw && nuitIdx !== -1 && rowData[nuitIdx]) clientNuitRaw = String(rowData[nuitIdx]).trim();
+            if (!localDescargaRaw && moradaIdx !== -1 && rowData[moradaIdx]) localDescargaRaw = String(rowData[moradaIdx]).trim();
+            if (!localCargaRaw && localCargaIdx !== -1 && rowData[localCargaIdx]) localCargaRaw = String(rowData[localCargaIdx]).trim();
+        }
+
+        const isBogusDu = duValRaw === '11000' || duValRaw === '13500';
+        let duVal = (!isBogusDu && duValRaw && duValRaw !== '—') ? duValRaw : (client.duVal || '');
+        if (duVal === '11000' || duVal === '13500') duVal = '';
+
+        let clientNuit = clientNuitRaw;
+        let localDescargaVal = localDescargaRaw;
+        let localCargaVal = localCargaRaw || 'Armazém Júpiter - Matola A, Maputo';
+
+        const clientKey = String(client.displayIdCode || client.groupId || client.displayName || '').trim().replace(/[^A-Za-z0-9_-]/g, '_');
+        try {
+            const meta = JSON.parse(localStorage.getItem(`guia_meta_${clientKey}`) || '{}');
+            if (!duVal && meta.du && meta.du !== '11000' && meta.du !== '13500') duVal = meta.du;
+            if (!clientNuit && meta.nuit) clientNuit = meta.nuit;
+            if (!localDescargaVal && meta.localDescarga) localDescargaVal = meta.localDescarga;
+            if (!localCargaRaw && meta.localCarga) localCargaVal = meta.localCarga;
+        } catch(e) {}
         const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
         const deliveredVal = deliveredIdx !== -1 ? String(firstRowData[deliveredIdx] || '').trim().toUpperCase() : 'NAO';
         const isDelivered = (deliveredVal === 'SIM' || deliveredVal === 'ENTREGUE' || deliveredVal === 'YES');
@@ -13190,7 +13282,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             const despachoControlsDisabled = !hasDischargeDate || !despachoCalc.isRequested;
 
             return `
-                <div id="despacho-copy-card" class="${!hasDischargeDate ? 'bg-slate-50/70 opacity-75' : 'bg-white'} border border-slate-200 rounded-3xl p-5 shadow-sm space-y-3.5 mt-4">
+                <div id="despacho-copy-card" class="${!hasDischargeDate ? 'bg-slate-50/70 opacity-75' : 'bg-white'} border border-slate-200 rounded-2xl p-3.5 shadow-sm space-y-2.5 mt-2.5">
                     <div class="flex items-center justify-between flex-wrap gap-2.5 border-b border-slate-100 pb-3">
                         <div class="flex items-center gap-2.5 flex-wrap">
                             <span class="p-1.5 rounded-xl bg-teal-50 text-teal-700 border border-teal-200/80">
@@ -13449,9 +13541,9 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                         </button>
                     ` : ''}
                     <button onclick="${canEmitGuia ? 'ui.printDeliveryNote()' : 'ui.toast(\'Bloqueado: A entrega não está autorizada.\', \'warning\')'}" 
-                        class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia Dupla (Armazém e Portaria)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
+                        class="flex-1 py-2 px-3 ${canEmitGuia ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-400 cursor-not-allowed opacity-50'} text-white rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95 h-[38px]" title="${canEmitGuia ? 'Emitir Guia de Remessa Oficial (1ª Via: Cliente | 2ª Via: Fica Connosco)' : 'Bloqueado: Regularize Duty, Frete ou Armazenagem'}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.45 1-1 1H4v2h16v-2h-5c-.55 0-1-.45-1-1v-2.34"></path><path d="M12 2v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V2"></path></svg>
-                        Guia Dupla
+                        Guia de Remessa
                     </button>
                     ${adminPrinterBtnHtml}
                 </div>
@@ -13552,10 +13644,11 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             </span>
         `;
 
-        // Preservar valores já digitados pelo operador no formulário se ainda não tiverem sido gravados
+        // Preservar valores já digitados pelo operador no formulário se ainda não tiverem sido gravados (apenas para o mesmo cliente!)
         let draftValues = null;
         const currentForm = container.querySelector('#armazem-form-container');
-        if (currentForm && hasDischargeDate) {
+        const currentClientKey = currentForm?.dataset?.clientKey;
+        if (currentForm && currentClientKey === clientKey && hasDischargeDate) {
             const hasFocus = currentForm.contains(document.activeElement);
             const activeId = document.activeElement ? (document.activeElement.name || document.activeElement.id) : null;
             const selStart = document.activeElement?.selectionStart;
@@ -13601,12 +13694,12 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             ${bannerHtml}
             
             ${allowDelivery ? `
-            <div class="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
-                <div class="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-3">
+            <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+                <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 flex-wrap gap-2.5">
                     <h4 class="font-black text-xs uppercase tracking-wider text-slate-700">Controlo Operacional (Armazém)</h4>
                     
                     <!-- Resumos e Quantidades Totais -->
-                    <div class="flex flex-wrap items-center gap-2.5 text-xs">
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
                         <span class="text-slate-400 font-bold uppercase text-[9px] bg-slate-100 px-2.5 py-1 rounded-lg">
                             Ordens: <strong class="text-slate-700 ml-1 font-extrabold">${ordersString}</strong>
                         </span>
@@ -13625,7 +13718,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                     </div>
                 </div>
                 
-                <div id="armazem-form-container" class="grid grid-cols-1 md:grid-cols-12 gap-3 items-end bg-slate-50/50 p-4 rounded-2xl border border-slate-100 ${!hasDischargeDate ? 'opacity-70' : ''}">
+                <div id="armazem-form-container" data-client-key="${clientKey}" class="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end bg-slate-50/50 p-3 rounded-xl border border-slate-100 ${!hasDischargeDate ? 'opacity-70' : ''}">
                     <!-- Linha 1: Informações de Carga & Destinatário -->
                     <div class="col-span-1 md:col-span-2">
                         <label class="block text-[9px] font-black uppercase text-slate-400 mb-1.5">Descarregado</label>
@@ -13766,6 +13859,57 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             class="w-full py-2 px-3 bg-white border border-slate-200 rounded-xl text-[11px] font-normal focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
                     </div>
 
+                    <!-- Linha 2.5: Dados Oficiais para Guia de Remessa (Obrigatórios para emissão) -->
+                    <div class="col-span-1 md:col-span-12 pt-2 border-t border-slate-200 mt-0.5">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-[10px] font-black uppercase tracking-wider text-indigo-900 flex items-center gap-1.5">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                                📋 Dados da Guia de Remessa (Obrigatórios para emissão)
+                            </span>
+                            <span class="text-[9px] text-indigo-700 font-extrabold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                                🔒 Preenchimento obrigatório para emitir a Guia
+                            </span>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                            <div>
+                                <label class="block text-[9px] font-black uppercase text-slate-600 mb-1 flex items-center justify-between">
+                                    <span>DU (Despacho Aduaneiro)</span>
+                                    <span class="text-rose-500 font-black">*</span>
+                                </label>
+                                <input type="text" name="despachoDU" value="${duVal}" placeholder="Ex: 2026/012345"
+                                    ${!isEditable ? 'disabled' : ''}
+                                    class="w-full py-2 px-3 bg-white border border-slate-300 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-black uppercase text-slate-600 mb-1 flex items-center justify-between">
+                                    <span>NUIT do Cliente</span>
+                                    <span class="text-rose-500 font-black">*</span>
+                                </label>
+                                <input type="text" name="clientNuit" value="${clientNuit}" placeholder="Ex: 400123456"
+                                    ${!isEditable ? 'disabled' : ''}
+                                    class="w-full py-2 px-3 bg-white border border-slate-300 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-black uppercase text-slate-600 mb-1 flex items-center justify-between">
+                                    <span>Local de Descarga (Morada)</span>
+                                    <span class="text-rose-500 font-black">*</span>
+                                </label>
+                                <input type="text" name="localDescarga" value="${localDescargaVal}" placeholder="Ex: Matola / Maputo"
+                                    ${!isEditable ? 'disabled' : ''}
+                                    class="w-full py-2 px-3 bg-white border border-slate-300 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-black uppercase text-slate-600 mb-1 flex items-center justify-between">
+                                    <span>Local de Carga</span>
+                                    <span class="text-rose-500 font-black">*</span>
+                                </label>
+                                <input type="text" name="localCarga" value="${localCargaVal || 'Armazém Júpiter - Matola A, Maputo'}" placeholder="Origem da carga"
+                                    ${!isEditable ? 'disabled' : ''}
+                                    class="w-full py-2 px-3 bg-white border border-slate-300 rounded-xl text-[11px] font-bold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all ${!isEditable ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}">
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Rodapé com Botões de Ação -->
                     <div class="col-span-1 md:col-span-12 pt-2 border-t border-slate-100 flex items-center justify-end gap-2 flex-wrap">
                         ${buttonsHtml}
@@ -13813,7 +13957,7 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         // Restaurar valores em edição se o operador estava a preencher
         if (draftValues && hasDischargeDate) {
             const newForm = container.querySelector('#armazem-form-container');
-            if (newForm) {
+            if (newForm && newForm.dataset.clientKey === clientKey) {
                 if (draftValues.discharge !== undefined && draftValues.discharge !== '') {
                     const el = newForm.querySelector('input[name="discharge"]');
                     if (el) el.value = draftValues.discharge;
@@ -13916,6 +14060,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const notaContactoInput = container.querySelector('input[name="notaContacto"]');
     const motivoIsencaoInput = container.querySelector('input[name="motivoIsencao"]');
     const storagePaidInput = container.querySelector('select[name="storagePaid"]');
+    const duInput = container.querySelector('input[name="despachoDU"]');
+    const nuitInput = container.querySelector('input[name="clientNuit"]');
+    const localDescargaInput = container.querySelector('input[name="localDescarga"]');
+    const localCargaInput = container.querySelector('input[name="localCarga"]');
 
     const formatDateForSheet = (dateStr) => {
         if (!dateStr) return '';
@@ -13938,6 +14086,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const viaturaVal = (isViaturaChecked && viaturaInput) ? viaturaInput.value.trim() : '';
 
     const notaContactoVal = notaContactoInput ? notaContactoInput.value.trim() : '';
+    const duVal = duInput ? duInput.value.trim() : '';
+    const clientNuit = nuitInput ? nuitInput.value.trim() : '';
+    const localDescargaVal = localDescargaInput ? localDescargaInput.value.trim() : '';
+    const localCargaVal = localCargaInput ? localCargaInput.value.trim() : 'Armazém Júpiter - Matola A, Maputo';
 
     const isIsencaoChecked = container.querySelector('#check-has-isencao')?.checked;
     let motivoIsencaoVal = '';
@@ -13972,13 +14124,17 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     if (motivoIsencaoVal) await ensureMotivoIsencaoColumn();
     await ensureStorageValueColumn();
     if (isDespachoRequestedNow || hasExistingDespachoCols) await ensureDespachoCopyColumns();
+    if (duVal) await ensureDuColumn();
+    if (clientNuit) await ensureNuitColumn();
+    if (localDescargaVal) await ensureLocalDescargaColumn();
+    if (localCargaVal && localCargaVal !== 'Armazém Júpiter - Matola A, Maputo') await ensureLocalCargaColumn();
 
     const columns = state.confirm.columns || [];
     const findCol = (targets, opts) => findWarehouseCol(columns, targets, opts);
 
-    const packagesIdx = findCol(['PACKAGES']);
-    const dischargeIdx = findCol(['DISCHARGE']);
-    const deliverIdx = findCol(['DELIVER']);
+    const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
+    const dischargeIdx = findCol(['DISCHARGE', 'DESCARGA', 'DESCARREGADO']);
+    const deliverIdx = findCol(['DELIVER', 'ENTREGUE', 'ENTREGA'], { exclude: ['DATE', 'TO', 'STATUS', 'ED'] });
     const deliverDateIdx = findCol(['DELIVER DATE']);
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
@@ -13988,6 +14144,19 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
     const contactNoteIdx = findCol(['NOTA CONTACTO', 'ESTADO CONTACTO', 'OBS CONTACTO', 'NOTA ARMAZEM', 'OBS ARMAZEM', 'CONTACT NOTE']);
     const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
+    const duIdx = findCol(
+        ['DESPACHO DU', 'NUMERO DU', 'Nº DU', 'NO DU', 'DOC UNICO', 'DOCUMENTO UNICO', 'DECLARACAO DU', 'DU'],
+        { exclude: ['DUTY', 'CBM', 'AMOUNT', 'PREPAID', 'NOTA', 'UNIT'] }
+    );
+    const nuitIdx = findCol(['NUIT CLIENTE', 'NUIT', 'NIF']);
+    const moradaIdx = findCol(
+        ['LOCAL DE DESCARGA', 'LOCAL DESCARGA', 'MORADA CLIENTE', 'MORADA', 'ENDERECO', 'DESTINO DE CARGA', 'DESTINO ENTREGA'],
+        { exclude: ['DISCHARGE'] }
+    );
+    const localCargaIdx = findCol(
+        ['LOCAL DE CARGA', 'LOCAL CARGA', 'LOCAL ORIGEM', 'ORIGEM CARGA'],
+        { exclude: ['ARMAZENAGEM', 'ARMAZEM', 'NOTA', 'VALOR', 'PAGO', 'ISENCAO'] }
+    );
     const despachoStatusIdx = findCol(['COPIA DESPACHO', 'COPIA DE DESPACHO', 'DESPACHO COPY', 'COPIA_DESPACHO']);
     const despachoValueIdx = findCol(['COPIA DESPACHO VALOR', 'VALOR COPIA DESPACHO', 'COPIA DESPACHO VALUE', 'DESPACHO VALUE', 'DESPACHO VALOR']);
     const defaultDespachoPrice = getDespachoCopyDefaultPrice();
@@ -14090,7 +14259,8 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
                 if (idx === client.rows.length - 1) {
                     allocatedDischarge = String(Math.max(0, remainingDischarge));
                 } else {
-                    const alloc = Math.min(remainingDischarge, origPackages);
+                    const capacity = origPackages > 0 ? origPackages : 1;
+                    const alloc = Math.min(remainingDischarge, capacity);
                     allocatedDischarge = String(alloc);
                     remainingDischarge = Math.max(0, remainingDischarge - alloc);
                 }
@@ -14106,7 +14276,8 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
                 if (idx === client.rows.length - 1) {
                     allocatedDeliver = String(Math.max(0, remainingDeliver));
                 } else {
-                    const alloc = Math.min(remainingDeliver, origPackages);
+                    const capacity = origPackages > 0 ? origPackages : 1;
+                    const alloc = Math.min(remainingDeliver, capacity);
                     allocatedDeliver = String(alloc);
                     remainingDeliver = Math.max(0, remainingDeliver - alloc);
                 }
@@ -14162,15 +14333,30 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             rowData[despachoValueIdx] = dvCellVal;
             batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(despachoValueIdx)}${rowNum}`), values: [[dvCellVal]] });
         }
+        if (duIdx !== -1) {
+            rowData[duIdx] = duVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(duIdx)}${rowNum}`), values: [[duVal]] });
+        }
+        if (nuitIdx !== -1) {
+            rowData[nuitIdx] = clientNuit;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(nuitIdx)}${rowNum}`), values: [[clientNuit]] });
+        }
+        if (moradaIdx !== -1) {
+            rowData[moradaIdx] = localDescargaVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(moradaIdx)}${rowNum}`), values: [[localDescargaVal]] });
+        }
+        if (localCargaIdx !== -1) {
+            rowData[localCargaIdx] = localCargaVal;
+            batchUpdates.push({ range: formatSheetRange(sheetName, `${getColLetter(localCargaIdx)}${rowNum}`), values: [[localCargaVal]] });
+        }
 
         updatedClientRows.push({ rowIndex, rowData });
     });
 
     try {
         setBtnLoading(buttonEl, true);
-        await updateGSheetBatch(state.confirm.sheetId, batchUpdates);
-        
-        // Atualizar estado em memória local
+
+        // 1. Atualizar imediatamente o estado em memória local (state.confirm.data)
         updatedClientRows.forEach(item => {
             state.confirm.data[item.rowIndex] = item.rowData;
             const rObj = client.rows.find(r => r.originalIndex === item.rowIndex);
@@ -14179,6 +14365,22 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             }
         });
 
+        // 2. Gravar no Google Sheets em lote
+        await updateGSheetBatch(state.confirm.sheetId, batchUpdates);
+        
+        // 3. Forçar sincronização imediata no PocketBase com o snapshot 100% atualizado
+        debouncedSyncToPocketBase(false);
+
+        // 4. Emitir eventos de tempo real no PocketBase para cada linha alterada
+        if (state.confirm?.sheetId) {
+            updatedClientRows.forEach(item => {
+                emitConfirmEvent(state.confirm.sheetId, item.rowIndex, 'UPDATE', {
+                    status: storagePaidVal,
+                    rowData: item.rowData
+                });
+            });
+        }
+
         // Atualizar rastreio local
         const opUser = pb.authStore.model?.name || pb.authStore.model?.email || 'Operador';
         const nowIso = new Date().toISOString();
@@ -14186,6 +14388,22 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
         client.lastWarehouseSavedAt = nowIso;
         client.contactNote = notaContactoVal;
         client.viatura = viaturaVal;
+        client.duVal = duVal;
+        client.nuitVal = clientNuit;
+        client.moradaVal = localDescargaVal;
+        client.localCargaVal = localCargaVal;
+
+        try {
+            const clientKey = String(client.displayIdCode || client.groupId || client.displayName || '').trim().replace(/[^A-Za-z0-9_-]/g, '_');
+            if (clientKey) {
+                localStorage.setItem(`guia_meta_${clientKey}`, JSON.stringify({
+                    du: duVal,
+                    nuit: clientNuit,
+                    localDescarga: localDescargaVal,
+                    localCarga: localCargaVal
+                }));
+            }
+        } catch(e) {}
 
         // Auditoria: Armazém gravado / entregue
         const actionType = deliveredVal === 'SIM' ? 'ARMAZEM_ENTREGUE' : 'ARMAZEM_GRAVADO';
@@ -14197,6 +14415,10 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
             contacto: contactoVal,
             viatura: viaturaVal,
             notaContacto: notaContactoVal,
+            du: duVal,
+            nuit: clientNuit,
+            localDescarga: localDescargaVal,
+            localCarga: localCargaVal,
             armazenagemPago: storagePaidVal,
             valorArmazenagem: storageValueVal,
             isencao: motivoIsencaoVal,
@@ -14206,10 +14428,11 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
         // Re-renderizar o detalhe do cliente para atualizar a tabela
         await showConfirmDetail(client, window.currentActiveClientIndex);
         
-        toast('Dados de Armazém gravados com sucesso!', 'success');
+        toast('Dados de Armazém gravados com sucesso no GSheet e PocketBase!', 'success');
     } catch (err) {
         console.error('[WAREHOUSE] Erro ao gravar dados:', err);
-        toast('Erro ao gravar dados no GSheet: ' + err.message, 'error');
+        debouncedSyncToPocketBase(true);
+        toast('Erro ao gravar dados no GSheet (mantido offline no PocketBase): ' + err.message, 'warning');
     } finally {
         setBtnLoading(buttonEl, false);
     }
@@ -14384,72 +14607,215 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const findCol = (targets, opts) => findWarehouseCol(columns, targets, opts);
 
     const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
-    const packagesIdx = findCol(['PACKAGES']);
-    const dischargeIdx = findCol(['DISCHARGE']);
-    const deliverIdx = findCol(['DELIVER']);
+    const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
+    const dischargeIdx = findCol(['DISCHARGE', 'DESCARGA', 'DESCARREGADO']);
+    const deliverIdx = findCol(['DELIVER', 'ENTREGUE', 'ENTREGA'], { exclude: ['DATE', 'TO', 'STATUS', 'ED'] });
     const deliverDateIdx = findCol(['DELIVER DATE']);
     const deliverToIdx = findCol(['DELIVER TO']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE', 'STATUS ENTREGA', 'DELIVERY STATUS']);
     const viaturaIdx = findCol(['VIATURA', 'MATRICULA', 'VIATURA MATRICULA', 'PLACA', 'CARRO', 'VEICULO', 'VEHICLE']);
+    const duIdx = findCol(
+        ['DESPACHO DU', 'NUMERO DU', 'Nº DU', 'NO DU', 'DOC UNICO', 'DOCUMENTO UNICO', 'DECLARACAO DU', 'DU'],
+        { exclude: ['DUTY', 'CBM', 'AMOUNT', 'PREPAID', 'NOTA', 'UNIT'] }
+    );
+    const nuitIdx = findCol(['NUIT CLIENTE', 'NUIT', 'NIF']);
+    const moradaIdx = findCol(
+        ['LOCAL DE DESCARGA', 'LOCAL DESCARGA', 'MORADA CLIENTE', 'MORADA', 'ENDERECO', 'DESTINO DE CARGA', 'DESTINO ENTREGA'],
+        { exclude: ['DISCHARGE'] }
+    );
+    const localCargaIdx = findCol(
+        ['LOCAL DE CARGA', 'LOCAL CARGA', 'LOCAL ORIGEM', 'ORIGEM CARGA'],
+        { exclude: ['ARMAZENAGEM', 'ARMAZEM', 'NOTA', 'VALOR', 'PAGO', 'ISENCAO'] }
+    );
     const descIdx = findCol(['DESCRIPTION', 'DESCRICAO', 'DESCRICÃO', 'DESC', 'MERCADORIA', 'CARGO', 'PRODUTO', 'ARTIGO', 'CONTEUDO', 'NATUREZA', 'GOODS', 'ITEM']);
 
+    const clientKey = String(client.displayIdCode || client.groupId || client.displayName || '').trim().replace(/[^A-Za-z0-9_-]/g, '_');
+
     let totalOriginal = 0;
+    let totalDischarged = 0;
+    let totalDelivered = 0;
     const ordersList = [];
     client.rows.forEach(r => {
-        const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
+        const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+        const orderNum = orderNumIdx !== -1 ? String(rowData[orderNumIdx] || '').trim() : '';
         if (orderNum && orderNum !== '—') ordersList.push(orderNum);
 
-        const pkgs = packagesIdx !== -1 ? parseFloat(r.originalRow[packagesIdx]) || 0 : 0;
+        const pkgs = packagesIdx !== -1 ? parseFloat(rowData[packagesIdx]) || 0 : 0;
         totalOriginal += pkgs;
+
+        if (dischargeIdx !== -1) {
+            const d = parseFloat(rowData[dischargeIdx]);
+            if (!isNaN(d) && d > 0) totalDischarged += d;
+        }
+        if (deliverIdx !== -1) {
+            const e = parseFloat(rowData[deliverIdx]);
+            if (!isNaN(e) && e > 0) totalDelivered += e;
+        }
     });
 
     const ordersString = ordersList.join(', ') || '—';
 
     // Ler da primeira linha
-    const firstRowData = client.rows[0].originalRow;
-    
-    // Calcular agregados de Discharge e Deliver sobre todas as ordens
-    let totalDischarged = 0;
-    let totalDelivered = 0;
-    client.rows.forEach(r => {
-        if (dischargeIdx !== -1) totalDischarged += parseFloat(r.originalRow[dischargeIdx]) || 0;
-        if (deliverIdx !== -1) totalDelivered += parseFloat(r.originalRow[deliverIdx]) || 0;
-    });
+    const firstRowData = (state.confirm?.data && state.confirm.data[client.rows[0].originalIndex]) || client.rows[0].originalRow || [];
 
-    let receiverName = '—';
-    let receiverContact = '—';
-    let deliveryDate = new Date().toLocaleDateString('pt-PT');
-    let viaturaVal = viaturaIdx !== -1 ? (firstRowData[viaturaIdx] || '') : (client.viatura || '');
+    let receiverName = '';
+    let receiverContact = '';
+    let deliveryDate = '';
+    let viaturaVal = client.viatura || '';
+    let duVal = client.duVal || '';
+    let clientNuit = client.nuitVal || '';
+    let clientAddress = client.moradaVal || '';
+    let localCargaVal = client.localCargaVal || '';
 
-    const deliverDateVal = deliverDateIdx !== -1 ? (firstRowData[deliverDateIdx] || '') : '';
-    const deliverToVal = deliverToIdx !== -1 ? (firstRowData[deliverToIdx] || '') : '';
-    const contactoVal = contactoIdx !== -1 ? (firstRowData[contactoIdx] || '') : '';
+    // Buscar em todas as ordens do cliente o primeiro valor não vazio
+    for (const r of client.rows) {
+        const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+        if (!receiverName && deliverToIdx !== -1 && rowData[deliverToIdx]) receiverName = String(rowData[deliverToIdx]).trim();
+        if (!receiverContact && contactoIdx !== -1 && rowData[contactoIdx]) receiverContact = String(rowData[contactoIdx]).trim();
+        if (!deliveryDate && deliverDateIdx !== -1 && rowData[deliverDateIdx]) deliveryDate = String(rowData[deliverDateIdx]).trim();
+        if (!viaturaVal && viaturaIdx !== -1 && rowData[viaturaIdx]) viaturaVal = String(rowData[viaturaIdx]).trim();
+        if (!duVal && duIdx !== -1 && rowData[duIdx]) {
+            const raw = String(rowData[duIdx]).trim();
+            if (raw && raw !== '11000' && raw !== '13500' && raw !== '—') duVal = raw;
+        }
+        if (!clientNuit && nuitIdx !== -1 && rowData[nuitIdx]) clientNuit = String(rowData[nuitIdx]).trim();
+        if (!clientAddress && moradaIdx !== -1 && rowData[moradaIdx]) clientAddress = String(rowData[moradaIdx]).trim();
+        if (!localCargaVal && localCargaIdx !== -1 && rowData[localCargaIdx]) localCargaVal = String(rowData[localCargaIdx]).trim();
+    }
 
-    if (deliverToVal && deliverToVal !== '—') receiverName = deliverToVal;
-    if (contactoVal && contactoVal !== '—') receiverContact = contactoVal;
-    if (deliverDateVal && deliverDateVal !== '—') deliveryDate = deliverDateVal;
+    if (duVal === '11000' || duVal === '13500') duVal = '';
 
-    // Verificar se há valores preenchidos no formulário aberto atualmente
+    // Verificar se há valores preenchidos no formulário aberto atualmente para este cliente
     const formContainer = document.getElementById('armazem-form-container');
-    if (formContainer) {
+    if (formContainer && formContainer.dataset.clientKey === clientKey) {
         const liveDeliverTo = formContainer.querySelector('input[name="deliverTo"]')?.value?.trim();
         const liveContacto = formContainer.querySelector('input[name="contacto"]')?.value?.trim();
         const liveDate = formContainer.querySelector('input[name="deliverDate"]')?.value?.trim();
         const liveDeliver = formContainer.querySelector('input[name="deliver"]')?.value?.trim();
         const liveViatura = formContainer.querySelector('input[name="viatura"]')?.value?.trim();
+        const liveDu = formContainer.querySelector('input[name="despachoDU"]')?.value?.trim();
+        const liveNuit = formContainer.querySelector('input[name="clientNuit"]')?.value?.trim();
+        const liveDescarga = formContainer.querySelector('input[name="localDescarga"]')?.value?.trim();
+        const liveCarga = formContainer.querySelector('input[name="localCarga"]')?.value?.trim();
+
         if (liveDeliverTo) receiverName = liveDeliverTo;
         if (liveContacto) receiverContact = liveContacto;
         if (liveDate) deliveryDate = liveDate;
         if (liveViatura) viaturaVal = liveViatura;
         if (liveDeliver && parseFloat(liveDeliver) > 0) totalDelivered = parseFloat(liveDeliver);
+        if (liveDu && liveDu !== '11000' && liveDu !== '13500') duVal = liveDu;
+        if (liveNuit) clientNuit = liveNuit;
+        if (liveDescarga) clientAddress = liveDescarga;
+        if (liveCarga) localCargaVal = liveCarga;
     }
-    if (receiverContact === '—' && client.clientPhone) {
+
+    if (!receiverContact && client.clientPhone) {
         receiverContact = client.clientPhone;
     }
-    if (receiverName === '—' && clientName) {
+    if (!receiverName && clientName) {
         receiverName = clientName;
     }
+
+    try {
+        const meta = JSON.parse(localStorage.getItem(`guia_meta_${clientKey}`) || '{}');
+        if (!duVal && meta.du && meta.du !== '11000' && meta.du !== '13500') duVal = meta.du;
+        if (!clientNuit && meta.nuit) clientNuit = meta.nuit;
+        if (!clientAddress && meta.localDescarga) clientAddress = meta.localDescarga;
+        if (!localCargaVal && meta.localCarga) localCargaVal = meta.localCarga;
+    } catch(e) {}
+
+    if (!localCargaVal) localCargaVal = 'Armazém Júpiter - Matola A, Maputo';
+
+    // =========================================================================
+    // VALIDAÇÃO OBRIGATÓRIA ANTES DA EMISSÃO DA GUIA (Preenchimento na aba Armazém)
+    // =========================================================================
+    const missingFields = [];
+    if (!duVal || duVal.trim() === '' || duVal.trim() === '—') {
+        missingFields.push({ label: 'DU (Despacho Aduaneiro)', name: 'despachoDU' });
+    }
+    if (!clientNuit || clientNuit.trim() === '' || clientNuit.trim() === '—') {
+        missingFields.push({ label: 'NUIT do Cliente', name: 'clientNuit' });
+    }
+    if (!clientAddress || clientAddress.trim() === '' || clientAddress.trim() === '—') {
+        missingFields.push({ label: 'Local de Descarga (Morada)', name: 'localDescarga' });
+    }
+    if (!localCargaVal || localCargaVal.trim() === '' || localCargaVal.trim() === '—') {
+        missingFields.push({ label: 'Local de Carga', name: 'localCarga' });
+    }
+    if (!receiverName || receiverName.trim() === '' || receiverName.trim() === '—') {
+        missingFields.push({ label: 'Entregue A (Nome de quem recebe)', name: 'deliverTo' });
+    }
+    if (!receiverContact || receiverContact.trim() === '' || receiverContact.trim() === '—') {
+        missingFields.push({ label: 'Contacto do Recebedor', name: 'contacto' });
+    }
+    if (!deliveryDate || deliveryDate.trim() === '' || deliveryDate.trim() === '—') {
+        missingFields.push({ label: 'Data de Entrega', name: 'deliverDate' });
+    }
+    if (!totalDelivered || parseFloat(totalDelivered) <= 0) {
+        missingFields.push({ label: 'Volumes Entregues (Qtd)', name: 'deliver' });
+    }
+
+    if (missingFields.length > 0) {
+        const labelsList = missingFields.map(m => m.label).join('\n• ');
+        toast(`⚠️ Bloqueado: Não é possível emitir a Guia de Remessa sem preencher na aba Armazenagem os campos obrigatórios:\n• ${labelsList}`, 'warning', 8500);
+
+        if (formContainer) {
+            missingFields.forEach(m => {
+                const el = formContainer.querySelector(`[name="${m.name}"]`);
+                if (el) {
+                    el.classList.add('border-rose-500', 'ring-2', 'ring-rose-500/40', 'bg-rose-50/80');
+                    setTimeout(() => {
+                        el.classList.remove('border-rose-500', 'ring-2', 'ring-rose-500/40', 'bg-rose-50/80');
+                    }, 6500);
+                }
+            });
+            const firstEl = formContainer.querySelector(`[name="${missingFields[0].name}"]`);
+            if (firstEl) {
+                firstEl.focus();
+                firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        return;
+    }
+
+    // Persistir os valores validados no cliente e no localStorage para reutilização futura
+    client.duVal = duVal;
+    client.nuitVal = clientNuit;
+    client.moradaVal = clientAddress;
+    client.localCargaVal = localCargaVal;
+    try {
+        if (clientKey) {
+            localStorage.setItem(`guia_meta_${clientKey}`, JSON.stringify({
+                du: duVal,
+                nuit: clientNuit,
+                localDescarga: clientAddress,
+                localCarga: localCargaVal
+            }));
+        }
+    } catch(e) {}
+
+    const formatPortugueseDateFull = (dateInput) => {
+        if (!dateInput) return '';
+        let d = null;
+        if (dateInput instanceof Date && !isNaN(dateInput)) {
+            d = dateInput;
+        } else if (typeof dateInput === 'string') {
+            const parts = dateInput.trim().split(/[\/\-]/);
+            if (parts.length === 3) {
+                if (parts[0].length === 4) {
+                    d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+                } else {
+                    d = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+                }
+            } else {
+                d = new Date(dateInput);
+            }
+        }
+        if (!d || isNaN(d.getTime())) return dateInput;
+        const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+        return `${d.getDate()} de ${months[d.getMonth()]} de ${d.getFullYear()}`;
+    };
 
     const issuerName = pb.authStore.model?.name || pb.authStore.model?.email || 'Operador Autorizado';
     const now = new Date();
@@ -14466,7 +14832,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const dataEmissao = now.toLocaleDateString('pt-PT');
     const horaEmissao = now.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
 
-    // Auditoria: Emissão de Guia de Entrega
+    // Auditoria: Emissão de Guia de Remessa
     const spreadsheetId = state.confirm?.sheetId || '';
     logConfirmAudit(spreadsheetId, client.no, client.displayName, 'GUIA_EMITIDA', {
         numeroGuia: guiaNumber,
@@ -14475,6 +14841,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         recebedor: receiverName,
         contacto: receiverContact,
         viatura: viaturaVal,
+        du: duVal,
+        nuit: clientNuit,
+        localDescarga: clientAddress,
+        localCarga: localCargaVal,
         dataEntrega: deliveryDate
     }).catch(err => console.warn('[Audit] Erro ao registar emissão de guia:', err));
 
@@ -14516,71 +14886,39 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
     }
 
-    // Determinar modo de impressão baseado no número total de ordens (Otimizado para poupança de papel):
-    // - 1 a 6 ordens: '1_FOLHA' (1 folha única A4 dividida ao meio com corte ✂ para poupar papel)
-    // - 7 a 14 ordens: '2_FOLHAS' (1 folha A4 completa para 1ª via + 1 folha A4 para 2ª via)
-    // - > 14 ordens: '4_FOLHAS' (2 folhas para 1ª via + 2 folhas para 2ª via)
+    // Determinar modo de impressão baseado no número total de ordens:
+    // Até 18 ordens: 1 Folha Única Dupla (1ª Via e 2ª Via na mesma folha A4 com corte ao meio)
+    // De 19 a 28 ordens: 2 Folhas A4 inteiras (Folha 1: Cliente • Folha 2: Júpiter)
+    // Mais de 28 ordens: 4 Folhas (2 folhas Cliente + 2 folhas Júpiter)
     const totalOrdersCount = client.rows ? client.rows.length : 0;
     let printMode = '1_FOLHA';
-    if (totalOrdersCount > 14) {
+    if (totalOrdersCount > 28) {
         printMode = '4_FOLHAS';
-    } else if (totalOrdersCount > 6) {
+    } else if (totalOrdersCount >= 19) {
         printMode = '2_FOLHAS';
     }
 
-    // Para o modo 4 Folhas, dividir as ordens em duas partes (Parte 1 e Parte 2):
-    // A Parte 1 tem os 3 blocos/cards de cliente/recebimento/armazenagem, por isso comporta confortavelmente até 10 ordens.
-    // A Parte 2 tem cabeçalho compacto de continuação, comportando as restantes ordens com totais e assinaturas.
-    const splitIdx = Math.min(10, Math.ceil(totalOrdersCount / 2));
+    const splitIdx = Math.ceil(totalOrdersCount / 2);
     const part1Rows = (client.rows || []).slice(0, splitIdx);
     const part2Rows = (client.rows || []).slice(splitIdx);
 
-    // Helper para gerar o HTML de cada via mantendo a identidade visual com tipografia nítida e legível
+    // Helper para gerar o HTML de cada via mantendo a identidade visual idêntica ao bloco manual
     const generateViaHtml = (viaType, pagePart = 'FULL') => {
-        const isArmazem = viaType === 'ARMAZEM';
-        const docTitle = isArmazem ? 'Guia de Entrega' : 'Guia de Saída';
+        const isCliente = viaType === 'CLIENTE';
+        const docTitle = 'GUIA DE REMESSA';
         
         let badgeLabel = '';
         if (pagePart === 'HALF') {
-            badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA' : '2ª VIA — PORTARIA & SEGURANÇA';
+            badgeLabel = isCliente ? '1ª VIA — ORIGINAL (CLIENTE / DESTINATÁRIO)' : '2ª VIA — DUPLICADO (JÚPITER LOGISTICS — FICA CONNOSCO)';
         } else if (pagePart === 'FULL') {
-            badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM / CONFERÊNCIA (FOLHA 1 DE 2)' : '2ª VIA — PORTARIA & SEGURANÇA (FOLHA 2 DE 2)';
+            badgeLabel = isCliente ? '1ª VIA — ORIGINAL (CLIENTE / DESTINATÁRIO) • FOLHA 1 DE 2' : '2ª VIA — DUPLICADO (JÚPITER LOGISTICS — FICA CONNOSCO) • FOLHA 2 DE 2';
         } else if (pagePart === 'PART1') {
-            badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM (FOLHA 1 DE 4 — PARTE 1/2)' : '2ª VIA — PORTARIA (FOLHA 3 DE 4 — PARTE 1/2)';
+            badgeLabel = isCliente ? '1ª VIA — ORIGINAL (CLIENTE) • FOLHA 1 DE 4 (PARTE 1/2)' : '2ª VIA — DUPLICADO (JÚPITER LOGISTICS) • FOLHA 3 DE 4 (PARTE 1/2)';
         } else if (pagePart === 'PART2') {
-            badgeLabel = isArmazem ? '1ª VIA — ARMAZÉM (FOLHA 2 DE 4 — CONCLUSÃO)' : '2ª VIA — PORTARIA (FOLHA 4 DE 4 — CONCLUSÃO)';
+            badgeLabel = isCliente ? '1ª VIA — ORIGINAL (CLIENTE) • FOLHA 2 DE 4 (CONCLUSÃO)' : '2ª VIA — DUPLICADO (JÚPITER LOGISTICS) • FOLHA 4 DE 4 (CONCLUSÃO)';
         }
 
-        const badgeStyle = isArmazem 
-            ? 'background: #e0e7ff; color: #1e1b4b; border: 1.5px solid #4338ca; font-weight: 900;' 
-            : 'background: #fef3c7; color: #78350f; border: 1.5px solid #d97706; font-weight: 900;';
-        
-        const actionColTitle = isArmazem ? 'Levantado nesta Guia' : 'Volumes a Sair';
-        const actionColColor = isArmazem ? '#4338ca' : '#0369a1';
-        
-        const noteText = isArmazem
-            ? '<strong>Nota Armazém:</strong> Esta via fica retida no armazém após conferência e entrega. O fiel regista manualmente os volumes levantados e o saldo restante. Emitida por Jupiter Logistics e conferida pelo recebedor.'
-            : '<strong>Nota Portaria:</strong> A segurança da portaria confere os volumes na viatura com o valor autorizado pelo fiel do armazém, carimba e retém esta via para validação diária com o armazém.';
-        
-        const sigBox1 = isArmazem
-            ? `<div class="sig-box">
-                   <p>Jupiter Logistics Lda (${issuerName})</p>
-                   <span>Assinatura de quem emite a Guia</span>
-               </div>`
-            : `<div class="sig-box">
-                   <p>Fiel do Armazém</p>
-                   <span>Assinatura do Fiel do Armazém (Hora: ____:____)</span>
-               </div>`;
-
-        const sigBox2 = isArmazem
-            ? `<div class="sig-box">
-                   <p>${receiverName}</p>
-                   <span>Assinatura do Recebedor</span>
-               </div>`
-            : `<div class="sig-box">
-                   <p>Portaria & Segurança</p>
-                   <span>Visto / Carimbo da Portaria (Hora Saída: ____:____)</span>
-               </div>`;
+        const badgeClass = isCliente ? 'via-badge-cliente' : 'via-badge-armazem';
 
         // Determinar linhas a renderizar nesta página
         let currentRows = client.rows || [];
@@ -14595,76 +14933,95 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
 
         const tableRowsHtml = currentRows.map((r, idx) => {
             const globalIdx = startRowIndex + idx;
-            const orderNum = orderNumIdx !== -1 ? String(r.originalRow[orderNumIdx] || '').trim() : '';
-            const desc = descIdx !== -1 ? String(r.originalRow[descIdx] || '').trim() : '';
+            const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+            const orderNum = orderNumIdx !== -1 ? String(rowData[orderNumIdx] || '').trim() : '';
+            const desc = descIdx !== -1 ? String(rowData[descIdx] || '').trim() : '';
             const cleanOrder = (orderNum && orderNum !== '—') ? orderNum : '';
             const cleanDesc = (desc && desc !== '—') ? desc : '';
-            const pkgs = packagesIdx !== -1 ? (parseFloat(r.originalRow[packagesIdx]) || 0) : 0;
-            const discharged = dischargeIdx !== -1 ? (parseFloat(r.originalRow[dischargeIdx]) || 0) : 0;
+            const pkgs = packagesIdx !== -1 ? (parseFloat(rowData[packagesIdx]) || 0) : 0;
+            const discharged = dischargeIdx !== -1 ? (parseFloat(rowData[dischargeIdx]) || 0) : 0;
+            const delivered = deliverIdx !== -1 ? (parseFloat(rowData[deliverIdx]) || 0) : 0;
+            const rowQty = delivered > 0 ? delivered : (discharged > 0 ? discharged : pkgs);
 
-            let title = cleanOrder ? `Ordem: ${cleanOrder}` : (client.rows.length === 1 ? 'Mercadoria do Cliente' : `Item ${globalIdx + 1}`);
+            let title = cleanOrder ? 'Ordem: ' + cleanOrder : (client.rows.length === 1 ? 'Mercadoria do Cliente' : 'Item ' + (globalIdx + 1));
 
             return `
                 <tr>
+                    <td class="td-num"><strong>${rowQty} Vol</strong></td>
                     <td class="td-desc">
                         <div class="row-order-title">
                             <strong class="order-tag">${title}</strong>
                             ${cleanDesc ? `<span class="order-desc-inline">${cleanDesc}</span>` : ''}
                         </div>
                     </td>
-                    <td class="td-num">${pkgs}</td>
-                    <td class="td-num">${discharged}</td>
-                    <td class="td-action">
-                        <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
-                    </td>
-                    <td class="td-action">
-                        <span class="write-line" style="border-bottom-color: ${actionColColor};">&nbsp;</span> <span class="vol-unit">Vol</span>
-                    </td>
                 </tr>
             `;
         }).join('');
 
-        // Linha final da tabela (Continua na próxima folha OU Total Geral consolidado)
+        let fillerRowsHtml = '';
+        const minRows = pagePart === 'HALF' ? (currentRows.length > 5 ? 0 : 3) : 5;
+        if (currentRows.length < minRows) {
+            for (let f = currentRows.length; f < minRows; f++) {
+                fillerRowsHtml += `
+                    <tr class="filler-row">
+                        <td class="td-num">&nbsp;</td>
+                        <td class="td-desc">&nbsp;</td>
+                    </tr>
+                `;
+            }
+        }
+
         let tableFooterRowHtml = '';
         if (pagePart === 'PART1') {
             tableFooterRowHtml = `
                 <tr class="totals-row">
-                    <td colspan="5" style="text-align: center; font-size: 11px; font-weight: 800; background: #f8fafc; padding: 5px;">
-                        [ Continua na Folha ${isArmazem ? '2' : '4'} — ${part1Rows.length} de ${totalOrdersCount} ordens listadas nesta folha ]
+                    <td colspan="2" style="text-align: center; font-size: 9.5px; font-weight: 800; background: #f8fafc; padding: 4px;">
+                        [ Continua na Folha ${isCliente ? '2' : '4'} — ${part1Rows.length} de ${totalOrdersCount} ordens listadas nesta folha ]
                     </td>
                 </tr>
             `;
         } else {
+            // Calcular o somatório rigoroso de volumes de todas as ordens incluídas
+            const totalCalculatedVol = (client.rows || []).reduce((acc, r) => {
+                const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+                const pkgs = packagesIdx !== -1 ? (parseFloat(rowData[packagesIdx]) || 0) : 0;
+                const discharged = dischargeIdx !== -1 ? (parseFloat(rowData[dischargeIdx]) || 0) : 0;
+                const delivered = deliverIdx !== -1 ? (parseFloat(rowData[deliverIdx]) || 0) : 0;
+                const rowQty = delivered > 0 ? delivered : (discharged > 0 ? discharged : pkgs);
+                return acc + rowQty;
+            }, 0);
+
+            const deliveredSummary = totalCalculatedVol > 0
+                ? totalCalculatedVol
+                : (totalDelivered > 0 ? totalDelivered : (totalDischarged > 0 ? totalDischarged : totalOriginal));
+
             tableFooterRowHtml = `
                 <tr class="totals-row">
-                    <td class="td-desc"><strong>TOTAL GERAL</strong></td>
-                    <td class="td-num"><strong>${totalOriginal}</strong></td>
-                    <td class="td-num"><strong>${totalDischarged}</strong></td>
-                    <td class="td-manual">[ Preenchimento Manual ]</td>
-                    <td class="td-manual">[ Preenchimento Manual ]</td>
+                    <td class="td-num"><strong>${deliveredSummary} Vol</strong></td>
+                    <td class="td-desc">
+                        <strong>TOTAL: ${deliveredSummary} VOLUME(S)</strong> 
+                        <span class="total-note">— Mercadoria conferida e entregue em bom estado aparente</span>
+                    </td>
                 </tr>
             `;
         }
 
-        // Bloco de cabeçalho e cards:
-        // PART2 usa cabeçalho compacto de continuação sem os 3 cards para aproveitar ao máximo a folha de conclusão
         let topHeaderHtml = '';
         if (pagePart === 'PART2') {
             topHeaderHtml = `
-                <div class="header" style="border-bottom: 2px solid #000000; padding-bottom: 4px; margin-bottom: 5px;">
+                <div class="header" style="border-bottom: 2px solid #002244; padding-bottom: 3px; margin-bottom: 3px;">
                     <div class="logo-section">
-                        <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Logistics" class="header-logo" style="width: 40px; height: 40px;" />
+                        <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Logistics" class="header-logo" style="width: 32px; height: 32px;" />
                         <div>
-                            <h1 class="company-title" style="font-size: 17px; line-height: 1.1;">JUPITER LOGISTICS LDA</h1>
-                            <div class="company-sub" style="font-size: 9.5px; line-height: 1.25; margin-top: 2px;">
-                                Guia Nº: <strong>${guiaNumber}</strong> | Cliente: <strong>${clientName}</strong> (${clientCode}) | Viatura: <strong>${viaturaVal || '—'}</strong> | Data: <strong>${deliveryDate}</strong>
+                            <h1 class="company-title" style="font-size: 13.5px; line-height: 1.1;">JÚPITER LOGISTICS, LDA</h1>
+                            <div class="company-sub" style="font-size: 8px; line-height: 1.2; margin-top: 1px;">
+                                Guia Nº: <strong>${guiaNumber}</strong> | Cliente: <strong>${clientName}</strong> (${clientCode}) | Viatura: <strong>${viaturaVal || '—'}</strong>
                             </div>
                         </div>
                     </div>
-                    <div class="doc-info" style="text-align: right;">
-                        <h2 style="font-size: 16px; line-height: 1.1;">${docTitle} (Conclusão)</h2>
-                        <div style="margin: 2px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
-                        <p class="guia-meta" style="font-size: 9.5px;">Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
+                    <div class="doc-info">
+                        <div class="doc-title-main" style="font-size: 13.5px;">${docTitle} (Conclusão)</div>
+                        <div><span class="via-badge ${badgeClass}">${badgeLabel}</span></div>
                     </div>
                 </div>
             `;
@@ -14673,121 +15030,215 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 <div class="header">
                     <div class="logo-section">
                         <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Logistics" class="header-logo" />
-                        <div>
-                            <h1 class="company-title">JUPITER LOGISTICS LDA</h1>
+                        <div class="company-header-text">
+                            <h1 class="company-title">JÚPITER LOGISTICS, LDA</h1>
+                            <div class="company-slogan">A solução para todas as suas necessidades de logística</div>
                             <div class="company-sub">
-                                Av. do Trabalho nº 1412, 3º Andar • Tel: +258 21401334 • Cel: +258 84 0485 691<br>
-                                NUIT: 400574472 • Email: commercial@jupiter-logistics.co.mz
+                                Av. Francisco Manyanga, Matola A, Nº 924<br>
+                                Tel.: +258 21 401 333/4 • Tell: +258 82 77 04 250 / 84 04 85 691<br>
+                                NUIT: 400574472 • Maputo, Moçambique • commercial@jupiter-logistics.co.mz
                             </div>
                         </div>
                     </div>
                     <div class="doc-info">
-                        <h2>${docTitle}</h2>
-                        <div style="margin: 3px 0;"><span class="via-badge" style="${badgeStyle}">${badgeLabel}</span></div>
-                        <p class="guia-no">Nº Guia: <strong>${guiaNumber}</strong></p>
-                        <p class="guia-meta">Data: <strong>${dataEmissao} ${horaEmissao}</strong> | Op: <strong>${issuerName}</strong></p>
+                        <div class="doc-title-main">${docTitle}</div>
+                        <div class="doc-serial-no">Nº <span class="serial-red">${guiaNumber}</span></div>
+                        <div class="via-badge-container">
+                            <span class="via-badge ${badgeClass}">${badgeLabel}</span>
+                        </div>
                     </div>
                 </div>
 
-                <div class="details-grid">
-                    <div class="card">
-                        <h3>Dados do Cliente</h3>
-                        <p><span class="lbl">Cliente:</span> <strong class="val">${clientName}</strong></p>
-                        <p><span class="lbl">ID Code:</span> <strong class="val">${clientCode}</strong></p>
-                        <p><span class="lbl">Nº Cliente:</span> <strong class="val">${clientNo}</strong></p>
-                        <p><span class="lbl">Projeto/Lista:</span> <strong class="val">${projectName}</strong></p>
+                <div class="client-clearance-grid">
+                    <div class="dispatch-col">
+                        <div class="pill-maputo">MAPUTO</div>
+                        <div class="du-box">
+                            <div class="du-line">
+                                <span class="lbl-du">DU:</span> 
+                                <span class="du-val">${duVal}</span>
+                            </div>
+                            <div class="du-date-line">
+                                <span class="du-date-val">${formatPortugueseDateFull(deliveryDate)}</span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="card">
-                        <h3>Informações de Recebimento</h3>
-                        <p><span class="lbl">Entregue A:</span> <strong class="val">${receiverName}</strong></p>
-                        <p><span class="lbl">Contacto:</span> <strong class="val">${receiverContact}</strong></p>
-                        <p><span class="lbl">Data Entrega:</span> <strong class="val">${deliveryDate}</strong></p>
-                        <p><span class="lbl">Viatura / Matrícula:</span> <strong class="val viatura-val">${viaturaVal ? viaturaVal : 'Sem Viatura (A pé / Transporte)'}</strong></p>
-                    </div>
-                    <div class="card">
-                        <h3>Controlo de Armazenagem</h3>
-                        <p><span class="lbl">Data Descarga:</span> <strong class="val">${dischargeDateDisplay}</strong></p>
-                        <p><span class="lbl">Dias Decorridos:</span> <strong class="val">${daysDiff} dias</strong></p>
-                        <p><span class="lbl">Custo Armaz.:</span> <strong class="val">${storageInfo.isExempt ? '0,00 MZN (Isento)' : (storageInfo.isNegotiated ? `${formatMZN(storageInfo.cost)} (Negociado)` : formatMZN(storageCost))}</strong></p>
-                        <p><span class="lbl">Estado Pag.:</span> <strong class="val" style="color: ${isStoragePaid ? '#047857' : '#b91c1c'}; font-weight: 900;">${textStoragePaid}</strong></p>
+                    <div class="client-col">
+                        <div class="client-line">
+                            <span class="lbl-client">Exmo. (s) Sr. (s)</span>
+                            <span class="val-client">${clientName}</span>
+                        </div>
+                        <div class="client-line">
+                            <span class="lbl-client">Morada</span>
+                            <span class="val-client">${clientAddress}</span>
+                        </div>
+                        <div class="client-line">
+                            <span class="lbl-client">NUIT:</span>
+                            <span class="val-client">${clientNuit}</span>
+                        </div>
                     </div>
                 </div>
             `;
         }
 
-        // Bloco de rodapé / notas / assinaturas:
         let bottomContentHtml = '';
         if (pagePart === 'PART1') {
             bottomContentHtml = `
-                <div class="note-box" style="border-left-color: ${actionColColor}; margin-top: auto;">
-                    <strong>Continuação:</strong> Esta guia possui ${totalOrdersCount} ordens no total. As restantes ${part2Rows.length} ordens, o Total Geral consolidado e as assinaturas oficiais constam na <strong>Folha ${isArmazem ? '2' : '4'}</strong>.
+                <div class="note-box" style="margin-top: auto;">
+                    <strong>Continuação:</strong> Esta guia possui ${totalOrdersCount} ordens no total. As restantes ${part2Rows.length} ordens, o Total Geral consolidado e as assinaturas oficiais constam na <strong>Folha ${isCliente ? '2' : '4'}</strong>.
                 </div>
             `;
         } else {
+            const transportBoxHtml = `
+                <div class="transport-box">
+                    <div class="transport-col transport-col-left">
+                        <div class="transport-line">
+                            <span class="lbl-trans">LOCAL DE CARGA:</span>
+                            <span class="val-trans">${localCargaVal}</span>
+                        </div>
+                        <div class="transport-line">
+                            <span class="lbl-trans">LOCAL DE DESCARGA:</span>
+                            <span class="val-trans">${clientAddress}</span>
+                        </div>
+                    </div>
+                    <div class="transport-col transport-col-right">
+                        <div class="transport-row-sub">
+                            <div class="transport-sub-item">
+                                <span class="lbl-trans">HORA:</span>
+                                <span class="val-trans">${horaEmissao}</span>
+                            </div>
+                            <div class="transport-sub-item">
+                                <span class="lbl-trans">MATRÍCULA:</span>
+                                <span class="val-trans">${viaturaVal || '—'}</span>
+                            </div>
+                        </div>
+                        <div class="transport-line">
+                            <span class="lbl-trans">DATA:</span>
+                            <span class="val-trans">${deliveryDate}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            let sigHtml = '';
+            if (isCliente) {
+                sigHtml = `
+                    <div class="signatures signatures-2col">
+                        <div class="sig-box">
+                            <div class="sig-stamp-zone">
+                                <span class="sig-stamp-hint">(Espaço para Assinatura e Carimbo)</span>
+                            </div>
+                            <div class="sig-line"></div>
+                            <p class="sig-name">JÚPITER LOGISTICS, LDA</p>
+                            <span class="sig-role">Assinatura e Carimbo do Emissor</span>
+                        </div>
+                        <div class="sig-box">
+                            <div class="sig-stamp-zone">
+                                <span class="sig-stamp-hint">(Espaço para Assinatura e Carimbo)</span>
+                            </div>
+                            <div class="sig-line"></div>
+                            <p class="sig-name">${receiverName}</p>
+                            <span class="sig-role">Assinatura do Destinatário / Motorista (Contacto: ${receiverContact})</span>
+                        </div>
+                    </div>
+                    <div class="legal-notice">
+                        * A mercadoria viaja por conta e risco do destinatário. 1ª Via Original: Acompanha a mercadoria e fica na posse do cliente.
+                    </div>
+                `;
+            } else {
+                sigHtml = `
+                    <div class="signatures signatures-3col">
+                        <div class="sig-box">
+                            <div class="sig-stamp-zone">
+                                <span class="sig-stamp-hint">(Assinatura / Data)</span>
+                            </div>
+                            <div class="sig-line"></div>
+                            <p class="sig-name">FIEL DO ARMAZÉM</p>
+                            <span class="sig-role">Conferência de Carga</span>
+                        </div>
+                        <div class="sig-box">
+                            <div class="sig-stamp-zone">
+                                <span class="sig-stamp-hint">(Carimbo / Visto)</span>
+                            </div>
+                            <div class="sig-line"></div>
+                            <p class="sig-name">PORTARIA & SEGURANÇA</p>
+                            <span class="sig-role">Validação de Saída</span>
+                        </div>
+                        <div class="sig-box">
+                            <div class="sig-stamp-zone">
+                                <span class="sig-stamp-hint">(Assinatura Recebedor)</span>
+                            </div>
+                            <div class="sig-line"></div>
+                            <p class="sig-name">${receiverName}</p>
+                            <span class="sig-role">Recebedor / Motorista</span>
+                        </div>
+                    </div>
+                    <div class="audit-strip">
+                        <strong>REGISTO INTERNO JÚPITER:</strong> Emitido por ${issuerName} em ${dataEmissao} ${horaEmissao} | Ref: ${clientCode} (${clientNo}) | Armazenagem: ${textStoragePaid} | ${totalOrdersCount} Ordem(ns)
+                    </div>
+                `;
+            }
+
             bottomContentHtml = `
-                <div class="note-box" style="border-left-color: ${actionColColor};">
-                    ${noteText}
-                </div>
-                <div class="signatures">
-                    ${sigBox1}
-                    ${sigBox2}
-                </div>
+                ${transportBoxHtml}
+                ${sigHtml}
             `;
         }
 
-        // Rodapé da página com identificação do documento e folha
         let pageFooterHtml = '';
         if (pagePart === 'FULL') {
             pageFooterHtml = `
                 <div class="guia-page-footer">
-                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isArmazem ? 'Folha 1 de 2 (Armazém / Conferência)' : 'Folha 2 de 2 (Portaria & Segurança)'}</span>
-                    <span>Jupiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
+                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isCliente ? '1ª Via (Cliente / Destinatário)' : '2ª Via (Júpiter Logistics / Armazém)'}</span>
+                    <span>Júpiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
                 </div>
             `;
         } else if (pagePart === 'PART1') {
             pageFooterHtml = `
                 <div class="guia-page-footer">
-                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isArmazem ? 'Folha 1 de 4 (1ª Via — Armazém / Parte 1)' : 'Folha 3 de 4 (2ª Via — Portaria / Parte 1)'}</span>
-                    <span>Jupiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
+                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isCliente ? 'Folha 1 de 4 (1ª Via — Cliente / Parte 1)' : 'Folha 3 de 4 (2ª Via — Júpiter / Parte 1)'}</span>
+                    <span>Júpiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
                 </div>
             `;
         } else if (pagePart === 'PART2') {
             pageFooterHtml = `
                 <div class="guia-page-footer">
-                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isArmazem ? 'Folha 2 de 4 (1ª Via — Armazém / Conclusão)' : 'Folha 4 de 4 (2ª Via — Portaria / Conclusão)'}</span>
-                    <span>Jupiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
+                    <span>Guia Nº: <strong>${guiaNumber}</strong> • ${isCliente ? 'Folha 2 de 4 (1ª Via — Cliente / Conclusão)' : 'Folha 4 de 4 (2ª Via — Júpiter / Conclusão)'}</span>
+                    <span>Júpiter Logistics Lda • Emitido em: ${dataEmissao} ${horaEmissao}</span>
                 </div>
             `;
         }
 
-        const watermarkSize = pagePart === 'HALF' ? '330px' : '440px';
-        const containerClass = pagePart === 'HALF' ? 'guia-half' : 'guia-full';
+        const isCompact = pagePart === 'HALF' && currentRows.length > 5;
+        const containerClass = pagePart === 'HALF' ? ('guia-half' + (isCompact ? ' compact-mode' : '')) : 'guia-full';
 
         return `
             <div class="${containerClass}">
-                <div class="watermark-bg" style="width: ${watermarkSize}; height: ${watermarkSize};">
-                    <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Watermark" />
+                <div class="watermark-bg">
+                    <img src="${JUPITER_LOGO_DATA_URL}" alt="Watermark" />
                 </div>
+
                 ${topHeaderHtml}
 
-                <table class="guia-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 38%;">Descrição da Mercadoria</th>
-                            <th style="width: 14%; text-align: center;">Volumes Enviados</th>
-                            <th style="width: 16%; text-align: center;">Volumes Descarregados</th>
-                            <th style="width: 16%; text-align: center; color: ${actionColColor};">${actionColTitle}</th>
-                            <th style="width: 16%; text-align: center; color: ${actionColColor};">Saldo Restante Armazém</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${tableRowsHtml}
-                        ${tableFooterRowHtml}
-                    </tbody>
-                </table>
+                <div class="table-container">
+                    <table class="guia-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 16%; text-align: center;">QUANT.</th>
+                                <th style="width: 84%;">DESIGNAÇÃO</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRowsHtml}
+                            ${fillerRowsHtml}
+                            ${tableFooterRowHtml}
+                        </tbody>
+                    </table>
+                </div>
 
-                ${bottomContentHtml}
-                ${pageFooterHtml}
+                <div class="guia-footer-section">
+                    ${bottomContentHtml}
+                    ${pageFooterHtml}
+                </div>
             </div>
         `;
     };
@@ -14809,142 +15260,173 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         styleEl.textContent = `
             @page { size: A4 portrait; margin: 4mm 6mm; }
             * { box-sizing: border-box; margin: 0; padding: 0; }
-            body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: #000000; line-height: 1.35; background: #ffffff; }
-            .page-wrapper { width: 210mm; max-width: 210mm; height: 288mm; max-height: 288mm; margin: 0 auto; background: white; padding: 4mm 6mm; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; }
-            .guia-half { position: relative; height: 48.5%; max-height: 48.5%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 1.5px solid #000000; border-radius: 6px; padding: 4px 8px; background: #ffffff; }
-            .guia-half .header { padding-bottom: 2px; margin-bottom: 2px; }
-            .guia-half .header-logo { width: 34px; height: 34px; }
-            .guia-half .company-title { font-size: 16px; line-height: 1.1; }
-            .guia-half .company-sub { font-size: 8px; line-height: 1.2; margin-top: 1px; }
-            .guia-half .doc-info h2 { font-size: 14.5px; line-height: 1.1; }
-            .guia-half .doc-info .via-badge { font-size: 8.5px; padding: 1.5px 6px; margin-top: 1px; }
-            .guia-half .doc-info .guia-no { font-size: 11px; }
-            .guia-half .doc-info .guia-meta { font-size: 8.5px; }
-            .guia-half .details-grid { gap: 4px; margin-bottom: 2px; }
-            .guia-half .card { padding: 2px 5px; }
-            .guia-half .card h3 { font-size: 8.5px; margin-bottom: 1px; padding-bottom: 1px; }
-            .guia-half .card p { margin: 1px 0; font-size: 9px; line-height: 1.15; }
-            .guia-half .card .lbl { font-size: 8px; }
-            .guia-half .card .val { font-size: 9px; }
-            .guia-half .card .viatura-val { font-size: 9px; }
-            .guia-half .guia-table { margin-bottom: 2px; }
-            .guia-half .guia-table th { padding: 2px 4px; font-size: 8.5px; }
-            .guia-half .guia-table td { padding: 2px 4px; font-size: 9.5px; }
-            .guia-half .row-order-title { gap: 0; }
-            .guia-half .order-tag { font-size: 9.5px; line-height: 1.1; }
-            .guia-half .order-desc-inline { font-size: 8px; line-height: 1.15; }
-            .guia-half .td-num { font-size: 10.5px; }
-            .guia-half .write-line { height: 12px; min-width: 45px; }
-            .guia-half .vol-unit { font-size: 8px; }
-            .guia-half .totals-row td { padding: 2px 4px; font-size: 9.5px; }
-            .guia-half .td-manual { font-size: 8.5px; }
-            .guia-half .note-box { font-size: 8px; padding: 2px 6px; margin: 1px 0 2px 0; line-height: 1.2; }
-            .guia-half .signatures { margin-top: 2px; gap: 14px; }
-            .guia-half .sig-box { padding-top: 2px; }
-            .guia-half .sig-box p { font-size: 9.5px; }
-            .guia-half .sig-box span { font-size: 8px; }
-            .guia-full { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box; overflow: hidden; border: 2px solid #000000; border-radius: 6px; padding: 10px 14px; background: #ffffff; }
-            .guia-full .header { padding-bottom: 5px; margin-bottom: 5px; }
-            .guia-full .header-logo { width: 46px; height: 46px; }
-            .guia-full .company-title { font-size: 20px; }
-            .guia-full .doc-info h2 { font-size: 18px; }
-            .guia-page-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid #000000; padding-top: 4px; margin-top: 4px; font-size: 9.5px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.02em; }
-            .watermark-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.11; pointer-events: none; z-index: 0; display: flex; align-items: center; justify-content: center; }
+            body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif; color: #000000; line-height: 1.35; background: #ffffff; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .page-wrapper { width: 210mm; max-width: 210mm; height: 288mm; max-height: 288mm; margin: 0 auto; background: white; padding: 5mm 6mm; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; box-sizing: border-box; }
+            .guia-half { position: relative; height: 48.5%; max-height: 48.5%; display: flex; flex-direction: column; justify-content: flex-start; gap: 6px; box-sizing: border-box; overflow: hidden; border: 1.5px solid #002244; border-radius: 6px; padding: 7px 9px; background: #ffffff; }
+            .guia-full { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-start; gap: 8px; box-sizing: border-box; overflow: hidden; border: 2px solid #002244; border-radius: 6px; padding: 10px 14px; background: #ffffff; }
+
+            /* Modo compacto para até 18 ordens caberem perfeitamente na meia-folha */
+            .guia-half.compact-mode { gap: 3.5px; padding: 5px 8px; }
+            .guia-half.compact-mode .header { padding-bottom: 2px; margin-bottom: 2px; }
+            .guia-half.compact-mode .header-logo { width: 28px; height: 28px; }
+            .guia-half.compact-mode .company-title { font-size: 11.5px; }
+            .guia-half.compact-mode .company-slogan { font-size: 6.5px; }
+            .guia-half.compact-mode .company-sub { font-size: 6px; }
+            .guia-half.compact-mode .doc-title-main { font-size: 12px; }
+            .guia-half.compact-mode .serial-red { font-size: 12px; }
+            .guia-half.compact-mode .client-clearance-grid { gap: 4px; margin-bottom: 2px; }
+            .guia-half.compact-mode .pill-maputo { padding: 1.5px 5px; font-size: 8px; min-width: 52px; border-radius: 4px; }
+            .guia-half.compact-mode .du-box { padding: 2px 4px; }
+            .guia-half.compact-mode .client-col { padding: 2.5px 6px; }
+            .guia-half.compact-mode .client-line { font-size: 8px; line-height: 1.2; }
+            .guia-half.compact-mode .table-container { margin: 1px 0; }
+            .guia-half.compact-mode .guia-table th { padding: 2px 4px; font-size: 8px; }
+            .guia-half.compact-mode .guia-table td { padding: 1.5px 4px; font-size: 8px; line-height: 1.2; }
+            .guia-half.compact-mode .row-order-title { gap: 3px; }
+            .guia-half.compact-mode .order-tag { font-size: 8px; }
+            .guia-half.compact-mode .order-desc-inline { font-size: 7.5px; }
+            .guia-half.compact-mode .td-num { font-size: 8.5px; }
+            .guia-half.compact-mode .totals-row td { padding: 2px 4px; font-size: 8px; }
+            .guia-half.compact-mode .guia-footer-section { gap: 2px; }
+            .guia-half.compact-mode .transport-box { padding: 2.5px 6px; margin: 0; gap: 4px; border-radius: 4px; }
+            .guia-half.compact-mode .transport-line, .guia-half.compact-mode .transport-sub-item { font-size: 7.5px; margin: 0.5px 0; }
+            .guia-half.compact-mode .signatures { margin: 0; gap: 6px; }
+            .guia-half.compact-mode .sig-box { height: 42px; padding: 2px 4px; border-radius: 4px; border: 1.5px solid #cbd5e1; }
+            .guia-half.compact-mode .sig-name { font-size: 7.5px; }
+            .guia-half.compact-mode .sig-role { font-size: 6.5px; }
+            .guia-half.compact-mode .audit-strip { margin-top: 1.5px; padding: 1.5px 4px; font-size: 6.5px; }
+            .guia-half.compact-mode .legal-notice { margin-top: 1.5px; font-size: 6.5px; }
+            
+            .watermark-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.28; mix-blend-mode: multiply; pointer-events: none; z-index: 20; width: 360px; height: 360px; display: flex; align-items: center; justify-content: center; }
+            .guia-full .watermark-bg { width: 520px; height: 520px; }
             .watermark-bg img { width: 100%; height: 100%; object-fit: contain; }
-            .header, .details-grid, .guia-table, .note-box, .signatures, .guia-page-footer { position: relative; z-index: 1; }
-            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000000; padding-bottom: 4px; margin-bottom: 4px; }
-            .logo-section { display: flex; align-items: center; gap: 8px; }
-            .header-logo { width: 44px; height: 44px; object-fit: contain; }
-            .company-title { margin: 0; color: #000000; font-size: 19px; font-weight: 900; letter-spacing: -0.02em; line-height: 1.1; }
-            .company-sub { font-size: 9.5px; color: #111827; font-weight: 700; line-height: 1.3; margin-top: 1px; }
-            .doc-info { text-align: right; }
-            .doc-info h2 { margin: 0; color: #000000; font-size: 17px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.01em; line-height: 1.1; }
-            .via-badge { display: inline-block; font-size: 10px; font-weight: 900; padding: 2.5px 8px; border-radius: 4px; letter-spacing: 0.02em; text-transform: uppercase; margin-top: 2px; }
-            .guia-no { font-size: 12px; font-weight: 800; color: #000000; margin: 1px 0 0 0; }
-            .guia-meta { font-size: 10px; color: #111827; margin: 1px 0 0 0; font-weight: 700; }
-            .details-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 4px; }
-            .card { border: 1.5px solid #1e293b; padding: 4px 7px; border-radius: 5px; background: #ffffff; }
-            .card h3 { margin: 0 0 2px 0; font-size: 10px; font-weight: 900; text-transform: uppercase; color: #000000; letter-spacing: 0.03em; border-bottom: 1.5px solid #64748b; padding-bottom: 1px; }
-            .card p { margin: 1.5px 0; font-size: 10.5px; font-weight: 700; color: #000000; display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
-            .card .lbl { color: #1e293b; font-weight: 800; font-size: 10px; white-space: nowrap; flex-shrink: 0; }
-            .card .val { color: #000000; font-weight: 900; text-align: right; font-size: 11px; word-break: break-word; }
-            .card .viatura-val { color: #000000; font-weight: 900; font-size: 11px; }
-            .guia-table { width: 100%; border-collapse: collapse; margin-bottom: 4px; border: 2px solid #000000; border-radius: 4px; overflow: hidden; }
-            .guia-table th { background: #e2e8f0; padding: 4px 6px; text-align: left; font-size: 10px; text-transform: uppercase; font-weight: 900; color: #000000; border-bottom: 2px solid #000000; border-right: 1px solid #475569; }
+
+            .header { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #002244; padding-bottom: 3.5px; margin-bottom: 3px; gap: 8px; }
+            .logo-section { display: flex; align-items: center; gap: 8px; flex: 1; }
+            .header-logo { width: 38px; height: 38px; object-fit: contain; }
+            .guia-half .header-logo { width: 32px; height: 32px; }
+            .company-header-text { display: flex; flex-direction: column; gap: 0; }
+            .company-title { margin: 0; color: #002244; font-size: 14px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.1; }
+            .guia-half .company-title { font-size: 12.5px; }
+            .company-slogan { font-size: 7.5px; font-style: italic; color: #0284c7; font-weight: 700; margin-bottom: 1px; }
+            .company-sub { font-size: 7.5px; color: #1e293b; font-weight: 600; line-height: 1.25; }
+            .guia-half .company-sub { font-size: 7px; }
+
+            .doc-info { position: relative; z-index: 1; text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; }
+            .doc-title-main { font-size: 15.5px; font-weight: 900; color: #002244; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.1; }
+            .guia-half .doc-title-main { font-size: 13.5px; }
+            .doc-serial-no { font-size: 11px; font-weight: 900; color: #000000; margin-top: 1px; }
+            .serial-red { color: #dc2626; font-size: 13px; font-weight: 900; font-family: 'Courier New', Courier, monospace; letter-spacing: 0.05em; }
+            .via-badge-container { margin-top: 1px; }
+            .via-badge { display: inline-block; font-size: 8px; font-weight: 900; padding: 1.5px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+            .via-badge-cliente { background: #dbeafe; color: #1e40af; border: 1.5px solid #2563eb; }
+            .via-badge-armazem { background: #fef3c7; color: #92400e; border: 1.5px solid #d97706; }
+
+            .client-clearance-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 34% 66%; gap: 6px; margin-bottom: 3px; align-items: stretch; }
+            .dispatch-col { display: flex; gap: 4px; align-items: stretch; }
+            .pill-maputo { border: 1.5px solid #002244; border-radius: 4px; font-weight: 900; padding: 2px 7px; font-size: 9px; color: #002244; display: flex; align-items: center; justify-content: center; letter-spacing: 0.05em; min-width: 60px; box-sizing: border-box; }
+            .du-box { flex: 1; border: 1.5px solid #002244; border-radius: 6px; padding: 3px 6px; display: flex; flex-direction: column; justify-content: center; background: #fafafa; }
+            .du-line { display: flex; align-items: baseline; gap: 4px; font-size: 8.5px; font-weight: 800; color: #000; }
+            .lbl-du { font-weight: 900; color: #002244; }
+            .du-val { font-weight: 900; color: #000; word-break: break-all; }
+            .du-date-line { font-size: 7.5px; color: #334155; font-weight: 700; margin-top: 1.5px; border-top: 1px dotted #cbd5e1; padding-top: 1.5px; }
+            
+            .client-col { border: 1.5px solid #002244; border-radius: 6px; padding: 3.5px 8px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-around; }
+            .client-line { display: flex; align-items: baseline; gap: 5px; font-size: 8.5px; line-height: 1.25; }
+            .lbl-client { font-weight: 800; color: #002244; white-space: nowrap; font-size: 8px; min-width: 65px; }
+            .val-client { font-weight: 800; color: #000000; flex: 1; border-bottom: 1px dotted #94a3b8; }
+
+            .table-container { position: relative; z-index: 1; margin: 2px 0; border: 1.5px solid #002244; border-radius: 4px; overflow: hidden; }
+            .guia-table { width: 100%; border-collapse: collapse; }
+            .guia-table th { background: #e6f0fa; color: #002244; font-weight: 900; font-size: 8.5px; padding: 3px 6px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1.5px solid #002244; border-right: 1px solid #cbd5e1; }
             .guia-table th:last-child { border-right: none; }
-            .guia-table td { padding: 3px 6px; font-size: 11px; font-weight: 800; border-bottom: 1px solid #64748b; border-right: 1px solid #cbd5e1; color: #000000; vertical-align: middle; }
+            .guia-table td { padding: 3px 6px; font-size: 9px; font-weight: 700; color: #000000; border-bottom: 1px dotted #94a3b8; border-right: 1px solid #e2e8f0; vertical-align: middle; }
             .guia-table td:last-child { border-right: none; }
-            .row-order-title { display: flex; flex-direction: column; gap: 1px; }
-            .order-tag { font-size: 11px; font-weight: 900; color: #000000; line-height: 1.15; }
-            .order-desc-inline { font-size: 9.5px; font-weight: 700; color: #1e293b; line-height: 1.2; }
-            .td-num { text-align: center; font-size: 12.5px; font-weight: 900; color: #000000; }
-            .td-action { text-align: center; padding: 2px 4px !important; }
-            .write-line { display: inline-block; min-width: 60px; border-bottom: 1.5px dashed #000000; height: 15px; vertical-align: bottom; margin-right: 2px; }
-            .vol-unit { font-size: 9.5px; color: #000000; font-weight: 900; }
-            .totals-row { background: #f1f5f9; border-top: 2px solid #000000; }
-            .totals-row td { border-bottom: none; padding: 4px 6px; font-size: 11.5px; }
-            .td-manual { text-align: center; font-size: 10px; color: #1e293b; font-weight: 800; font-style: italic; }
-            .note-box { font-size: 10px; color: #000000; font-weight: 700; border: 1px solid #cbd5e1; border-left-width: 4px; padding: 3.5px 8px; line-height: 1.35; margin: 2px 0 4px 0; background: #f8fafc; border-radius: 0 4px 4px 0; }
-            .note-box strong { font-weight: 900; color: #000000; }
-            .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 3px; }
-            .sig-box { border-top: 2px solid #000000; padding-top: 3px; text-align: center; }
-            .sig-box p { margin: 0; font-size: 11px; font-weight: 900; color: #000000; }
-            .sig-box span { font-size: 9.5px; font-weight: 700; color: #1e293b; }
-            .cut-separator { height: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #000000; font-size: 9.5px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; user-select: none; margin: 1px 0; }
+            .row-order-title { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+            .order-tag { font-size: 9px; font-weight: 900; color: #000000; }
+            .order-desc-inline { font-size: 8px; font-weight: 700; color: #1e293b; }
+            .td-num { text-align: center; font-size: 10px; font-weight: 900; color: #000000; }
+            .filler-row td { height: 16px; border-bottom: 1px dotted #cbd5e1; }
+            .totals-row { background: #f1f5f9; border-top: 1.5px solid #002244; }
+            .totals-row td { border-bottom: none; font-size: 9px; padding: 3px 6px; }
+            .total-note { font-size: 7.5px; color: #475569; font-weight: 600; font-style: italic; }
+
+            /* Rodapé fixado na parte inferior da guia, permitindo à tabela crescer e diminuir dinamicamente */
+            .guia-footer-section { position: relative; z-index: 1; margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
+            .transport-box { position: relative; z-index: 1; border: 1.5px solid #002244; border-radius: 4px; padding: 4px 8px; display: grid; grid-template-columns: 55% 45%; gap: 8px; margin: 0; background: #fafafa; }
+            .transport-line { display: flex; align-items: baseline; gap: 4px; font-size: 8px; margin: 1px 0; }
+            .transport-row-sub { display: flex; justify-content: space-between; gap: 6px; }
+            .transport-sub-item { display: flex; align-items: baseline; gap: 3px; font-size: 8px; margin: 1px 0; }
+            .lbl-trans { font-weight: 900; color: #002244; font-size: 7.5px; white-space: nowrap; }
+            .val-trans { font-weight: 800; color: #000000; flex: 1; border-bottom: 1px dotted #94a3b8; }
+
+            .signatures { position: relative; z-index: 1; display: grid; gap: 8px; margin: 0; }
+            .signatures-2col { grid-template-columns: 1fr 1fr; }
+            .signatures-3col { grid-template-columns: 1fr 1fr 1fr; }
+            .sig-box { border: 1.5px solid #cbd5e1; border-radius: 4px; background: #fafcff; padding: 4px 6px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 52px; box-sizing: border-box; }
+            .sig-stamp-zone { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; }
+            .sig-stamp-hint { font-size: 7px; color: #94a3b8; font-style: italic; user-select: none; }
+            .sig-line { width: 90%; border-top: 1.5px solid #002244; margin-bottom: 2px; }
+            .sig-name { margin: 0; font-size: 8.5px; font-weight: 900; color: #000000; line-height: 1.15; text-align: center; }
+            .sig-role { font-size: 7px; font-weight: 700; color: #475569; line-height: 1.1; text-align: center; }
+            .legal-notice { position: relative; z-index: 1; font-size: 7px; color: #475569; font-style: italic; text-align: center; margin-top: 1px; }
+            .audit-strip { position: relative; z-index: 1; font-size: 7px; color: #1e3a8a; background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 3px; padding: 2px 6px; text-align: center; margin-top: 1px; font-weight: 700; }
+
+            .cut-separator { height: 20px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #000000; font-size: 9px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; user-select: none; margin: 4px 0; }
             .cut-line { flex: 1; border-top: 1.5px dashed #475569; }
             .cut-scissors { font-size: 13px; color: #000000; }
+
+            .guia-page-footer { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid #002244; padding-top: 2.5px; margin-top: 2.5px; font-size: 8px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.02em; }
+            .note-box { position: relative; z-index: 1; font-size: 8.5px; color: #000000; font-weight: 700; border: 1px solid #cbd5e1; border-left-width: 4px; padding: 3px 6px; line-height: 1.3; margin: 2px 0; background: #f8fafc; border-radius: 0 4px 4px 0; }
         `;
         tempContainer.appendChild(styleEl);
 
         if (printMode === '4_FOLHAS') {
-            // Emissão em 4 Folhas A4 (2 para Armazém e 2 para Portaria)
             const p1 = document.createElement('div');
             p1.className = 'page-wrapper';
-            p1.innerHTML = generateViaHtml('ARMAZEM', 'PART1');
+            p1.innerHTML = generateViaHtml('CLIENTE', 'PART1');
 
             const p2 = document.createElement('div');
             p2.className = 'page-wrapper';
-            p2.innerHTML = generateViaHtml('ARMAZEM', 'PART2');
+            p2.innerHTML = generateViaHtml('CLIENTE', 'PART2');
 
             const p3 = document.createElement('div');
             p3.className = 'page-wrapper';
-            p3.innerHTML = generateViaHtml('PORTARIA', 'PART1');
+            p3.innerHTML = generateViaHtml('ARMAZEM', 'PART1');
 
             const p4 = document.createElement('div');
             p4.className = 'page-wrapper';
-            p4.innerHTML = generateViaHtml('PORTARIA', 'PART2');
+            p4.innerHTML = generateViaHtml('ARMAZEM', 'PART2');
 
             tempContainer.appendChild(p1);
             tempContainer.appendChild(p2);
             tempContainer.appendChild(p3);
             tempContainer.appendChild(p4);
         } else if (printMode === '2_FOLHAS') {
-            // Emissão em 2 Folhas A4 completas (1 para Armazém e 1 para Portaria)
             const page1 = document.createElement('div');
             page1.className = 'page-wrapper';
-            page1.innerHTML = generateViaHtml('ARMAZEM', 'FULL');
+            page1.innerHTML = generateViaHtml('CLIENTE', 'FULL');
 
             const page2 = document.createElement('div');
             page2.className = 'page-wrapper';
-            page2.innerHTML = generateViaHtml('PORTARIA', 'FULL');
+            page2.innerHTML = generateViaHtml('ARMAZEM', 'FULL');
 
             tempContainer.appendChild(page1);
             tempContainer.appendChild(page2);
         } else {
-            // Emissão padrão em 1 folha única com 2 vias e destaque
             const wrapperDiv = document.createElement('div');
             wrapperDiv.id = 'guia-page-wrapper';
             wrapperDiv.className = 'page-wrapper';
             wrapperDiv.innerHTML = `
-                ${generateViaHtml('ARMAZEM', 'HALF')}
+                ${generateViaHtml('CLIENTE', 'HALF')}
                 <div class="cut-separator">
                     <span class="cut-scissors">✂</span>
                     <div class="cut-line"></div>
-                    <span>DESTAQUE AQUI — 1ª VIA RETIDA NO ARMAZÉM / 2ª VIA RETIDA NA PORTARIA</span>
+                    <span>DESTAQUE AQUI — 1ª VIA: LEVA O CLIENTE / 2ª VIA: FICA CONNOSCO (JÚPITER LOGISTICS)</span>
                     <div class="cut-line"></div>
                     <span class="cut-scissors">✂</span>
                 </div>
-                ${generateViaHtml('PORTARIA', 'HALF')}
+                ${generateViaHtml('ARMAZEM', 'HALF')}
             `;
             tempContainer.appendChild(wrapperDiv);
         }
@@ -14954,7 +15436,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             const pagesWord = printMode === '4_FOLHAS' ? '4 Folhas' : (printMode === '2_FOLHAS' ? '2 Folhas' : 'Folha Única');
             toast(`⚡ A renderizar PDF de ${pagesWord} da Guia...`, 'info');
             const fileBase64 = await printService.elementToPdfBase64(tempContainer, window);
-            // Resolver impressora selecionada ou predefinida do servidor
             let targetPrinter = printService.getSelectedPrinter();
             if (!targetPrinter || targetPrinter === 'Armazem print') {
                 const pRes = await printService.getPrinters();
@@ -14979,13 +15460,13 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             toast(`⚡ A enviar para a impressora [${targetPrinter}] (${serverUrl.replace(/^https?:\/\//, '')})...`, 'info');
 
             const res = await printService.printDocument({
-                nome: `Guia_Dupla_${guiaNumber}.pdf`,
+                nome: `Guia_Remessa_${guiaNumber}.pdf`,
                 arquivoBase64: fileBase64,
                 impressora: targetPrinter,
                 serverUrl: serverUrl
             });
 
-            toast(`✅ Guia Dupla (${guiaNumber} • ${pagesWord}) impressa com sucesso no Armazém [${res.impressora || targetPrinter}]!`, 'success');
+            toast(`✅ Guia de Remessa Oficial (${guiaNumber} • ${pagesWord}) impressa com sucesso no Armazém [${res.impressora || targetPrinter}]!`, 'success');
         } catch (err) {
             console.error('[ERRO DIRECT PRINT]', err);
             toast(`Erro na impressão direta: ${err.message}. A abrir visualização...`, 'error');
@@ -15015,7 +15496,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         <head>
             <meta charset="UTF-8">
             <base href="${appOrigin}/">
-            <title>Guia Dupla Oficial - ${clientName} (${guiaNumber})</title>
+            <title>Guia de Remessa Oficial - ${clientName} (${guiaNumber})</title>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
             <style>
@@ -15200,7 +15681,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     background: #1d4ed8;
                 }
 
-                /* Toast de Notificação na Janela */
                 #print-toast {
                     position: fixed;
                     bottom: 20px;
@@ -15227,10 +15707,11 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     max-height: 288mm;
                     margin: 12px auto;
                     background: white;
-                    padding: 4mm 6mm;
+                    padding: 5mm 6mm;
                     display: flex;
                     flex-direction: column;
-                    justify-content: space-between;
+                    justify-content: flex-start;
+                    gap: 6px;
                     box-sizing: border-box;
                     box-shadow: 0 4px 25px rgba(0,0,0,0.15);
                 }
@@ -15240,402 +15721,145 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     max-height: 48.5%;
                     display: flex;
                     flex-direction: column;
-                    justify-content: space-between;
+                    justify-content: flex-start;
+                    gap: 6px;
                     box-sizing: border-box;
                     overflow: hidden;
-                    border: 1.5px solid #000000;
+                    border: 1.5px solid #002244;
                     border-radius: 6px;
-                    padding: 4px 8px;
+                    padding: 7px 9px;
                     background: #ffffff;
                 }
-                .guia-half .header { padding-bottom: 2px; margin-bottom: 2px; }
-                .guia-half .header-logo { width: 34px; height: 34px; }
-                .guia-half .company-title { font-size: 16px; line-height: 1.1; }
-                .guia-half .company-sub { font-size: 8px; line-height: 1.2; margin-top: 1px; }
-                .guia-half .doc-info h2 { font-size: 14.5px; line-height: 1.1; }
-                .guia-half .doc-info .via-badge { font-size: 8.5px; padding: 1.5px 6px; margin-top: 1px; }
-                .guia-half .doc-info .guia-no { font-size: 11px; }
-                .guia-half .doc-info .guia-meta { font-size: 8.5px; }
-                .guia-half .details-grid { gap: 4px; margin-bottom: 2px; }
-                .guia-half .card { padding: 2px 5px; }
-                .guia-half .card h3 { font-size: 8.5px; margin-bottom: 1px; padding-bottom: 1px; }
-                .guia-half .card p { margin: 1px 0; font-size: 9px; line-height: 1.15; }
-                .guia-half .card .lbl { font-size: 8px; }
-                .guia-half .card .val { font-size: 9px; }
-                .guia-half .card .viatura-val { font-size: 9px; }
-                .guia-half .guia-table { margin-bottom: 2px; }
-                .guia-half .guia-table th { padding: 2px 4px; font-size: 8.5px; }
-                .guia-half .guia-table td { padding: 2px 4px; font-size: 9.5px; }
-                .guia-half .row-order-title { gap: 0; }
-                .guia-half .order-tag { font-size: 9.5px; line-height: 1.1; }
-                .guia-half .order-desc-inline { font-size: 8px; line-height: 1.15; }
-                .guia-half .td-num { font-size: 10.5px; }
-                .guia-half .write-line { height: 12px; min-width: 45px; }
-                .guia-half .vol-unit { font-size: 8px; }
-                .guia-half .totals-row td { padding: 2px 4px; font-size: 9.5px; }
-                .guia-half .td-manual { font-size: 8.5px; }
-                .guia-half .note-box { font-size: 8px; padding: 2px 6px; margin: 1px 0 2px 0; line-height: 1.2; }
-                .guia-half .signatures { margin-top: 2px; gap: 14px; }
-                .guia-half .sig-box { padding-top: 2px; }
-                .guia-half .sig-box p { font-size: 9.5px; }
-                .guia-half .sig-box span { font-size: 8px; }
                 .guia-full {
                     position: relative;
                     height: 100%;
                     display: flex;
                     flex-direction: column;
-                    justify-content: space-between;
+                    justify-content: flex-start;
+                    gap: 8px;
                     box-sizing: border-box;
                     overflow: hidden;
-                    border: 2px solid #000000;
+                    border: 2px solid #002244;
                     border-radius: 6px;
                     padding: 10px 14px;
                     background: #ffffff;
                 }
-                .guia-full .header {
-                    padding-bottom: 5px;
-                    margin-bottom: 5px;
-                }
-                .guia-full .header-logo {
-                    width: 46px;
-                    height: 46px;
-                }
-                .guia-full .company-title {
-                    font-size: 20px;
-                }
-                .guia-full .doc-info h2 {
-                    font-size: 18px;
-                }
-                .guia-page-footer {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    border-top: 1.5px solid #000000;
-                    padding-top: 4px;
-                    margin-top: 4px;
-                    font-size: 9.5px;
-                    font-weight: 800;
-                    color: #1e293b;
-                    text-transform: uppercase;
-                    letter-spacing: 0.02em;
-                }
-                .page-divider-screen {
-                    width: 210mm;
-                    margin: 20px auto 12px auto;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: #475569;
-                    font-size: 11px;
-                    font-weight: 900;
-                    text-transform: uppercase;
-                    letter-spacing: 0.1em;
-                    user-select: none;
-                }
-                .page-divider-screen::before, .page-divider-screen::after {
-                    content: '';
-                    flex: 1;
-                    border-top: 2px dashed #94a3b8;
-                    margin: 0 16px;
-                }
-                .watermark-bg {
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%);
-                    opacity: 0.11;
-                    pointer-events: none;
-                    z-index: 0;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                }
-                .watermark-bg img {
-                    width: 100%;
-                    height: 100%;
-                    object-fit: contain;
-                    -webkit-print-color-adjust: exact !important;
-                    print-color-adjust: exact !important;
-                }
-                .header, .details-grid, .guia-table, .note-box, .signatures, .guia-page-footer {
-                    position: relative;
-                    z-index: 1;
-                }
-                .header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    border-bottom: 2px solid #000000;
-                    padding-bottom: 4px;
-                    margin-bottom: 4px;
-                }
-                .logo-section {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                }
-                .header-logo {
-                    width: 44px;
-                    height: 44px;
-                    object-fit: contain;
-                }
-                .company-title {
-                    margin: 0;
-                    color: #000000;
-                    font-size: 19px;
-                    font-weight: 900;
-                    letter-spacing: -0.02em;
-                    line-height: 1.1;
-                }
-                .company-sub {
-                    font-size: 9.5px;
-                    color: #111827;
-                    font-weight: 700;
-                    line-height: 1.3;
-                    margin-top: 1px;
-                }
-                .doc-info {
-                    text-align: right;
-                }
-                .doc-info h2 {
-                    margin: 0;
-                    color: #000000;
-                    font-size: 17px;
-                    font-weight: 900;
-                    text-transform: uppercase;
-                    letter-spacing: 0.01em;
-                    line-height: 1.1;
-                }
-                .via-badge {
-                    display: inline-block;
-                    font-size: 10px;
-                    font-weight: 900;
-                    padding: 2.5px 8px;
-                    border-radius: 4px;
-                    letter-spacing: 0.02em;
-                    text-transform: uppercase;
-                    margin-top: 2px;
-                }
-                .guia-no {
-                    font-size: 12px;
-                    font-weight: 800;
-                    color: #000000;
-                    margin: 1px 0 0 0;
-                }
-                .guia-no strong {
-                    font-weight: 900;
-                    color: #000000;
-                }
-                .guia-meta {
-                    font-size: 10px;
-                    color: #111827;
-                    margin: 1px 0 0 0;
-                    font-weight: 700;
-                }
-                .guia-meta strong {
-                    color: #000000;
-                }
-                .details-grid {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr 1fr;
-                    gap: 6px;
-                    margin-bottom: 4px;
-                }
-                .card {
-                    border: 1.5px solid #1e293b;
-                    padding: 4px 7px;
-                    border-radius: 5px;
-                    background: #ffffff;
-                }
-                .card h3 {
-                    margin: 0 0 2px 0;
-                    font-size: 10px;
-                    font-weight: 900;
-                    text-transform: uppercase;
-                    color: #000000;
-                    letter-spacing: 0.03em;
-                    border-bottom: 1.5px solid #64748b;
-                    padding-bottom: 1px;
-                }
-                .card p {
-                    margin: 1.5px 0;
-                    font-size: 10.5px;
-                    font-weight: 700;
-                    color: #000000;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: baseline;
-                    gap: 4px;
-                }
-                .card .lbl {
-                    color: #1e293b;
-                    font-weight: 800;
-                    font-size: 10px;
-                    white-space: nowrap;
-                    flex-shrink: 0;
-                }
-                .card .val {
-                    color: #000000;
-                    font-weight: 900;
-                    text-align: right;
-                    font-size: 11px;
-                    word-break: break-word;
-                }
-                .card .viatura-val {
-                    color: #000000;
-                    font-weight: 900;
-                    font-size: 11px;
-                }
-                .guia-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    margin-bottom: 4px;
-                    border: 2px solid #000000;
-                    border-radius: 4px;
-                    overflow: hidden;
-                }
-                .guia-table th {
-                    background: #e2e8f0;
-                    padding: 4px 6px;
-                    text-align: left;
-                    font-size: 10px;
-                    text-transform: uppercase;
-                    font-weight: 900;
-                    color: #000000;
-                    border-bottom: 2px solid #000000;
-                    border-right: 1px solid #475569;
-                }
-                .guia-table th:last-child {
-                    border-right: none;
-                }
-                .guia-table td {
-                    padding: 3px 6px;
-                    font-size: 11px;
-                    font-weight: 800;
-                    border-bottom: 1px solid #64748b;
-                    border-right: 1px solid #cbd5e1;
-                    color: #000000;
-                    vertical-align: middle;
-                }
-                .guia-table td:last-child {
-                    border-right: none;
-                }
-                .row-order-title {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 1px;
-                }
-                .order-tag {
-                    font-size: 11px;
-                    font-weight: 900;
-                    color: #000000;
-                    line-height: 1.15;
-                }
-                .order-desc-inline {
-                    font-size: 9.5px;
-                    font-weight: 700;
-                    color: #1e293b;
-                    line-height: 1.2;
-                }
-                .td-num {
-                    text-align: center;
-                    font-size: 12.5px;
-                    font-weight: 900;
-                    color: #000000;
-                }
-                .td-action {
-                    text-align: center;
-                    padding: 2px 4px !important;
-                }
-                .write-line {
-                    display: inline-block;
-                    min-width: 60px;
-                    border-bottom: 1.5px dashed #000000;
-                    height: 15px;
-                    vertical-align: bottom;
-                    margin-right: 2px;
-                }
-                .vol-unit {
-                    font-size: 9.5px;
-                    color: #000000;
-                    font-weight: 900;
-                }
-                .totals-row {
-                    background: #f1f5f9;
-                    border-top: 2px solid #000000;
-                }
-                .totals-row td {
-                    border-bottom: none;
-                    padding: 4px 6px;
-                    font-size: 11.5px;
-                }
-                .td-manual {
-                    text-align: center;
-                    font-size: 10px;
-                    color: #1e293b;
-                    font-weight: 800;
-                    font-style: italic;
-                }
-                .note-box {
-                    font-size: 10px;
-                    color: #000000;
-                    font-weight: 700;
-                    border: 1px solid #cbd5e1;
-                    border-left-width: 4px;
-                    padding: 3.5px 8px;
-                    line-height: 1.35;
-                    margin: 2px 0 4px 0;
-                    background: #f8fafc;
-                    border-radius: 0 4px 4px 0;
-                }
-                .note-box strong {
-                    font-weight: 900;
-                    color: #000000;
-                }
-                .signatures {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 24px;
-                    margin-top: 3px;
-                }
-                .sig-box {
-                    border-top: 2px solid #000000;
-                    padding-top: 3px;
-                    text-align: center;
-                }
-                .sig-box p {
-                    margin: 0;
-                    font-size: 11px;
-                    font-weight: 900;
-                    color: #000000;
-                }
-                .sig-box span {
-                    font-size: 9.5px;
-                    font-weight: 700;
-                    color: #1e293b;
-                }
-                .cut-separator {
-                    height: 16px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 8px;
-                    color: #000000;
-                    font-size: 9.5px;
-                    font-weight: 900;
-                    letter-spacing: 0.05em;
-                    text-transform: uppercase;
-                    user-select: none;
-                    margin: 1px 0;
-                }
-                .cut-line {
-                    flex: 1;
-                    border-top: 1.5px dashed #475569;
-                }
-                .cut-scissors {
-                    font-size: 13px;
-                    color: #000000;
-                }
+
+                /* Modo compacto para até 18 ordens caberem perfeitamente na meia-folha */
+                .guia-half.compact-mode { gap: 3.5px; padding: 5px 8px; }
+                .guia-half.compact-mode .header { padding-bottom: 2px; margin-bottom: 2px; }
+                .guia-half.compact-mode .header-logo { width: 28px; height: 28px; }
+                .guia-half.compact-mode .company-title { font-size: 11.5px; }
+                .guia-half.compact-mode .company-slogan { font-size: 6.5px; }
+                .guia-half.compact-mode .company-sub { font-size: 6px; }
+                .guia-half.compact-mode .doc-title-main { font-size: 12px; }
+                .guia-half.compact-mode .serial-red { font-size: 12px; }
+                .guia-half.compact-mode .client-clearance-grid { gap: 4px; margin-bottom: 2px; }
+                .guia-half.compact-mode .pill-maputo { padding: 1.5px 5px; font-size: 8px; min-width: 52px; border-radius: 4px; }
+                .guia-half.compact-mode .du-box { padding: 2px 4px; }
+                .guia-half.compact-mode .client-col { padding: 2.5px 6px; }
+                .guia-half.compact-mode .client-line { font-size: 8px; line-height: 1.2; }
+                .guia-half.compact-mode .table-container { margin: 1px 0; }
+                .guia-half.compact-mode .guia-table th { padding: 2px 4px; font-size: 8px; }
+                .guia-half.compact-mode .guia-table td { padding: 1.5px 4px; font-size: 8px; line-height: 1.2; }
+                .guia-half.compact-mode .row-order-title { gap: 3px; }
+                .guia-half.compact-mode .order-tag { font-size: 8px; }
+                .guia-half.compact-mode .order-desc-inline { font-size: 7.5px; }
+                .guia-half.compact-mode .td-num { font-size: 8.5px; }
+                .guia-half.compact-mode .totals-row td { padding: 2px 4px; font-size: 8px; }
+                .guia-half.compact-mode .guia-footer-section { gap: 2px; }
+                .guia-half.compact-mode .transport-box { padding: 2.5px 6px; margin: 0; gap: 4px; border-radius: 4px; }
+                .guia-half.compact-mode .transport-line, .guia-half.compact-mode .transport-sub-item { font-size: 7.5px; margin: 0.5px 0; }
+                .guia-half.compact-mode .signatures { margin: 0; gap: 6px; }
+                .guia-half.compact-mode .sig-box { height: 42px; padding: 2px 4px; border-radius: 4px; border: 1.5px solid #cbd5e1; }
+                .guia-half.compact-mode .sig-name { font-size: 7.5px; }
+                .guia-half.compact-mode .sig-role { font-size: 6.5px; }
+                .guia-half.compact-mode .audit-strip { margin-top: 1.5px; padding: 1.5px 4px; font-size: 6.5px; }
+                .guia-half.compact-mode .legal-notice { margin-top: 1.5px; font-size: 6.5px; }
+
+                .watermark-bg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); opacity: 0.28; mix-blend-mode: multiply; pointer-events: none; z-index: 20; width: 360px; height: 360px; display: flex; align-items: center; justify-content: center; }
+                .guia-full .watermark-bg { width: 520px; height: 520px; }
+                .watermark-bg img { width: 100%; height: 100%; object-fit: contain; }
+
+                .header { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #002244; padding-bottom: 3.5px; margin-bottom: 3px; gap: 8px; }
+                .logo-section { display: flex; align-items: center; gap: 8px; flex: 1; }
+                .header-logo { width: 38px; height: 38px; object-fit: contain; }
+                .guia-half .header-logo { width: 32px; height: 32px; }
+                .company-header-text { display: flex; flex-direction: column; gap: 0; }
+                .company-title { margin: 0; color: #002244; font-size: 14px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.1; }
+                .guia-half .company-title { font-size: 12.5px; }
+                .company-slogan { font-size: 7.5px; font-style: italic; color: #0284c7; font-weight: 700; margin-bottom: 1px; }
+                .company-sub { font-size: 7.5px; color: #1e293b; font-weight: 600; line-height: 1.25; }
+                .guia-half .company-sub { font-size: 7px; }
+
+                .doc-info { position: relative; z-index: 1; text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; }
+                .doc-title-main { font-size: 15.5px; font-weight: 900; color: #002244; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.1; }
+                .guia-half .doc-title-main { font-size: 13.5px; }
+                .doc-serial-no { font-size: 11px; font-weight: 900; color: #000000; margin-top: 1px; }
+                .serial-red { color: #dc2626; font-size: 13px; font-weight: 900; font-family: 'Courier New', Courier, monospace; letter-spacing: 0.05em; }
+                .via-badge-container { margin-top: 1px; }
+                .via-badge { display: inline-block; font-size: 8px; font-weight: 900; padding: 1.5px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.03em; }
+                .via-badge-cliente { background: #dbeafe; color: #1e40af; border: 1.5px solid #2563eb; }
+                .via-badge-armazem { background: #fef3c7; color: #92400e; border: 1.5px solid #d97706; }
+
+                .client-clearance-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 34% 66%; gap: 6px; margin-bottom: 3px; align-items: stretch; }
+                .dispatch-col { display: flex; gap: 4px; align-items: stretch; }
+                .pill-maputo { border: 1.5px solid #002244; border-radius: 4px; font-weight: 900; padding: 2px 7px; font-size: 9px; color: #002244; display: flex; align-items: center; justify-content: center; letter-spacing: 0.05em; min-width: 60px; box-sizing: border-box; }
+                .du-box { flex: 1; border: 1.5px solid #002244; border-radius: 6px; padding: 3px 6px; display: flex; flex-direction: column; justify-content: center; background: #fafafa; }
+                .du-line { display: flex; align-items: baseline; gap: 4px; font-size: 8.5px; font-weight: 800; color: #000; }
+                .lbl-du { font-weight: 900; color: #002244; }
+                .du-val { font-weight: 900; color: #000; word-break: break-all; }
+                .du-date-line { font-size: 7.5px; color: #334155; font-weight: 700; margin-top: 1.5px; border-top: 1px dotted #cbd5e1; padding-top: 1.5px; }
+                
+                .client-col { border: 1.5px solid #002244; border-radius: 6px; padding: 3.5px 8px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-around; }
+                .client-line { display: flex; align-items: baseline; gap: 5px; font-size: 8.5px; line-height: 1.25; }
+                .lbl-client { font-weight: 800; color: #002244; white-space: nowrap; font-size: 8px; min-width: 65px; }
+                .val-client { font-weight: 800; color: #000000; flex: 1; border-bottom: 1px dotted #94a3b8; }
+
+                .table-container { position: relative; z-index: 1; margin: 2px 0; border: 1.5px solid #002244; border-radius: 4px; overflow: hidden; }
+                .guia-table { width: 100%; border-collapse: collapse; }
+                .guia-table th { background: #e6f0fa; color: #002244; font-weight: 900; font-size: 8.5px; padding: 3px 6px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1.5px solid #002244; border-right: 1px solid #cbd5e1; }
+                .guia-table th:last-child { border-right: none; }
+                .guia-table td { padding: 3px 6px; font-size: 9px; font-weight: 700; color: #000000; border-bottom: 1px dotted #94a3b8; border-right: 1px solid #e2e8f0; vertical-align: middle; }
+                .guia-table td:last-child { border-right: none; }
+                .row-order-title { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; }
+                .order-tag { font-size: 9px; font-weight: 900; color: #000000; }
+                .order-desc-inline { font-size: 8px; font-weight: 700; color: #1e293b; }
+                .td-num { text-align: center; font-size: 10px; font-weight: 900; color: #000000; }
+                .filler-row td { height: 16px; border-bottom: 1px dotted #cbd5e1; }
+                .totals-row { background: #f1f5f9; border-top: 1.5px solid #002244; }
+                .totals-row td { border-bottom: none; font-size: 9px; padding: 3px 6px; }
+                .total-note { font-size: 7.5px; color: #475569; font-weight: 600; font-style: italic; }
+
+                /* Rodapé fixado na parte inferior da guia, permitindo à tabela crescer e diminuir dinamicamente */
+                .guia-footer-section { position: relative; z-index: 1; margin-top: auto; display: flex; flex-direction: column; gap: 4px; }
+                .transport-box { position: relative; z-index: 1; border: 1.5px solid #002244; border-radius: 4px; padding: 4px 8px; display: grid; grid-template-columns: 55% 45%; gap: 8px; margin: 0; background: #fafafa; }
+                .transport-line { display: flex; align-items: baseline; gap: 4px; font-size: 8px; margin: 1px 0; }
+                .transport-row-sub { display: flex; justify-content: space-between; gap: 6px; }
+                .transport-sub-item { display: flex; align-items: baseline; gap: 3px; font-size: 8px; margin: 1px 0; }
+                .lbl-trans { font-weight: 900; color: #002244; font-size: 7.5px; white-space: nowrap; }
+                .val-trans { font-weight: 800; color: #000000; flex: 1; border-bottom: 1px dotted #94a3b8; }
+
+                .signatures { position: relative; z-index: 1; display: grid; gap: 8px; margin: 0; }
+                .signatures-2col { grid-template-columns: 1fr 1fr; }
+                .signatures-3col { grid-template-columns: 1fr 1fr 1fr; }
+                .sig-box { border: 1.5px solid #cbd5e1; border-radius: 4px; background: #fafcff; padding: 4px 6px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 52px; box-sizing: border-box; }
+                .sig-stamp-zone { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; }
+                .sig-stamp-hint { font-size: 7px; color: #94a3b8; font-style: italic; user-select: none; }
+                .sig-line { width: 90%; border-top: 1.5px solid #002244; margin-bottom: 2px; }
+                .sig-name { margin: 0; font-size: 8.5px; font-weight: 900; color: #000000; line-height: 1.15; text-align: center; }
+                .sig-role { font-size: 7px; font-weight: 700; color: #475569; line-height: 1.1; text-align: center; }
+                .legal-notice { position: relative; z-index: 1; font-size: 7px; color: #475569; font-style: italic; text-align: center; margin-top: 1px; }
+                .audit-strip { position: relative; z-index: 1; font-size: 7px; color: #1e3a8a; background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 3px; padding: 2px 6px; text-align: center; margin-top: 1px; font-weight: 700; }
+
+                .cut-separator { height: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #000000; font-size: 9px; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; user-select: none; margin: 1px 0; }
+                .cut-line { flex: 1; border-top: 1.5px dashed #475569; }
+                .cut-scissors { font-size: 13px; color: #000000; }
+
+                .guia-page-footer { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: center; border-top: 1.5px solid #002244; padding-top: 2.5px; margin-top: 2.5px; font-size: 8px; font-weight: 800; color: #1e293b; text-transform: uppercase; letter-spacing: 0.02em; }
+                .note-box { position: relative; z-index: 1; font-size: 8.5px; color: #000000; font-weight: 700; border: 1px solid #cbd5e1; border-left-width: 4px; padding: 3px 6px; line-height: 1.3; margin: 2px 0; background: #f8fafc; border-radius: 0 4px 4px 0; }
+                .page-divider-screen { width: 210mm; margin: 20px auto 12px auto; display: flex; align-items: center; justify-content: center; color: #475569; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.1em; user-select: none; }
+                .page-divider-screen::before, .page-divider-screen::after { content: ''; flex: 1; border-top: 2px dashed #94a3b8; margin: 0 16px; }
 
                 /* Modal de Configuração Rápida */
                 #modal-config {
@@ -15719,12 +15943,15 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             <div class="btn-print-bar">
                 <div class="bar-left">
                     <div>
-                        <div class="bar-title">Guia Dupla Oficial (A4)</div>
-                        <div class="bar-sub">${printMode === '4_FOLHAS' ? `📄 4 Folhas (${totalOrdersCount} Ordens • 2 Folhas Armazém + 2 Folhas Portaria)` : (printMode === '2_FOLHAS' ? `📄 2 Folhas (${totalOrdersCount} Ordens • Folha 1: Armazém • Folha 2: Portaria)` : `📄 Folha Única Dupla (${totalOrdersCount} ${totalOrdersCount === 1 ? 'Ordem' : 'Ordens'} • ✂ Destaque Armazém & Portaria)`)}</div>
+                        <div class="bar-title">Guia de Remessa Oficial (A4)</div>
+                        <div class="bar-sub">${printMode === '4_FOLHAS' ? `📄 4 Folhas (${totalOrdersCount} Ordens • 2 Folhas Cliente + 2 Folhas Júpiter)` : (printMode === '2_FOLHAS' ? `📄 2 Folhas (${totalOrdersCount} Ordens • Folha 1: Cliente • Folha 2: Júpiter)` : `📄 Folha Única Dupla (${totalOrdersCount} ${totalOrdersCount === 1 ? 'Ordem' : 'Ordens'} • ✂ 1ª Via: Cliente / 2ª Via: Fica Connosco)`)}</div>
                     </div>
                     <div id="status-badge" class="server-badge badge-checking" onclick="openServerConfigModal()" title="Clique para ver ou alterar o IP do servidor de impressão">
                         <span class="badge-dot"></span>
                         <span id="status-text">A verificar...</span>
+                    </div>
+                    <div style="font-size: 10px; color: #94a3b8; font-weight: 700; background: rgba(148, 163, 184, 0.12); border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 6px; padding: 3px 8px;">
+                        📄 Dados preenchidos e validados através da aba Armazenagem
                     </div>
                 </div>
 
@@ -15779,55 +16006,55 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
 
             <!-- Conteúdo da Guia: 4 Folhas, 2 Folhas ou 1 Folha Dupla com Destaque -->
             ${printMode === '4_FOLHAS' ? `
-                <!-- Folha 1: 1ª Via Armazém (Parte 1/2) -->
+                <!-- Folha 1: 1ª Via Cliente (Parte 1/2) -->
                 <div id="guia-page-1" class="page-wrapper">
+                    ${generateViaHtml('CLIENTE', 'PART1')}
+                </div>
+                <div class="page-divider-screen">
+                    <span>FOLHA 2 — 1ª VIA CLIENTE (PARTE 2 / CONCLUSÃO)</span>
+                </div>
+                <!-- Folha 2: 1ª Via Cliente (Conclusão) -->
+                <div id="guia-page-2" class="page-wrapper">
+                    ${generateViaHtml('CLIENTE', 'PART2')}
+                </div>
+                <div class="page-divider-screen" style="border-top-color: #3b82f6;">
+                    <span>FOLHA 3 — 2ª VIA JÚPITER LOGISTICS (PARTE 1/2)</span>
+                </div>
+                <!-- Folha 3: 2ª Via Júpiter (Parte 1/2) -->
+                <div id="guia-page-3" class="page-wrapper">
                     ${generateViaHtml('ARMAZEM', 'PART1')}
                 </div>
                 <div class="page-divider-screen">
-                    <span>FOLHA 2 — 1ª VIA ARMAZÉM / CONFERÊNCIA (PARTE 2 / CONCLUSÃO)</span>
+                    <span>FOLHA 4 — 2ª VIA JÚPITER LOGISTICS (PARTE 2 / CONCLUSÃO)</span>
                 </div>
-                <!-- Folha 2: 1ª Via Armazém (Conclusão) -->
-                <div id="guia-page-2" class="page-wrapper">
+                <!-- Folha 4: 2ª Via Júpiter (Conclusão) -->
+                <div id="guia-page-4" class="page-wrapper">
                     ${generateViaHtml('ARMAZEM', 'PART2')}
                 </div>
-                <div class="page-divider-screen" style="border-top-color: #3b82f6;">
-                    <span>FOLHA 3 — 2ª VIA PORTARIA & SEGURANÇA (PARTE 1/2)</span>
-                </div>
-                <!-- Folha 3: 2ª Via Portaria (Parte 1/2) -->
-                <div id="guia-page-3" class="page-wrapper">
-                    ${generateViaHtml('PORTARIA', 'PART1')}
-                </div>
-                <div class="page-divider-screen">
-                    <span>FOLHA 4 — 2ª VIA PORTARIA & SEGURANÇA (PARTE 2 / CONCLUSÃO)</span>
-                </div>
-                <!-- Folha 4: 2ª Via Portaria (Conclusão) -->
-                <div id="guia-page-4" class="page-wrapper">
-                    ${generateViaHtml('PORTARIA', 'PART2')}
-                </div>
             ` : (printMode === '2_FOLHAS' ? `
-                <!-- Folha 1: Armazém e Conferência -->
+                <!-- Folha 1: 1ª Via Cliente (Original) -->
                 <div id="guia-page-1" class="page-wrapper">
-                    ${generateViaHtml('ARMAZEM', 'FULL')}
+                    ${generateViaHtml('CLIENTE', 'FULL')}
                 </div>
                 <div class="page-divider-screen">
-                    <span>FOLHA 2 — PORTARIA & SEGURANÇA</span>
+                    <span>FOLHA 2 — 2ª VIA JÚPITER LOGISTICS (DUPLICADO)</span>
                 </div>
-                <!-- Folha 2: Portaria e Segurança -->
+                <!-- Folha 2: 2ª Via Júpiter Logistics (Duplicado) -->
                 <div id="guia-page-2" class="page-wrapper">
-                    ${generateViaHtml('PORTARIA', 'FULL')}
+                    ${generateViaHtml('ARMAZEM', 'FULL')}
                 </div>
             ` : `
                 <!-- Folha Única Dupla com Destaque -->
                 <div id="guia-page-wrapper" class="page-wrapper">
-                    ${generateViaHtml('ARMAZEM', 'HALF')}
+                    ${generateViaHtml('CLIENTE', 'HALF')}
                     <div class="cut-separator">
                         <span class="cut-scissors">✂</span>
                         <div class="cut-line"></div>
-                        <span>DESTAQUE AQUI — 1ª VIA RETIDA NO ARMAZÉM / 2ª VIA RETIDA NA PORTARIA</span>
+                        <span>DESTAQUE AQUI — 1ª VIA: LEVA O CLIENTE / 2ª VIA: FICA CONNOSCO (JÚPITER LOGISTICS)</span>
                         <div class="cut-line"></div>
                         <span class="cut-scissors">✂</span>
                     </div>
-                    ${generateViaHtml('PORTARIA', 'HALF')}
+                    ${generateViaHtml('ARMAZEM', 'HALF')}
                 </div>
             `)}
 
@@ -15892,7 +16119,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     const serverUrl = getServerUrl();
                     const token = getApiToken();
 
-                    // Prioridade 1: Usar o printService da janela principal (contexto completo e autenticado)
                     if (window.opener && window.opener.printService && typeof window.opener.printService.checkStatus === 'function') {
                         try {
                             const status = await window.opener.printService.checkStatus(serverUrl);
@@ -15909,7 +16135,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         }
                     }
 
-                    // Prioridade 2: Tentar diretamente no computador partilhado (192.168.88.10:5000)
                     try {
                         const controller = new AbortController();
                         const to = setTimeout(() => controller.abort(), 2500);
@@ -15926,11 +16151,8 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                             if (btnDirect) btnDirect.disabled = false;
                             return true;
                         }
-                    } catch (e) {
-                        // Prossegue para o proxy se o navegador restringir direto
-                    }
+                    } catch (e) {}
 
-                    // Prioridade 3: Fallback via proxy Express do servidor web
                     try {
                         const params = new URLSearchParams({ serverUrl });
                         if (token) params.set('token', token);
@@ -15968,7 +16190,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     let printers = null;
                     let padrao = null;
 
-                    // Prioridade 1: Usar printService da janela principal
                     if (window.opener && window.opener.printService && typeof window.opener.printService.getPrinters === 'function') {
                         try {
                             const resOp = await window.opener.printService.getPrinters(serverUrl);
@@ -15979,7 +16200,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         } catch (e) {}
                     }
 
-                    // Prioridade 2: Tentar diretamente no computador partilhado
                     if (!printers) {
                         try {
                             const controller = new AbortController();
@@ -15989,14 +16209,12 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                             const directRes = await fetch(serverUrl + '/api/impressoras', { method: 'GET', headers: h, signal: to });
                             clearTimeout(to);
                             if (directRes.ok) {
-                                const data = await directRes.json();
                                 printers = data.impressoras;
                                 padrao = data.padrao;
                             }
                         } catch (e) {}
                     }
 
-                    // Prioridade 3: Fallback via proxy backend
                     if (!printers) {
                         try {
                             const params = new URLSearchParams({ serverUrl });
@@ -16083,9 +16301,8 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         btn.innerHTML = '<span>⚡ A renderizar Guia (' + pages.length + (pages.length > 1 ? ' folhas' : ' folha') + ')...</span>';
 
                         let fileBase64 = '';
-                        let fileName = 'Guia_${guiaNumber}.pdf';
+                        let fileName = 'Guia_Remessa_' + '${guiaNumber}' + '.pdf';
 
-                        // Renderizar cada folha (.page-wrapper) em alta resolução e compilar no jsPDF
                         const jspdfModule = window.jspdf;
                         if (jspdfModule && (jspdfModule.jsPDF || typeof jspdfModule === 'function')) {
                             const JsPdfClass = jspdfModule.jsPDF || jspdfModule;
@@ -16121,7 +16338,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                                 windowWidth: 1200
                             });
                             fileBase64 = canvas.toDataURL('image/png').split(',')[1];
-                            fileName = 'Guia_${guiaNumber}.png';
+                            fileName = 'Guia_Remessa_' + '${guiaNumber}' + '.png';
                         }
 
                         btn.innerHTML = '<span>⚡ A enviar para o computador partilhado...</span>';
@@ -16129,7 +16346,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         let printSuccess = false;
                         let printerUsed = selectedPrinter;
 
-                        // 3. Prioridade 1: Usar window.opener.printService (contexto validado na janela principal)
                         if (window.opener && window.opener.printService && typeof window.opener.printService.printDocument === 'function') {
                             try {
                                 const resOp = await window.opener.printService.printDocument({
@@ -16147,7 +16363,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                             }
                         }
 
-                        // 4. Prioridade 2: Tentar envio direto ao computador partilhado
                         if (!printSuccess) {
                             try {
                                 const controller = new AbortController();
@@ -16179,7 +16394,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                             }
                         }
 
-                        // 5. Prioridade 3: Enviar via proxy backend do servidor web
                         if (!printSuccess) {
                             const payload = {
                                 serverUrl,
@@ -16232,7 +16446,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     let connected = false;
                     let padrao = null;
 
-                    // 1. Usar window.opener se disponível
                     if (window.opener && window.opener.printService && typeof window.opener.printService.checkStatus === 'function') {
                         try {
                             const resOp = await window.opener.printService.checkStatus(url);
@@ -16243,7 +16456,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         } catch (e) {}
                     }
 
-                    // 2. Tentar direto
                     if (!connected) {
                         try {
                             const controller = new AbortController();
@@ -16260,7 +16472,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         } catch (e) {}
                     }
 
-                    // 3. Fallback proxy
                     if (!connected) {
                         try {
                             const params = new URLSearchParams({ serverUrl: url });
@@ -16305,7 +16516,6 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                     reloadPrinters();
                 }
 
-                // Iniciar status e impressoras imediatamente e no evento load
                 checkStatus();
                 reloadPrinters();
                 window.addEventListener('load', () => {
