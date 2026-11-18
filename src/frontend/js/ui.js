@@ -15024,10 +15024,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             topHeaderHtml = `
                 <div class="header" style="border-bottom: 2px solid #002244; padding-bottom: 3px; margin-bottom: 3px;">
                     <div class="logo-section">
-                        <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Logistics" class="header-logo" style="width: 32px; height: 32px;" />
+                        <img src="${JUPITER_LOGO_DATA_URL}" alt="Jupiter Logistics" class="header-logo" style="width: 36px; height: 36px;" />
                         <div>
-                            <h1 class="company-title" style="font-size: 13.5px; line-height: 1.1;">JÚPITER LOGISTICS, LDA</h1>
-                            <div class="company-sub" style="font-size: 8px; line-height: 1.2; margin-top: 1px;">
+                            <h1 class="company-title" style="font-size: 14px; line-height: 1.1;">JÚPITER LOGISTICS, LDA</h1>
+                            <div class="company-sub" style="font-size: 8.5px; line-height: 1.25; margin-top: 1px;">
                                 Guia Nº: <strong>${guiaNumber}</strong> | Cliente: <strong>${clientName}</strong> (${clientCode}) | Viatura: <strong>${viaturaVal || '—'}</strong>
                             </div>
                         </div>
@@ -15315,10 +15315,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             /* Modo compacto para até 18 ordens caberem perfeitamente na meia-folha */
             .guia-half.compact-mode { gap: 3.5px; padding: 5px 8px; }
             .guia-half.compact-mode .header { padding-bottom: 2px; margin-bottom: 2px; }
-            .guia-half.compact-mode .header-logo { width: 28px; height: 28px; }
-            .guia-half.compact-mode .company-title { font-size: 11.5px; }
-            .guia-half.compact-mode .company-slogan { font-size: 6.5px; }
-            .guia-half.compact-mode .company-sub { font-size: 6px; }
+            .guia-half.compact-mode .header-logo { width: 30px; height: 30px; }
+            .guia-half.compact-mode .company-title { font-size: 12.5px; }
+            .guia-half.compact-mode .company-slogan { font-size: 7px; }
+            .guia-half.compact-mode .company-sub { font-size: 7.2px; line-height: 1.25; }
             .guia-half.compact-mode .doc-title-main { font-size: 12px; }
             .guia-half.compact-mode .serial-red { font-size: 12px; }
             .guia-half.compact-mode .client-clearance-grid { gap: 4px; margin-bottom: 2px; grid-template-columns: 8% 38% 27% 27%; }
@@ -15358,14 +15358,15 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
 
             .header { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #002244; padding-bottom: 3.5px; margin-bottom: 3px; gap: 8px; }
             .logo-section { display: flex; align-items: center; gap: 8px; flex: 1; }
-            .header-logo { width: 38px; height: 38px; object-fit: contain; }
-            .guia-half .header-logo { width: 32px; height: 32px; }
+            .header-logo { width: 42px; height: 42px; object-fit: contain; }
+            .guia-half .header-logo { width: 36px; height: 36px; }
             .company-header-text { display: flex; flex-direction: column; gap: 0; }
-            .company-title { margin: 0; color: #002244; font-size: 14px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.1; }
-            .guia-half .company-title { font-size: 12.5px; }
-            .company-slogan { font-size: 7.5px; font-style: italic; color: #0284c7; font-weight: 700; margin-bottom: 1px; }
-            .company-sub { font-size: 7.5px; color: #1e293b; font-weight: 600; line-height: 1.25; }
-            .guia-half .company-sub { font-size: 7px; }
+            .company-title { margin: 0; color: #002244; font-size: 15px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.1; }
+            .guia-half .company-title { font-size: 13.5px; }
+            .company-slogan { font-size: 8px; font-style: italic; color: #0284c7; font-weight: 700; margin-bottom: 1px; }
+            .guia-half .company-slogan { font-size: 7.8px; }
+            .company-sub { font-size: 8.5px; color: #0f172a; font-weight: 600; line-height: 1.35; }
+            .guia-half .company-sub { font-size: 8px; line-height: 1.3; }
 
             .doc-info { position: relative; z-index: 1; text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; }
             .doc-title-main { font-size: 15.5px; font-weight: 900; color: #002244; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.1; }
@@ -15805,10 +15806,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 /* Modo compacto para até 18 ordens caberem perfeitamente na meia-folha */
                 .guia-half.compact-mode { gap: 3.5px; padding: 5px 8px; }
                 .guia-half.compact-mode .header { padding-bottom: 2px; margin-bottom: 2px; }
-                .guia-half.compact-mode .header-logo { width: 28px; height: 28px; }
-                .guia-half.compact-mode .company-title { font-size: 11.5px; }
-                .guia-half.compact-mode .company-slogan { font-size: 6.5px; }
-                .guia-half.compact-mode .company-sub { font-size: 6px; }
+                .guia-half.compact-mode .header-logo { width: 30px; height: 30px; }
+                .guia-half.compact-mode .company-title { font-size: 12.5px; }
+                .guia-half.compact-mode .company-slogan { font-size: 7px; }
+                .guia-half.compact-mode .company-sub { font-size: 7.2px; line-height: 1.25; }
                 .guia-half.compact-mode .doc-title-main { font-size: 12px; }
                 .guia-half.compact-mode .serial-red { font-size: 12px; }
                 .guia-half.compact-mode .client-clearance-grid { gap: 4px; margin-bottom: 2px; grid-template-columns: 8% 38% 27% 27%; }
@@ -15848,14 +15849,15 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
 
                 .header { position: relative; z-index: 1; display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #002244; padding-bottom: 3.5px; margin-bottom: 3px; gap: 8px; }
                 .logo-section { display: flex; align-items: center; gap: 8px; flex: 1; }
-                .header-logo { width: 38px; height: 38px; object-fit: contain; }
-                .guia-half .header-logo { width: 32px; height: 32px; }
+                .header-logo { width: 42px; height: 42px; object-fit: contain; }
+                .guia-half .header-logo { width: 36px; height: 36px; }
                 .company-header-text { display: flex; flex-direction: column; gap: 0; }
-                .company-title { margin: 0; color: #002244; font-size: 14px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.1; }
-                .guia-half .company-title { font-size: 12.5px; }
-                .company-slogan { font-size: 7.5px; font-style: italic; color: #0284c7; font-weight: 700; margin-bottom: 1px; }
-                .company-sub { font-size: 7.5px; color: #1e293b; font-weight: 600; line-height: 1.25; }
-                .guia-half .company-sub { font-size: 7px; }
+                .company-title { margin: 0; color: #002244; font-size: 15px; font-weight: 900; letter-spacing: -0.01em; line-height: 1.1; }
+                .guia-half .company-title { font-size: 13.5px; }
+                .company-slogan { font-size: 8px; font-style: italic; color: #0284c7; font-weight: 700; margin-bottom: 1px; }
+                .guia-half .company-slogan { font-size: 7.8px; }
+                .company-sub { font-size: 8.5px; color: #0f172a; font-weight: 600; line-height: 1.35; }
+                .guia-half .company-sub { font-size: 8px; line-height: 1.3; }
 
                 .doc-info { position: relative; z-index: 1; text-align: right; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; }
                 .doc-title-main { font-size: 15.5px; font-weight: 900; color: #002244; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.1; }
