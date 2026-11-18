@@ -3062,7 +3062,7 @@ export async function showConfirmDetail(client, clientIndex) {
     }
 
     if (breadcrumbEl) {
-        const projectName = document.getElementById('confirm-project-active-name')?.textContent || 'PROJETO';
+        const projectName = client.projectName || document.getElementById('confirm-project-active-name')?.textContent?.trim() || state.confirm?.activeProjectName || 'PROJETO';
         const separator = `<svg class="text-gray-300" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
         const displayIndex = clientIndex !== undefined ? clientIndex : '---';
 
@@ -3904,6 +3904,7 @@ export async function showConfirmDetail(client, clientIndex) {
         // Estrutura HTML baseada no template do utilizador
         body.innerHTML = `
             <div id="payment-info-container">${pbHtml}</div>
+
             <div class="overflow-x-auto custom-scrollbar">
                 <table class="w-full text-left border-collapse">
                     <thead class="bg-slate-50 border-bottom border-slate-200 text-slate-500">
@@ -13015,6 +13016,8 @@ export function updateArmazemCalculations() {
         badgeStorage.innerHTML = `Armazenagem: <strong class="ml-1 font-extrabold">${formatMZN(payAmount)} (${statusText}${isNegotiated ? ' - Negociado' : ''})</strong>`;
         badgeStorage.className = `font-bold uppercase text-[9px] px-2.5 py-1 rounded-lg border ${statusColor}`;
     }
+
+
 }
 window.updateArmazemCalculations = updateArmazemCalculations;
 window.updateArmazemSaldo = updateArmazemCalculations;
@@ -14030,6 +14033,12 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                 }
             }
         }
+
+
+
+        if (window.updateArmazemCalculations) {
+            window.updateArmazemCalculations();
+        }
     } catch (err) {
         console.error('[WAREHOUSE] Erro ao renderizar detalhes de Armazém:', err);
         container.innerHTML = `
@@ -14598,7 +14607,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const client = clientParam || window.currentActiveClient;
     if (!client) return;
 
-    const projectName = document.getElementById('confirm-project-active-name')?.textContent || 'PROJETO';
+    const projectName = client.projectName || document.getElementById('confirm-project-active-name')?.textContent?.trim() || state.confirm?.activeProjectName || 'PROJETO';
     const clientName = client.displayName || 'Cliente Sem Nome';
     const clientCode = client.displayIdCode || '---';
     const clientNo = client.no || '—';
@@ -14886,6 +14895,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         textStoragePaid = isStoragePaid ? 'LIVRE / PAGO' : 'PENDENTE';
     }
 
+    const storageCostDisplay = storageInfo.isExempt
+        ? '0,00 MT (Isento)'
+        : (storageInfo.isNegotiated ? `${formatMZN(storageInfo.cost)} (Neg.)` : formatMZN(storageCost));
+
     // Determinar modo de impressão baseado no número total de ordens:
     // Até 18 ordens: 1 Folha Única Dupla (1ª Via e 2ª Via na mesma folha A4 com corte ao meio)
     // De 19 a 28 ordens: 2 Folhas A4 inteiras (Folha 1: Cliente • Folha 2: Júpiter)
@@ -15050,18 +15063,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 </div>
 
                 <div class="client-clearance-grid">
-                    <div class="dispatch-col">
-                        <div class="pill-maputo">MAPUTO</div>
-                        <div class="du-box">
-                            <div class="du-line">
-                                <span class="lbl-du">DU:</span> 
-                                <span class="du-val">${duVal}</span>
-                            </div>
-                            <div class="du-date-line">
-                                <span class="du-date-val">${formatPortugueseDateFull(deliveryDate)}</span>
-                            </div>
-                        </div>
-                    </div>
+                    <!-- Card 1: MAPUTO -->
+                    <div class="pill-maputo">MAPUTO</div>
+
+                    <!-- Card 2: Exmo. (s) Sr. (s) / Destinatário -->
                     <div class="client-col">
                         <div class="client-line">
                             <span class="lbl-client">Exmo. (s) Sr. (s)</span>
@@ -15069,11 +15074,45 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                         </div>
                         <div class="client-line">
                             <span class="lbl-client">Morada</span>
-                            <span class="val-client">${clientAddress}</span>
+                            <span class="val-client">${clientAddress || '—'}</span>
                         </div>
                         <div class="client-line">
                             <span class="lbl-client">NUIT:</span>
-                            <span class="val-client">${clientNuit}</span>
+                            <span class="val-client">${clientNuit || '—'}</span>
+                        </div>
+                    </div>
+
+                    <!-- Card 3: DADOS -->
+                    <div class="card-info-box client-data-box">
+                        <div class="info-box-header">DADOS</div>
+                        <div class="info-box-line">
+                            <span class="lbl-info">DU:</span>
+                            <strong class="val-info">${duVal || '—'}</strong>
+                        </div>
+                        <div class="info-box-line">
+                            <span class="lbl-info">Projeto:</span>
+                            <strong class="val-info">${projectName || '—'}</strong>
+                        </div>
+                        <div class="info-box-line">
+                            <span class="lbl-info">ID / Nº Cli:</span>
+                            <strong class="val-info">${clientCode || '—'}${clientNo ? ` • Nº ${clientNo}` : ''}</strong>
+                        </div>
+                    </div>
+
+                    <!-- Card 4: Controlo de Armazém -->
+                    <div class="card-info-box warehouse-control-box">
+                        <div class="info-box-header">CONTROLO DE ARMAZÉM</div>
+                        <div class="info-box-line">
+                            <span class="lbl-info">Descarga:</span>
+                            <span class="val-info">${dischargeDateDisplay} ${daysDiff > 0 ? `(${daysDiff}d)` : ''}</span>
+                        </div>
+                        <div class="info-box-line">
+                            <span class="lbl-info">Armazenagem:</span>
+                            <strong class="val-info">${storageCostDisplay}</strong>
+                        </div>
+                        <div class="info-box-line">
+                            <span class="lbl-info">Estado:</span>
+                            <strong class="val-info" style="color: ${isStoragePaid ? '#047857' : (storageInfo.isExempt ? '#0284c7' : '#b91c1c')};">${textStoragePaid}</strong>
                         </div>
                     </div>
                 </div>
@@ -15122,14 +15161,22 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             let sigHtml = '';
             if (isCliente) {
                 sigHtml = `
-                    <div class="signatures signatures-2col">
+                    <div class="signatures signatures-3col">
                         <div class="sig-box">
                             <div class="sig-stamp-zone">
                                 <span class="sig-stamp-hint">(Espaço para Assinatura e Carimbo)</span>
                             </div>
                             <div class="sig-line"></div>
-                            <p class="sig-name">JÚPITER LOGISTICS, LDA</p>
+                            <p class="sig-name">JÚPITER LOGISTICS, LDA ${issuerName ? `<span class="sig-issuer-inline">(${issuerName})</span>` : ''}</p>
                             <span class="sig-role">Assinatura e Carimbo do Emissor</span>
+                        </div>
+                        <div class="sig-box">
+                            <div class="sig-stamp-zone">
+                                <span class="sig-stamp-hint">(Assinatura / Data)</span>
+                            </div>
+                            <div class="sig-line"></div>
+                            <p class="sig-name">FIEL DO ARMAZÉM</p>
+                            <span class="sig-role">Conferência de Carga</span>
                         </div>
                         <div class="sig-box">
                             <div class="sig-stamp-zone">
@@ -15274,11 +15321,17 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             .guia-half.compact-mode .company-sub { font-size: 6px; }
             .guia-half.compact-mode .doc-title-main { font-size: 12px; }
             .guia-half.compact-mode .serial-red { font-size: 12px; }
-            .guia-half.compact-mode .client-clearance-grid { gap: 4px; margin-bottom: 2px; }
-            .guia-half.compact-mode .pill-maputo { padding: 1.5px 5px; font-size: 8px; min-width: 52px; border-radius: 4px; }
-            .guia-half.compact-mode .du-box { padding: 2px 4px; }
-            .guia-half.compact-mode .client-col { padding: 2.5px 6px; }
-            .guia-half.compact-mode .client-line { font-size: 8px; line-height: 1.2; }
+            .guia-half.compact-mode .client-clearance-grid { gap: 4px; margin-bottom: 2px; grid-template-columns: 8% 38% 27% 27%; }
+            .guia-half.compact-mode .pill-maputo { border: 1.5px solid #002244; border-radius: 4px; font-weight: 900; font-size: 9.5px; color: #002244; display: flex; align-items: center; justify-content: center; letter-spacing: 0.05em; background: #f8fafc; text-transform: uppercase; padding: 2px 3px; box-sizing: border-box; }
+            .guia-half.compact-mode .client-col { padding: 2px 6px; }
+            .guia-half.compact-mode .client-line { font-size: 8px; line-height: 1.3; gap: 3px; }
+            .guia-half.compact-mode .lbl-client { font-size: 8px; min-width: 58px; }
+            .guia-half.compact-mode .val-client { font-size: 8.5px; }
+            .guia-half.compact-mode .card-info-box { padding: 2px 5px; border-radius: 4px; }
+            .guia-half.compact-mode .info-box-header { font-size: 8px; padding-bottom: 1px; margin-bottom: 1.5px; }
+            .guia-half.compact-mode .info-box-line { font-size: 8px; line-height: 1.3; gap: 2px; }
+            .guia-half.compact-mode .lbl-info { font-size: 7.5px; }
+            .guia-half.compact-mode .val-info { font-size: 8.5px; }
             .guia-half.compact-mode .table-container { margin: 1px 0; }
             .guia-half.compact-mode .guia-table th { padding: 2px 4px; font-size: 8px; }
             .guia-half.compact-mode .guia-table td { padding: 1.5px 4px; font-size: 8px; line-height: 1.2; }
@@ -15291,8 +15344,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             .guia-half.compact-mode .transport-box { padding: 2.5px 6px; margin: 0; gap: 4px; border-radius: 4px; }
             .guia-half.compact-mode .transport-line, .guia-half.compact-mode .transport-sub-item { font-size: 7.5px; margin: 0.5px 0; }
             .guia-half.compact-mode .signatures { margin: 0; gap: 6px; }
-            .guia-half.compact-mode .sig-box { height: 42px; padding: 2px 4px; border-radius: 4px; border: 1.5px solid #cbd5e1; }
+            .guia-half.compact-mode .sig-box { height: 44px; padding: 2px 4px; border-radius: 4px; border: 1.5px solid #cbd5e1; }
             .guia-half.compact-mode .sig-name { font-size: 7.5px; }
+            .guia-half.compact-mode .sig-issuer-inline { font-size: 6.5px; font-weight: 800; color: #1e293b; text-transform: uppercase; }
+            .guia-half.compact-mode .sig-issuer { font-size: 6.5px; margin: 0.5px 0 0 0; }
             .guia-half.compact-mode .sig-role { font-size: 6.5px; }
             .guia-half.compact-mode .audit-strip { margin-top: 1.5px; padding: 1.5px 4px; font-size: 6.5px; }
             .guia-half.compact-mode .legal-notice { margin-top: 1.5px; font-size: 6.5px; }
@@ -15322,19 +15377,19 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             .via-badge-cliente { background: #dbeafe; color: #1e40af; border: 1.5px solid #2563eb; }
             .via-badge-armazem { background: #fef3c7; color: #92400e; border: 1.5px solid #d97706; }
 
-            .client-clearance-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 34% 66%; gap: 6px; margin-bottom: 3px; align-items: stretch; }
-            .dispatch-col { display: flex; gap: 4px; align-items: stretch; }
-            .pill-maputo { border: 1.5px solid #002244; border-radius: 4px; font-weight: 900; padding: 2px 7px; font-size: 9px; color: #002244; display: flex; align-items: center; justify-content: center; letter-spacing: 0.05em; min-width: 60px; box-sizing: border-box; }
-            .du-box { flex: 1; border: 1.5px solid #002244; border-radius: 6px; padding: 3px 6px; display: flex; flex-direction: column; justify-content: center; background: #fafafa; }
-            .du-line { display: flex; align-items: baseline; gap: 4px; font-size: 8.5px; font-weight: 800; color: #000; }
-            .lbl-du { font-weight: 900; color: #002244; }
-            .du-val { font-weight: 900; color: #000; word-break: break-all; }
-            .du-date-line { font-size: 7.5px; color: #334155; font-weight: 700; margin-top: 1.5px; border-top: 1px dotted #cbd5e1; padding-top: 1.5px; }
+            .client-clearance-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 8% 38% 27% 27%; gap: 5px; margin-bottom: 3px; align-items: stretch; }
+            .pill-maputo { border: 1.5px solid #002244; border-radius: 4px; font-weight: 900; font-size: 11px; color: #002244; display: flex; align-items: center; justify-content: center; letter-spacing: 0.06em; background: #f8fafc; text-transform: uppercase; padding: 3px 5px; box-sizing: border-box; }
             
-            .client-col { border: 1.5px solid #002244; border-radius: 6px; padding: 3.5px 8px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-around; }
-            .client-line { display: flex; align-items: baseline; gap: 5px; font-size: 8.5px; line-height: 1.25; }
-            .lbl-client { font-weight: 800; color: #002244; white-space: nowrap; font-size: 8px; min-width: 65px; }
-            .val-client { font-weight: 800; color: #000000; flex: 1; border-bottom: 1px dotted #94a3b8; }
+            .client-col { border: 1.5px solid #002244; border-radius: 4px; padding: 3px 8px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-around; }
+            .client-line { display: flex; align-items: baseline; gap: 4px; font-size: 9px; line-height: 1.35; }
+            .lbl-client { font-weight: 800; color: #002244; white-space: nowrap; font-size: 8.5px; min-width: 68px; }
+            .val-client { font-weight: 900; color: #000000; flex: 1; border-bottom: 1px dotted #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9.5px; }
+
+            .card-info-box { border: 1.5px solid #002244; border-radius: 4px; padding: 3px 7px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-between; }
+            .info-box-header { font-size: 9px; font-weight: 900; color: #002244; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #cbd5e1; padding-bottom: 1.5px; margin-bottom: 2px; text-align: center; }
+            .info-box-line { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 9px; line-height: 1.35; }
+            .lbl-info { font-weight: 800; color: #475569; font-size: 8.5px; white-space: nowrap; }
+            .val-info { font-weight: 900; color: #000000; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 9.5px; }
 
             .table-container { position: relative; z-index: 1; margin: 2px 0; border: 1.5px solid #002244; border-radius: 4px; overflow: hidden; }
             .guia-table { width: 100%; border-collapse: collapse; }
@@ -15363,11 +15418,13 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             .signatures { position: relative; z-index: 1; display: grid; gap: 8px; margin: 0; }
             .signatures-2col { grid-template-columns: 1fr 1fr; }
             .signatures-3col { grid-template-columns: 1fr 1fr 1fr; }
-            .sig-box { border: 1.5px solid #cbd5e1; border-radius: 4px; background: #fafcff; padding: 4px 6px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 52px; box-sizing: border-box; }
+            .sig-box { border: 1.5px solid #cbd5e1; border-radius: 4px; background: #fafcff; padding: 4px 6px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 54px; box-sizing: border-box; }
             .sig-stamp-zone { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; }
             .sig-stamp-hint { font-size: 7px; color: #94a3b8; font-style: italic; user-select: none; }
             .sig-line { width: 90%; border-top: 1.5px solid #002244; margin-bottom: 2px; }
             .sig-name { margin: 0; font-size: 8.5px; font-weight: 900; color: #000000; line-height: 1.15; text-align: center; }
+            .sig-issuer-inline { font-size: 7.5px; font-weight: 800; color: #1e293b; text-transform: uppercase; }
+            .sig-issuer { margin: 1px 0 0 0; font-size: 7.5px; font-weight: 800; color: #1e293b; line-height: 1.1; text-align: center; text-transform: uppercase; }
             .sig-role { font-size: 7px; font-weight: 700; color: #475569; line-height: 1.1; text-align: center; }
             .legal-notice { position: relative; z-index: 1; font-size: 7px; color: #475569; font-style: italic; text-align: center; margin-top: 1px; }
             .audit-strip { position: relative; z-index: 1; font-size: 7px; color: #1e3a8a; background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 3px; padding: 2px 6px; text-align: center; margin-top: 1px; font-weight: 700; }
@@ -15754,11 +15811,17 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .guia-half.compact-mode .company-sub { font-size: 6px; }
                 .guia-half.compact-mode .doc-title-main { font-size: 12px; }
                 .guia-half.compact-mode .serial-red { font-size: 12px; }
-                .guia-half.compact-mode .client-clearance-grid { gap: 4px; margin-bottom: 2px; }
-                .guia-half.compact-mode .pill-maputo { padding: 1.5px 5px; font-size: 8px; min-width: 52px; border-radius: 4px; }
-                .guia-half.compact-mode .du-box { padding: 2px 4px; }
-                .guia-half.compact-mode .client-col { padding: 2.5px 6px; }
-                .guia-half.compact-mode .client-line { font-size: 8px; line-height: 1.2; }
+                .guia-half.compact-mode .client-clearance-grid { gap: 4px; margin-bottom: 2px; grid-template-columns: 8% 38% 27% 27%; }
+                .guia-half.compact-mode .pill-maputo { border: 1.5px solid #002244; border-radius: 4px; font-weight: 900; font-size: 9.5px; color: #002244; display: flex; align-items: center; justify-content: center; letter-spacing: 0.05em; background: #f8fafc; text-transform: uppercase; padding: 2px 3px; box-sizing: border-box; }
+                .guia-half.compact-mode .client-col { padding: 2px 6px; }
+                .guia-half.compact-mode .client-line { font-size: 8px; line-height: 1.3; gap: 3px; }
+                .guia-half.compact-mode .lbl-client { font-size: 8px; min-width: 58px; }
+                .guia-half.compact-mode .val-client { font-size: 8.5px; }
+                .guia-half.compact-mode .card-info-box { padding: 2px 5px; border-radius: 4px; }
+                .guia-half.compact-mode .info-box-header { font-size: 8px; padding-bottom: 1px; margin-bottom: 1.5px; }
+                .guia-half.compact-mode .info-box-line { font-size: 8px; line-height: 1.3; gap: 2px; }
+                .guia-half.compact-mode .lbl-info { font-size: 7.5px; }
+                .guia-half.compact-mode .val-info { font-size: 8.5px; }
                 .guia-half.compact-mode .table-container { margin: 1px 0; }
                 .guia-half.compact-mode .guia-table th { padding: 2px 4px; font-size: 8px; }
                 .guia-half.compact-mode .guia-table td { padding: 1.5px 4px; font-size: 8px; line-height: 1.2; }
@@ -15771,8 +15834,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .guia-half.compact-mode .transport-box { padding: 2.5px 6px; margin: 0; gap: 4px; border-radius: 4px; }
                 .guia-half.compact-mode .transport-line, .guia-half.compact-mode .transport-sub-item { font-size: 7.5px; margin: 0.5px 0; }
                 .guia-half.compact-mode .signatures { margin: 0; gap: 6px; }
-                .guia-half.compact-mode .sig-box { height: 42px; padding: 2px 4px; border-radius: 4px; border: 1.5px solid #cbd5e1; }
+                .guia-half.compact-mode .sig-box { height: 44px; padding: 2px 4px; border-radius: 4px; border: 1.5px solid #cbd5e1; }
                 .guia-half.compact-mode .sig-name { font-size: 7.5px; }
+                .guia-half.compact-mode .sig-issuer-inline { font-size: 6.5px; font-weight: 800; color: #1e293b; text-transform: uppercase; }
+                .guia-half.compact-mode .sig-issuer { font-size: 6.5px; margin: 0.5px 0 0 0; }
                 .guia-half.compact-mode .sig-role { font-size: 6.5px; }
                 .guia-half.compact-mode .audit-strip { margin-top: 1.5px; padding: 1.5px 4px; font-size: 6.5px; }
                 .guia-half.compact-mode .legal-notice { margin-top: 1.5px; font-size: 6.5px; }
@@ -15802,19 +15867,19 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .via-badge-cliente { background: #dbeafe; color: #1e40af; border: 1.5px solid #2563eb; }
                 .via-badge-armazem { background: #fef3c7; color: #92400e; border: 1.5px solid #d97706; }
 
-                .client-clearance-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 34% 66%; gap: 6px; margin-bottom: 3px; align-items: stretch; }
-                .dispatch-col { display: flex; gap: 4px; align-items: stretch; }
-                .pill-maputo { border: 1.5px solid #002244; border-radius: 4px; font-weight: 900; padding: 2px 7px; font-size: 9px; color: #002244; display: flex; align-items: center; justify-content: center; letter-spacing: 0.05em; min-width: 60px; box-sizing: border-box; }
-                .du-box { flex: 1; border: 1.5px solid #002244; border-radius: 6px; padding: 3px 6px; display: flex; flex-direction: column; justify-content: center; background: #fafafa; }
-                .du-line { display: flex; align-items: baseline; gap: 4px; font-size: 8.5px; font-weight: 800; color: #000; }
-                .lbl-du { font-weight: 900; color: #002244; }
-                .du-val { font-weight: 900; color: #000; word-break: break-all; }
-                .du-date-line { font-size: 7.5px; color: #334155; font-weight: 700; margin-top: 1.5px; border-top: 1px dotted #cbd5e1; padding-top: 1.5px; }
+                .client-clearance-grid { position: relative; z-index: 1; display: grid; grid-template-columns: 8% 38% 27% 27%; gap: 5px; margin-bottom: 3px; align-items: stretch; }
+                .pill-maputo { border: 1.5px solid #002244; border-radius: 4px; font-weight: 900; font-size: 11px; color: #002244; display: flex; align-items: center; justify-content: center; letter-spacing: 0.06em; background: #f8fafc; text-transform: uppercase; padding: 3px 5px; box-sizing: border-box; }
                 
-                .client-col { border: 1.5px solid #002244; border-radius: 6px; padding: 3.5px 8px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-around; }
-                .client-line { display: flex; align-items: baseline; gap: 5px; font-size: 8.5px; line-height: 1.25; }
-                .lbl-client { font-weight: 800; color: #002244; white-space: nowrap; font-size: 8px; min-width: 65px; }
-                .val-client { font-weight: 800; color: #000000; flex: 1; border-bottom: 1px dotted #94a3b8; }
+                .client-col { border: 1.5px solid #002244; border-radius: 4px; padding: 3px 8px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-around; }
+                .client-line { display: flex; align-items: baseline; gap: 4px; font-size: 9px; line-height: 1.35; }
+                .lbl-client { font-weight: 800; color: #002244; white-space: nowrap; font-size: 8.5px; min-width: 68px; }
+                .val-client { font-weight: 900; color: #000000; flex: 1; border-bottom: 1px dotted #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9.5px; }
+
+                .card-info-box { border: 1.5px solid #002244; border-radius: 4px; padding: 3px 7px; background: #ffffff; display: flex; flex-direction: column; justify-content: space-between; }
+                .info-box-header { font-size: 9px; font-weight: 900; color: #002244; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #cbd5e1; padding-bottom: 1.5px; margin-bottom: 2px; text-align: center; }
+                .info-box-line { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; font-size: 9px; line-height: 1.35; }
+                .lbl-info { font-weight: 800; color: #475569; font-size: 8.5px; white-space: nowrap; }
+                .val-info { font-weight: 900; color: #000000; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 9.5px; }
 
                 .table-container { position: relative; z-index: 1; margin: 2px 0; border: 1.5px solid #002244; border-radius: 4px; overflow: hidden; }
                 .guia-table { width: 100%; border-collapse: collapse; }
@@ -15843,11 +15908,13 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
                 .signatures { position: relative; z-index: 1; display: grid; gap: 8px; margin: 0; }
                 .signatures-2col { grid-template-columns: 1fr 1fr; }
                 .signatures-3col { grid-template-columns: 1fr 1fr 1fr; }
-                .sig-box { border: 1.5px solid #cbd5e1; border-radius: 4px; background: #fafcff; padding: 4px 6px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 52px; box-sizing: border-box; }
+                .sig-box { border: 1.5px solid #cbd5e1; border-radius: 4px; background: #fafcff; padding: 4px 6px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 54px; box-sizing: border-box; }
                 .sig-stamp-zone { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; }
                 .sig-stamp-hint { font-size: 7px; color: #94a3b8; font-style: italic; user-select: none; }
                 .sig-line { width: 90%; border-top: 1.5px solid #002244; margin-bottom: 2px; }
                 .sig-name { margin: 0; font-size: 8.5px; font-weight: 900; color: #000000; line-height: 1.15; text-align: center; }
+                .sig-issuer-inline { font-size: 7.5px; font-weight: 800; color: #1e293b; text-transform: uppercase; }
+                .sig-issuer { margin: 1px 0 0 0; font-size: 7.5px; font-weight: 800; color: #1e293b; line-height: 1.1; text-align: center; text-transform: uppercase; }
                 .sig-role { font-size: 7px; font-weight: 700; color: #475569; line-height: 1.1; text-align: center; }
                 .legal-notice { position: relative; z-index: 1; font-size: 7px; color: #475569; font-style: italic; text-align: center; margin-top: 1px; }
                 .audit-strip { position: relative; z-index: 1; font-size: 7px; color: #1e3a8a; background: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 3px; padding: 2px 6px; text-align: center; margin-top: 1px; font-weight: 700; }
