@@ -17925,6 +17925,7 @@ export function getAllProjectsClients() {
         const balanceIdx = findCol(['BALANCE', 'BALANCO', 'SALDO']);
         const bankDutyIdx = findCol(['BANK IN DUTY', 'BANK DUTY', 'BANK', 'BANCO']);
         const phoneIdx = findCol(['PHONE NUMBER', 'TELEFONE', 'PHONE', 'CONTACTO', 'CONTACT']);
+        const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
         const cargoIdx = columns.findIndex(c => {
             const h = cleanString(c);
             return h.includes('CARGO') || h.includes('DESCRICAO') || h.includes('DESCRIÇÃO') || h.includes('PACKAGES');
@@ -17984,12 +17985,16 @@ export function getAllProjectsClients() {
                     phone: phoneIdx !== -1 ? String(row[phoneIdx] || '').trim() : '',
                     cargo: cargoIdx !== -1 ? String(row[cargoIdx] || '').trim() : '',
                     duty: 0,
+                    packages: 0,
                     statuses: [],
                     rows: []
                 });
             }
 
             const client = groupedClients.get(groupId);
+
+            const rawPkgs = packagesIdx !== -1 ? (parseFloat(String(row[packagesIdx] || '0').replace(/[^0-9.-]+/g, '')) || 0) : 0;
+            client.packages += rawPkgs;
 
             const rawPaid = paidIdx !== -1 ? row[paidIdx] : 0;
             const paidVal = parseFloat(String(rawPaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
@@ -18132,6 +18137,92 @@ export function toggleVerifyProjectSort() {
 }
 window.toggleVerifyProjectSort = toggleVerifyProjectSort;
 
+export function renderVerifyStatusSummary() {
+    const container = document.getElementById('verify-status-summary-bar');
+    if (!container) return;
+
+    const allClients = state.confirm?.allClients || [];
+    const projectFilter = document.getElementById('select-verify-project')?.value || 'TODOS';
+    const currentStatus = document.getElementById('select-verify-status')?.value || 'TODOS';
+
+    // Base para o somatório: clientes filtrados pelo projeto selecionado
+    const projectClients = projectFilter === 'TODOS'
+        ? allClients
+        : allClients.filter(c => c.projectId === projectFilter);
+
+    // Definição dos status canónicos para o somatório
+    const statusConfigs = [
+        { key: 'TODOS', label: 'TODAS AS CARGAS', shortLabel: 'TODAS', icon: '📦', badgeBg: 'bg-slate-900 text-white', borderDefault: 'border-slate-200 bg-white' },
+        { key: 'PENDENTE', label: 'PENDENTE', shortLabel: 'PENDENTE', icon: '⏳', badgeBg: 'bg-yellow-400 text-black font-black', borderDefault: 'border-yellow-200 bg-yellow-50/40' },
+        { key: 'CONFIRMADO', label: 'CONFIRMADO', shortLabel: 'CONFIRMADO', icon: '✅', badgeBg: 'bg-emerald-100 text-emerald-800 font-bold', borderDefault: 'border-emerald-200 bg-emerald-50/40' },
+        { key: 'PARCIAL', label: 'PARCIAL', shortLabel: 'PARCIAL', icon: '⚠️', badgeBg: 'bg-amber-100 text-amber-800 font-bold', borderDefault: 'border-amber-200 bg-amber-50/40' },
+        { key: 'RE-VERIFICANDO', label: 'RE-VERIFICANDO', shortLabel: 'RE-VERIF.', icon: '🔄', badgeBg: 'bg-blue-100 text-blue-800 font-bold', borderDefault: 'border-blue-200 bg-blue-50/40' },
+        { key: 'SEM COMPROVATIVO', label: 'SEM COMPROVATIVO', shortLabel: 'SEM COMPR.', icon: '❌', badgeBg: 'bg-orange-100 text-orange-800 font-bold', borderDefault: 'border-orange-200 bg-orange-50/40' },
+        { key: 'COMPROVATIVO ERRADO', label: 'COMPROVATIVO ERRADO', shortLabel: 'ERRADO', icon: '⚠️', badgeBg: 'bg-rose-100 text-rose-800 font-bold', borderDefault: 'border-rose-200 bg-rose-50/40' },
+        { key: 'AGUARDA PAGAMENTO', label: 'AGUARDA PAGAMENTO', shortLabel: 'AGUARDA', icon: '💸', badgeBg: 'bg-slate-200 text-slate-700 font-bold', borderDefault: 'border-slate-300 bg-slate-50' }
+    ];
+
+    container.innerHTML = statusConfigs.map(cfg => {
+        const isActive = currentStatus === cfg.key;
+        let matchedClients = [];
+
+        if (cfg.key === 'TODOS') {
+            matchedClients = projectClients;
+        } else {
+            const canonTarget = getCanonicalStatus(cfg.key);
+            matchedClients = projectClients.filter(c => {
+                return (c.uniqueStatuses || []).some(s => getCanonicalStatus(s) === canonTarget);
+            });
+        }
+
+        const count = matchedClients.length;
+        const totalDuty = matchedClients.reduce((sum, c) => sum + (c.duty || 0), 0);
+        const totalPkgs = matchedClients.reduce((sum, c) => sum + (c.packages || 0), 0);
+        const volText = totalPkgs > 0 ? `${totalPkgs} Vol` : '';
+
+        const activeClass = isActive
+            ? 'ring-2 ring-black border-black shadow-md bg-white scale-[1.02]'
+            : `${cfg.borderDefault} hover:border-slate-400 hover:shadow-xs hover:bg-white`;
+
+        return `
+            <div onclick="window.selectVerifyStatusFilter('${cfg.key}')" 
+                 class="cursor-pointer p-2.5 rounded-2xl border-2 transition-all flex flex-col justify-between select-none ${activeClass}"
+                 title="${cfg.label}: ${count} Cargas (${formatMZN(totalDuty)})">
+                <div class="flex items-center justify-between gap-1 mb-1">
+                    <span class="text-[9px] font-black uppercase tracking-tight truncate flex items-center gap-1">
+                        <span>${cfg.icon}</span>
+                        <span class="truncate">${cfg.shortLabel}</span>
+                    </span>
+                    <span class="text-[8.5px] px-1.5 py-0.5 rounded-md ${cfg.badgeBg}">
+                        ${count}
+                    </span>
+                </div>
+                <div class="flex items-baseline justify-between gap-1 mt-1">
+                    <span class="text-[11px] font-black text-slate-900 leading-none">
+                        ${count} <span class="text-[8px] font-bold text-slate-400 uppercase">cargas</span>
+                    </span>
+                    ${volText ? `<span class="text-[8px] font-black text-slate-500">${volText}</span>` : ''}
+                </div>
+                <div class="text-[8.5px] font-extrabold text-slate-700 mt-1.5 border-t border-slate-100 pt-1 truncate">
+                    ${formatMZN(totalDuty)}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+window.renderVerifyStatusSummary = renderVerifyStatusSummary;
+
+export function selectVerifyStatusFilter(statusKey) {
+    const select = document.getElementById('select-verify-status');
+    const current = select?.value || 'TODOS';
+    const next = current === statusKey && statusKey !== 'TODOS' ? 'TODOS' : statusKey;
+    if (select) {
+        select.value = next;
+    }
+    filterVerifyClients(true);
+}
+window.selectVerifyStatusFilter = selectVerifyStatusFilter;
+
 export function renderVerifyClients() {
     const container = document.getElementById('tbody-verify-clients');
     if (!container) return;
@@ -18174,6 +18265,9 @@ export function filterVerifyClients(resetLimit = false) {
     const statusFilter = document.getElementById('select-verify-status')?.value || 'PENDENTE';
     const projectFilter = document.getElementById('select-verify-project')?.value || 'TODOS';
     const searchText = (document.getElementById('input-verify-search')?.value || '').toLowerCase().trim();
+
+    // Renderizar e sincronizar os cards de somatório das cargas por status
+    renderVerifyStatusSummary();
 
     const allClients = state.confirm.allClients || [];
     
@@ -18229,7 +18323,9 @@ export function filterVerifyClients(resetLimit = false) {
 
     if (filtered.length === 0) {
         emptyEl?.classList.remove('hidden');
-        if (countEl) countEl.textContent = 'Total: 0 Clientes';
+        if (countEl) {
+            countEl.innerHTML = `<span>Total: <strong>0</strong> Cargas</span><span class="font-extrabold text-slate-800">Total Duty: 0,00 MT</span>`;
+        }
         return;
     }
 
@@ -18238,8 +18334,15 @@ export function filterVerifyClients(resetLimit = false) {
     const limit = state.confirm.verifyLimit || 100;
     const visible = filtered.slice(0, limit);
     
+    const totalFilteredDuty = filtered.reduce((sum, c) => sum + (c.duty || 0), 0);
+    const totalFilteredPkgs = filtered.reduce((sum, c) => sum + (c.packages || 0), 0);
+    const pkgsStr = totalFilteredPkgs > 0 ? ` (${totalFilteredPkgs} Vol)` : '';
+
     if (countEl) {
-        countEl.textContent = `Mostrando ${visible.length} de ${filtered.length} Clientes`;
+        countEl.innerHTML = `
+            <span>Mostrando <strong>${visible.length}</strong> de <strong>${filtered.length}</strong> Cargas${pkgsStr}</span>
+            <span class="font-extrabold text-slate-800">Total Duty: ${formatMZN(totalFilteredDuty)}</span>
+        `;
     }
 
     visible.forEach(c => {
