@@ -3,7 +3,7 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js?v=20261118_07';
+import * as ui from './ui.js?v=20261119_01';
 import * as etaUi from './etaUi.js?v=20261113_01';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
@@ -18,6 +18,8 @@ window.printDeliveryNote = ui.printDeliveryNote;
 window.directPrintDeliveryNote = ui.directPrintDeliveryNote;
 window.openQuickPrinterModal = ui.openQuickPrinterModal;
 window.closeQuickPrinterModal = ui.closeQuickPrinterModal;
+window.setVerifyProjectSort = ui.setVerifyProjectSort;
+window.toggleVerifyProjectSort = ui.toggleVerifyProjectSort;
 window.handleLogin = handleLogin;
 
 // Inicialização da aplicação (Sendo um módulo, o código corre apenas uma vez e após o parse do DOM)

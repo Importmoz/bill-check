@@ -18074,12 +18074,74 @@ export function setConfirmDashboardTab(tab) {
 }
 window.setConfirmDashboardTab = setConfirmDashboardTab;
 
+export function updateVerifySortIndicators() {
+    const sortDir = (state.confirm && state.confirm.verifyProjectSort) || localStorage.getItem('confirm_verify_project_sort') || 'asc';
+    
+    // Atualizar dropdown de ordenação se presente
+    const selectSort = document.getElementById('select-verify-project-sort');
+    if (selectSort && selectSort.value !== sortDir) {
+        selectSort.value = sortDir;
+    }
+
+    // Atualizar cabeçalho da tabela com ícone visual dinâmico
+    const thSort = document.getElementById('th-verify-project-sort');
+    const iconSort = document.getElementById('icon-verify-project-sort');
+    if (thSort) {
+        thSort.setAttribute('aria-sort', sortDir === 'asc' ? 'ascending' : 'descending');
+        thSort.title = sortDir === 'asc' 
+            ? 'Ordem atual: Crescente (A → Z). Clique para mudar para Decrescente (Z → A).'
+            : 'Ordem atual: Decrescente (Z → A). Clique para mudar para Crescente (A → Z).';
+    }
+    if (iconSort) {
+        if (sortDir === 'asc') {
+            iconSort.innerHTML = `
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-800 border border-blue-200 text-[8px] font-black tracking-normal">
+                    <span>A→Z</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                </span>
+            `;
+        } else {
+            iconSort.innerHTML = `
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 border border-amber-200 text-[8px] font-black tracking-normal">
+                    <span>Z→A</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </span>
+            `;
+        }
+    }
+}
+window.updateVerifySortIndicators = updateVerifySortIndicators;
+
+export function setVerifyProjectSort(direction) {
+    if (!state.confirm) state.confirm = {};
+    const validDir = direction === 'desc' ? 'desc' : 'asc';
+    state.confirm.verifyProjectSort = validDir;
+    try {
+        localStorage.setItem('confirm_verify_project_sort', validDir);
+    } catch (e) {}
+    
+    updateVerifySortIndicators();
+    filterVerifyClients(false);
+}
+window.setVerifyProjectSort = setVerifyProjectSort;
+
+export function toggleVerifyProjectSort() {
+    const current = (state.confirm && state.confirm.verifyProjectSort) || localStorage.getItem('confirm_verify_project_sort') || 'asc';
+    const next = current === 'asc' ? 'desc' : 'asc';
+    setVerifyProjectSort(next);
+}
+window.toggleVerifyProjectSort = toggleVerifyProjectSort;
+
 export function renderVerifyClients() {
     const container = document.getElementById('tbody-verify-clients');
     if (!container) return;
 
-    const allClients = getAllProjectsClients();
     if (!state.confirm) state.confirm = {};
+    if (!state.confirm.verifyProjectSort) {
+        state.confirm.verifyProjectSort = localStorage.getItem('confirm_verify_project_sort') || 'asc';
+    }
+
+    const allClients = getAllProjectsClients();
     state.confirm.allClients = allClients;
     
     const projSelect = document.getElementById('select-verify-project');
@@ -18094,6 +18156,7 @@ export function renderVerifyClients() {
         });
     }
 
+    updateVerifySortIndicators();
     filterVerifyClients();
 }
 window.renderVerifyClients = renderVerifyClients;
@@ -18141,6 +18204,26 @@ export function filterVerifyClients(resetLimit = false) {
                    (c.cargo || '').toLowerCase().includes(searchText);
         });
     }
+
+    // 4. Ordenar os resultados por Projeto (crescente ou decrescente)
+    const sortDir = (state.confirm && state.confirm.verifyProjectSort) || localStorage.getItem('confirm_verify_project_sort') || 'asc';
+    filtered.sort((a, b) => {
+        const projA = String(a.projectName || '').trim();
+        const projB = String(b.projectName || '').trim();
+        const comp = projA.localeCompare(projB, 'pt', { numeric: true, sensitivity: 'base' });
+        if (comp !== 0) {
+            return sortDir === 'desc' ? -comp : comp;
+        }
+        // Desempate estável por Código ID e Nome do Cliente
+        const idA = String(a.idCode || '').trim();
+        const idB = String(b.idCode || '').trim();
+        const compId = idA.localeCompare(idB, 'pt', { numeric: true, sensitivity: 'base' });
+        if (compId !== 0) return compId;
+
+        const nameA = String(a.name || '').trim();
+        const nameB = String(b.name || '').trim();
+        return nameA.localeCompare(nameB, 'pt', { numeric: true, sensitivity: 'base' });
+    });
 
     tbody.innerHTML = '';
 
