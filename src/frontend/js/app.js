@@ -3,7 +3,7 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js?v=20261119_03';
+import * as ui from './ui.js?v=20261123_01';
 import * as etaUi from './etaUi.js?v=20261113_01';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
@@ -20,6 +20,9 @@ window.openQuickPrinterModal = ui.openQuickPrinterModal;
 window.closeQuickPrinterModal = ui.closeQuickPrinterModal;
 window.setVerifyProjectSort = ui.setVerifyProjectSort;
 window.toggleVerifyProjectSort = ui.toggleVerifyProjectSort;
+window.setConfirmProjectsSort = ui.setConfirmProjectsSort;
+window.toggleConfirmProjectsSort = ui.toggleConfirmProjectsSort;
+window.showConfirmDetail = ui.showConfirmDetail;
 window.renderVerifyStatusSummary = ui.renderVerifyStatusSummary;
 window.selectVerifyStatusFilter = ui.selectVerifyStatusFilter;
 window.handleLogin = handleLogin;
@@ -1857,7 +1860,7 @@ async function saveConfirmProject() {
                 
                 // Forçar atualização do estado em memória e ecrã de detalhes se estiver aberto
                 if (window.currentActiveClient) {
-                    await showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
+                    await ui.showConfirmDetail(window.currentActiveClient, window.currentActiveClientIndex);
                 }
             }
         }
@@ -2569,6 +2572,10 @@ function driveGoHome() {
 }
 
 function onConfirmRow(rowIndex, rowData) {
+    if (!rowData) {
+        rowData = (api.state.confirm?.data && api.state.confirm.data[rowIndex]) ||
+                  window.currentClientRows?.find(r => r.originalIndex === rowIndex)?.originalRow || [];
+    }
     const role = api.pb.authStore.model?.role || 'USER';
     if (role === 'USER' || role === 'USER_L1') {
         ui.toast("Acesso Negado: A alteração manual de estado exige nível de permissão Nível 2 ou superior.", "error");
@@ -2578,6 +2585,7 @@ function onConfirmRow(rowIndex, rowData) {
     console.log("[DEBUG-ONCONFIRM] Called onConfirmRow for rowIndex=" + rowIndex);
     // Limpar locks expirados (mais de 5 minutos)
     const now = Date.now();
+    if (!window.activeConfirmLocks) window.activeConfirmLocks = {};
     if (window.activeConfirmLocks) {
         Object.keys(window.activeConfirmLocks).forEach(r => {
             if (now - window.activeConfirmLocks[r].timestamp > 5 * 60 * 1000) {

@@ -22,14 +22,24 @@
                 </div>
             </div>
             
-            <!-- Barra de Pesquisa de Projetos e Modos de Exibição -->
-            <div class="flex items-center gap-3 flex-1 max-w-lg w-full">
+            <!-- Barra de Pesquisa de Projetos, Ordenação e Modos de Exibição -->
+            <div class="flex items-center gap-2.5 flex-1 max-w-xl w-full">
                 <div class="relative flex-1">
                     <input type="text" id="input-confirm-project-search" oninput="handleConfirmProjectSearch()" placeholder="PROCURAR PROJETO..." class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl font-bold text-[10px] outline-none focus:border-black transition-all">
                     <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                     </span>
                 </div>
+
+                <!-- Botão Ordenar Projetos (Crescente / Decrescente) -->
+                <button type="button" onclick="window.toggleConfirmProjectsSort()" id="btn-confirm-projects-sort" 
+                    class="flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-200 rounded-xl font-bold text-[10px] uppercase text-slate-700 hover:border-black hover:text-black transition-all shadow-sm shrink-0 cursor-pointer active:scale-95" 
+                    title="Alternar ordenação crescente (A-Z / 1-9) ou decrescente (Z-A / 9-1)">
+                    <span id="label-confirm-projects-sort">Z → A</span>
+                    <span id="icon-confirm-projects-sort" class="inline-flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>
+                    </span>
+                </button>
 
                 <!-- Botões de Modo de Exibição de Projetos -->
                 <div class="flex bg-gray-100 p-1 rounded-xl border border-gray-200 shrink-0">

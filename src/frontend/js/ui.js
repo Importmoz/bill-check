@@ -120,7 +120,12 @@ window.updateQuoteActionsUI = function() {
     }
 };
 
+let _loaderSafetyTimer = null;
 export function setLoader(show, message = 'A Processar') {
+    if (_loaderSafetyTimer) {
+        clearTimeout(_loaderSafetyTimer);
+        _loaderSafetyTimer = null;
+    }
     const loader = document.getElementById('loader');
     if (loader) {
         const msgEl = loader.querySelector('span');
@@ -128,6 +133,13 @@ export function setLoader(show, message = 'A Processar') {
         
         if (show) {
             loader.style.display = 'flex';
+            // Auto-dispensa de segurança (12s): previne que falhas assíncronas bloqueiem cliques permanentemente
+            _loaderSafetyTimer = setTimeout(() => {
+                if (loader && loader.style.display === 'flex') {
+                    console.warn('[LOADER] Auto-dispensa de segurança ativada após 12 segundos.');
+                    loader.style.display = 'none';
+                }
+            }, 12000);
         } else {
             loader.style.display = 'none';
         }
@@ -386,14 +398,16 @@ export function showView(viewId) {
  * Fecha um modal por ID
  */
 export function closeModal(id) {
-    document.getElementById(id).classList.add('hidden');
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
 }
 
 /**
  * Abre um modal por ID
  */
 export function openModal(id) {
-    document.getElementById(id).classList.remove('hidden');
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('hidden');
 }
 
 /**
@@ -3037,7 +3051,7 @@ export async function showConfirmDetail(client, clientIndex) {
     const body = document.getElementById('confirm-client-orders');
 
     // Mapeamento de Colunas focado em DUTY (Refinado para evitar colisões)
-    const columns = state.confirm.columns || [];
+    const columns = state.confirm?.columns || [];
     const columnsUpper = columns.map(c => String(c || '').toUpperCase().trim());
 
     const cleanString = (str) => String(str || '')
@@ -3294,7 +3308,7 @@ export async function showConfirmDetail(client, clientIndex) {
                     <td class="py-0.5 px-4 text-center font-normal text-[11px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
                     <td class="py-0.5 px-4 text-center">${bankSelectHtml}</td>
                     <td class="py-0.5 px-4 text-center">
-                        <button onclick="event.stopPropagation(); window.onConfirmRow(${originalIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
+                        <button onclick="event.stopPropagation(); window.onConfirmRow(${originalIndex})" 
                             class="px-1.5 py-0.5 rounded font-black text-[9px] uppercase tracking-tighter shadow-sm transition-all border ${getRowStatusButtonClass(rowStatus)}"
                             ${isLockedByOther ? 'disabled' : ''}>
                             ${isLockedByOther ? '🔒 ' : ''}${rowStatus}
@@ -4065,6 +4079,7 @@ export async function showConfirmDetail(client, clientIndex) {
     }
     toggleConfirmArmazem(activeTab);
 }
+window.showConfirmDetail = showConfirmDetail;
 
 export async function replyToConfirmationNote(note) {
     const client = window.currentActiveClient;
@@ -5593,7 +5608,7 @@ export async function updateConfirmDetailRow(rowIndex, rowData) {
         <td class="py-0.5 px-4 text-center font-normal text-[11px] ${balance > 0 ? 'text-red-500' : 'text-slate-400'}">${formatValue(balance)}</td>
         <td class="py-0.5 px-4 text-center">${bankSelectHtml}</td>
         <td class="py-0.5 px-4 text-center">
-            <button onclick="event.stopPropagation(); window.onConfirmRow(${rowIndex}, ${JSON.stringify(rowData).replace(/"/g, '&quot;')})" 
+            <button onclick="event.stopPropagation(); window.onConfirmRow(${rowIndex})" 
                 class="${buttonClass}"
                 ${isLockedByOther ? 'disabled' : ''}>
                 ${isLockedByOther ? '🔒 ' : ''}${rowStatus}
@@ -7082,6 +7097,58 @@ export function renderConfirmIntervalBar(totalCount, startItem, endItem, current
 }
 window.renderConfirmIntervalBar = renderConfirmIntervalBar;
 
+
+export function updateConfirmProjectsSortIndicators() {
+    const sortDir = (state.confirm && state.confirm.projectsSortOrder) || localStorage.getItem('confirm_projects_sort_order') || 'desc';
+    const label = document.getElementById('label-confirm-projects-sort');
+    const icon = document.getElementById('icon-confirm-projects-sort');
+    const iconTable = document.getElementById('icon-proj-sort-table');
+    
+    if (label) {
+        label.textContent = sortDir === 'asc' ? 'A → Z' : 'Z → A';
+    }
+    if (icon) {
+        icon.innerHTML = sortDir === 'asc' 
+            ? `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600"><path d="m3 8 4-4 4 4"></path><path d="M7 4v16"></path><path d="m21 16-4 4-4-4"></path><path d="M17 20V4"></path></svg>`
+            : `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-amber-600"><path d="m3 16 4 4 4-4"></path><path d="M7 20V4"></path><path d="m21 8-4-4-4 4"></path><path d="M17 4v16"></path></svg>`;
+    }
+    if (iconTable) {
+        iconTable.innerHTML = sortDir === 'asc'
+            ? `<span class="inline-flex items-center text-[9px] font-black text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-200">A→Z ▲</span>`
+            : `<span class="inline-flex items-center text-[9px] font-black text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">Z→A ▼</span>`;
+    }
+}
+window.updateConfirmProjectsSortIndicators = updateConfirmProjectsSortIndicators;
+
+export function setConfirmProjectsSort(direction) {
+    if (!state.confirm) state.confirm = {};
+    const validDir = direction === 'asc' ? 'asc' : 'desc';
+    state.confirm.projectsSortOrder = validDir;
+    try {
+        localStorage.setItem('confirm_projects_sort_order', validDir);
+    } catch (e) {}
+
+    updateConfirmProjectsSortIndicators();
+
+    const searchInput = document.getElementById('input-confirm-project-search');
+    const filterText = (searchInput?.value || '').toLowerCase().trim();
+    const allProjects = state.confirm.projects || [];
+    if (filterText) {
+        const filtered = allProjects.filter(p => (p.name || '').toLowerCase().includes(filterText));
+        renderConfirmProjects(filtered, true);
+    } else {
+        renderConfirmProjects(allProjects, false);
+    }
+}
+window.setConfirmProjectsSort = setConfirmProjectsSort;
+
+export function toggleConfirmProjectsSort() {
+    const current = (state.confirm && state.confirm.projectsSortOrder) || localStorage.getItem('confirm_projects_sort_order') || 'desc';
+    const next = current === 'desc' ? 'asc' : 'desc';
+    setConfirmProjectsSort(next);
+}
+window.toggleConfirmProjectsSort = toggleConfirmProjectsSort;
+
 export function renderConfirmProjects(projects, isSearch = false) {
     const container = document.getElementById('confirm-projects-list');
     const normalContainer = document.getElementById('confirm-normal-container');
@@ -7121,17 +7188,25 @@ export function renderConfirmProjects(projects, isSearch = false) {
         return;
     }
 
-    // === GESTÃO DE INTERVALOS / PAGINAÇÃO DE CTRs ===
+    // === ORDENAÇÃO E GESTÃO DE INTERVALOS / PAGINAÇÃO DE CTRs ===
     if (!state.confirm) state.confirm = {};
     if (!state.confirm.projectPageSize) state.confirm.projectPageSize = 30;
     if (!state.confirm.projectPage) state.confirm.projectPage = 1;
 
+    const sortDir = (state.confirm && state.confirm.projectsSortOrder) || localStorage.getItem('confirm_projects_sort_order') || 'desc';
+    const sortedProjects = [...projects].sort((a, b) => {
+        const nameA = String(a.name || '').trim();
+        const nameB = String(b.name || '').trim();
+        const comp = nameA.localeCompare(nameB, 'pt', { numeric: true, sensitivity: 'base' });
+        return sortDir === 'desc' ? -comp : comp;
+    });
+
     const pageSize = state.confirm.projectPageSize;
     let currentPage = state.confirm.projectPage;
-    const totalCount = projects.length;
+    const totalCount = sortedProjects.length;
 
     let totalPages = 1;
-    let paginatedProjects = projects;
+    let paginatedProjects = sortedProjects;
     let startItem = 1;
     let endItem = totalCount;
 
@@ -7149,13 +7224,14 @@ export function renderConfirmProjects(projects, isSearch = false) {
 
         const startIdx = (currentPage - 1) * numericSize;
         const endIdx = Math.min(startIdx + numericSize, totalCount);
-        paginatedProjects = projects.slice(startIdx, endIdx);
+        paginatedProjects = sortedProjects.slice(startIdx, endIdx);
         startItem = totalCount > 0 ? startIdx + 1 : 0;
         endItem = endIdx;
     }
 
-    // Renderizar barra de intervalos no topo
+    // Renderizar barra de intervalos no topo e sincronizar indicadores de ordenação
     renderConfirmIntervalBar(totalCount, startItem, endItem, currentPage, totalPages, pageSize, isSearch);
+    updateConfirmProjectsSortIndicators();
 
     // Sincronizar botões de modo de exibição de projetos
     const viewMode = state.confirm.projectViewMode || localStorage.getItem('confirm_project_view_mode') || 'grid';
@@ -7262,7 +7338,7 @@ export function renderConfirmProjects(projects, isSearch = false) {
             <table class="w-full border-collapse text-left">
                 <thead class="bg-slate-50 border-b border-gray-200 text-slate-500 text-[10px] font-black uppercase tracking-wider">
                     <tr>
-                        <th class="p-3">Nome do Projeto</th>
+                        <th class="p-3 cursor-pointer hover:text-black group transition-colors select-none" onclick="window.toggleConfirmProjectsSort()" title="Clique para alternar ordenação crescente (A-Z) ou decrescente (Z-A)"><div class="flex items-center gap-1.5"><span>Nome do Projeto</span><span id="icon-proj-sort-table"></span></div></th>
                         <th class="p-3">ID da Planilha (Sheet ID)</th>
                         <th class="p-3">ID da Pasta (Folder ID)</th>
                         ${isProjAdmin ? '<th class="p-3 text-center w-24">Ações</th>' : ''}
@@ -10443,20 +10519,27 @@ window.filterCurrencyDropdown = function() {
     });
 };
 
-// Global click listener para fechar dropdown clicando fora
+// Global click listener para fechar dropdown clicando fora (com verificação de tipo)
 document.addEventListener('click', (e) => {
-    const btn = document.getElementById('custom-quote-currency-btn');
-    const list = document.getElementById('custom-quote-currency-list');
-    if (btn && list) {
-        if (!btn.contains(e.target) && !list.contains(e.target)) {
-            window.closeCurrencyDropdown();
+    try {
+        const target = e.target && typeof e.target.closest === 'function' ? e.target : (e.target?.parentElement && typeof e.target.parentElement.closest === 'function' ? e.target.parentElement : null);
+        if (!target) return;
+
+        const btn = document.getElementById('custom-quote-currency-btn');
+        const list = document.getElementById('custom-quote-currency-list');
+        if (btn && list) {
+            if (!btn.contains(target) && !list.contains(target)) {
+                if (typeof window.closeCurrencyDropdown === 'function') window.closeCurrencyDropdown();
+            }
         }
-    }
-    
-    // Antigo comportamento do pauta search
-    if (!e.target.closest('#input-pauta-search') && !e.target.closest('#pauta-search-results')) {
-        const res = document.getElementById('pauta-search-results');
-        if (res) res.classList.add('hidden');
+        
+        // Antigo comportamento do pauta search
+        if (!target.closest('#input-pauta-search') && !target.closest('#pauta-search-results')) {
+            const res = document.getElementById('pauta-search-results');
+            if (res) res.classList.add('hidden');
+        }
+    } catch (err) {
+        console.warn('[CLICK-LISTENER] Erro em listener de cotação:', err);
     }
 });
 
@@ -18409,6 +18492,10 @@ window.openVerifyClientProject = function(sheetId, folderId, projectName, client
     }
     
     setTimeout(() => {
+        const detailView = document.getElementById('view-confirm-client-detail');
+        if (detailView && !detailView.classList.contains('hidden')) {
+            return;
+        }
         const searchInput = document.getElementById('input-confirm-search');
         if (searchInput) {
             searchInput.value = clientSearch;
@@ -19374,22 +19461,29 @@ export async function promptSetProjectDischargeDate() {
 }
 window.promptSetProjectDischargeDate = promptSetProjectDischargeDate;
 
-// Fechar dropdowns de ações em massa ao clicar fora
+// Fechar dropdowns de ações em massa ao clicar fora (com tratamento defensivo para nós SVG e texto)
 if (typeof document !== 'undefined') {
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('#dropdown-bulk-bank-wrapper') && !e.target.closest('#dropdown-bulk-status-wrapper')) {
-            if (typeof closeAllBulkDropdowns === 'function') {
-                closeAllBulkDropdowns();
+        try {
+            const target = e.target && typeof e.target.closest === 'function' ? e.target : (e.target?.parentElement && typeof e.target.parentElement.closest === 'function' ? e.target.parentElement : null);
+            if (!target) return;
+
+            if (!target.closest('#dropdown-bulk-bank-wrapper') && !target.closest('#dropdown-bulk-status-wrapper')) {
+                if (typeof closeAllBulkDropdowns === 'function') {
+                    closeAllBulkDropdowns();
+                }
             }
-        }
-        if (!e.target.closest('#dropdown-mini-filter-bank-wrapper') &&
-            !e.target.closest('#dropdown-mini-filter-owner-wrapper') &&
-            !e.target.closest('#dropdown-mini-filter-amount-mode-wrapper') &&
-            !e.target.closest('#dropdown-mini-filter-channel-wrapper') &&
-            !e.target.closest('#dropdown-mini-filter-status-wrapper')) {
-            if (typeof closeAllMiniFilterDropdowns === 'function') {
-                closeAllMiniFilterDropdowns();
+            if (!target.closest('#dropdown-mini-filter-bank-wrapper') &&
+                !target.closest('#dropdown-mini-filter-owner-wrapper') &&
+                !target.closest('#dropdown-mini-filter-amount-mode-wrapper') &&
+                !target.closest('#dropdown-mini-filter-channel-wrapper') &&
+                !target.closest('#dropdown-mini-filter-status-wrapper')) {
+                if (typeof closeAllMiniFilterDropdowns === 'function') {
+                    closeAllMiniFilterDropdowns();
+                }
             }
+        } catch (err) {
+            console.warn('[CLICK-LISTENER] Erro suave em click outside:', err);
         }
     });
 }
