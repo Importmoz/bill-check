@@ -147,6 +147,21 @@ router.get('/auth/callback', async (req, res) => {
   }
 });
 
+function handleGoogleApiError(error, res, actionName = 'DRIVE') {
+  console.error(`[${actionName}] ERRO:`, error.message);
+  const isAuth = error.message.includes('AUTH_REQUIRED') ||
+                 error.message.includes('invalid_grant') ||
+                 error.message.includes('Token has been expired or revoked');
+  if (isAuth && fs.existsSync(TOKENS_PATH)) {
+    try { fs.unlinkSync(TOKENS_PATH); } catch (e) {}
+  }
+  const status = isAuth ? 401 : 500;
+  return res.status(status).json({
+    error: isAuth ? 'AUTH_REQUIRED' : error.message,
+    message: isAuth ? 'Sessão Google expirada ou não autorizada. Aceda a /api/google/auth para reconectar.' : error.message
+  });
+}
+
 // Criar pasta no Drive
 router.post('/drive/create-folder', async (req, res) => {
   let { name, parentId } = req.body;
@@ -169,9 +184,7 @@ router.post('/drive/create-folder', async (req, res) => {
 
     res.json(response.data);
   } catch (error) {
-    console.error('[DRIVE] ERRO ao criar pasta:', error.message);
-    const status = error.message.includes('AUTH_REQUIRED') ? 401 : 500;
-    res.status(status).json({ error: error.message });
+    return handleGoogleApiError(error, res, 'DRIVE-CREATE-FOLDER');
   }
 });
 
@@ -232,10 +245,7 @@ router.post('/drive/upload', upload.single('file'), async (req, res) => {
 
     res.json(response.data);
   } catch (error) {
-    console.error('[DRIVE] ERRO no upload:', error.message);
-    if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
-    const status = (error.message.includes('AUTH_REQUIRED') || error.message.includes('invalid_grant')) ? 401 : 500;
-    res.status(status).json({ error: error.message });
+    return handleGoogleApiError(error, res, 'DRIVE-UPLOAD');
   }
 });
 
@@ -287,9 +297,7 @@ router.post('/drive/list', async (req, res) => {
     
     res.json(files);
   } catch (error) {
-    console.error('SERVER ERROR (Drive List):', error.message);
-    const status = error.message.includes('AUTH_REQUIRED') ? 401 : 500;
-    res.status(status).json({ error: error.message });
+    return handleGoogleApiError(error, res, 'DRIVE-LIST');
   }
 });
 
@@ -303,9 +311,7 @@ router.delete('/drive/file/:fileId', async (req, res) => {
     await drive.files.update({ fileId: fileId, resource: { trashed: true } });
     res.json({ success: true, message: "Ficheiro movido para a lixeira" });
   } catch (error) {
-    console.error('[DRIVE] ERRO ao apagar ficheiro:', error.message);
-    const status = error.message.includes('AUTH_REQUIRED') ? 401 : 500;
-    res.status(status).json({ error: error.message });
+    return handleGoogleApiError(error, res, 'DRIVE-DELETE');
   }
 });
 

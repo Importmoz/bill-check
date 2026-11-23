@@ -1369,8 +1369,15 @@ export async function listGDriveFiles(folderId) {
         body: JSON.stringify({ folderId })
     });
     if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Erro ao listar GDrive");
+        let error = {};
+        try { error = await res.json(); } catch (e) {}
+        const errorMsg = error.message || error.error || "Erro ao listar GDrive";
+        const err = new Error(errorMsg);
+        if (res.status === 401 || error.error === 'AUTH_REQUIRED' || errorMsg.includes('invalid_grant')) {
+            err.isAuth = true;
+            err.code = 'AUTH_REQUIRED';
+        }
+        throw err;
     }
     const files = await res.json();
     state.confirm.driveFiles = files || [];
@@ -1387,13 +1394,22 @@ export async function createGDriveFolder(name, parentId) {
     if (!res.ok) {
         const text = await res.text();
         let errorMsg = "Erro ao criar pasta";
+        let isAuth = false;
         try {
             const error = JSON.parse(text);
-            errorMsg = error.error || errorMsg;
+            errorMsg = error.message || error.error || errorMsg;
+            if (res.status === 401 || error.error === 'AUTH_REQUIRED' || errorMsg.includes('invalid_grant')) {
+                isAuth = true;
+            }
         } catch (e) {
             console.error("Servidor retornou HTML/Texto:", text);
         }
-        throw new Error(errorMsg);
+        const err = new Error(errorMsg);
+        if (isAuth || res.status === 401) {
+            err.isAuth = true;
+            err.code = 'AUTH_REQUIRED';
+        }
+        throw err;
     }
     
     return await res.json();
@@ -1415,8 +1431,15 @@ export async function uploadGDriveFile(file, parentId) {
     });
     
     if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Erro ao fazer upload");
+        let error = {};
+        try { error = await res.json(); } catch (e) {}
+        const errorMsg = error.message || error.error || "Erro ao fazer upload";
+        const err = new Error(errorMsg);
+        if (res.status === 401 || error.error === 'AUTH_REQUIRED' || errorMsg.includes('invalid_grant')) {
+            err.isAuth = true;
+            err.code = 'AUTH_REQUIRED';
+        }
+        throw err;
     }
     
     return await res.json();

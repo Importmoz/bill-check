@@ -151,6 +151,7 @@ window.autoOpenClientFolder = autoOpenClientFolder;
 window.handleCreateFolder = handleCreateFolder;
 window.handleFileUpload = handleFileUpload;
 window.triggerFileUpload = triggerFileUpload;
+window.triggerConfirmSupportUpload = triggerConfirmSupportUpload;
 window.openAddConfirmArticleModal = openAddConfirmArticleModal;
 window.submitAddConfirmArticle = submitAddConfirmArticle;
 window.openAddConfirmClientModal = openAddConfirmClientModal;
@@ -2338,8 +2339,11 @@ async function submitAddConfirmClient(e) {
 
 
 async function autoOpenClientFolder(clientCode, clientName, force = false) {
-    const rootId = currentProjectRootFolderId;
-    if (!rootId) return;
+    const rootId = currentProjectRootFolderId || api.state.confirm?.folderId;
+    if (!rootId) {
+        ui.renderDriveError("Pasta raiz do projeto não configurada no Google Drive.");
+        return;
+    }
 
     // Função de normalização/canonicalização para correspondência ultra-robusta de nomes
     const canonicalize = (str) => {
@@ -2353,12 +2357,15 @@ async function autoOpenClientFolder(clientCode, clientName, force = false) {
     };
 
     // Limpar o código de eventuais decimais (.0) que vêm do Excel
-    const cleanCode = String(clientCode).split('.')[0].split(',')[0].trim();
-    const targetPattern = canonicalize(`${cleanCode} ${clientName}`);
+    const cleanCode = String(clientCode || '').split('.')[0].split(',')[0].trim();
+    const comNoNorm = canonicalize(`${cleanCode} ${clientName}`);
+    const nomeNorm = canonicalize(clientName);
+    const clientObj = window.currentActiveClient || {};
+    const idCodeNorm = canonicalize(clientObj.idCode || clientObj.displayIdCode || '');
 
     // Se a pasta deste cliente já estiver ativa no card Suportes e não for forçado, manter vista estável sem piscar
-    if (!force && api.state.confirm?.activeClientFolderPattern === targetPattern && api.state.confirm?.activeClientFolderId) {
-        console.log(`[AUTO-DRIVE] Pasta já carregada e ativa para "${targetPattern}". Mantendo vista.`);
+    if (!force && api.state.confirm?.activeClientFolderPattern === comNoNorm && api.state.confirm?.activeClientFolderId) {
+        console.log(`[AUTO-DRIVE] Pasta já carregada e ativa para "${comNoNorm}". Mantendo vista.`);
         return;
     }
 
@@ -2367,55 +2374,75 @@ async function autoOpenClientFolder(clientCode, clientName, force = false) {
         driveHistory = [];
     }
 
-    console.log(`[AUTO-DRIVE] Tentando abertura instantânea (padrão canónico): "${targetPattern}"`);
+    console.log(`[AUTO-DRIVE] Tentando abertura instantânea (padrão canónico): "${comNoNorm}"`);
 
     // Mostrar loader imediatamente
     const explorerContainer = document.getElementById('confirm-drive-files');
     if (explorerContainer) explorerContainer.innerHTML = '<div class="p-4 text-center text-xs animate-pulse font-bold text-gray-400">A LOCALIZAR PASTA...</div>';
 
+    const matchFolder = (folders) => {
+        if (!folders || !folders.length) return null;
+        if (idCodeNorm) {
+            const porId = folders.find(f => canonicalize(f.name) === idCodeNorm);
+            if (porId) return porId;
+        }
+        if (comNoNorm) {
+            const porComNo = folders.find(f => canonicalize(f.name) === comNoNorm);
+            if (porComNo) return porComNo;
+        }
+        if (nomeNorm) {
+            const porNome = folders.find(f => canonicalize(f.name) === nomeNorm);
+            if (porNome) return porNome;
+        }
+        return folders.find(f => {
+            const norm = canonicalize(f.name);
+            return (comNoNorm && norm.includes(comNoNorm)) || (idCodeNorm && norm.includes(idCodeNorm));
+        }) || null;
+    };
+
     // Tentar usar o cache primeiro para ser instantâneo
     let targetFolder = null;
     if (projectFoldersCache) {
-        targetFolder = projectFoldersCache.find(f => {
-            const folderName = canonicalize(f.name);
-            return folderName.includes(targetPattern);
-        });
+        targetFolder = matchFolder(projectFoldersCache);
     }
 
     if (targetFolder) {
         console.log(`[AUTO-DRIVE] Encontrado no cache!`);
         if (!api.state.confirm) api.state.confirm = {};
         api.state.confirm.activeClientFolderId = targetFolder.id;
-        api.state.confirm.activeClientFolderPattern = targetPattern;
+        api.state.confirm.activeClientFolderPattern = comNoNorm;
         openDriveExplorer(targetFolder.id);
         return;
     }
 
-    // Se não estiver no cache (ou cache ainda carregando), tenta a API uma última vez
+    // Se não estiver no cache (ou cache ainda carregando), tenta a API
     try {
         const files = await api.listGDriveFiles(rootId);
-        targetFolder = files.find(f => {
-            if (f.mimeType !== 'application/vnd.google-apps.folder') return false;
-            const folderName = canonicalize(f.name);
-            return folderName.includes(targetPattern);
-        });
+        const folders = (files || []).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+        targetFolder = matchFolder(folders);
 
         if (targetFolder) {
             if (!api.state.confirm) api.state.confirm = {};
             api.state.confirm.activeClientFolderId = targetFolder.id;
-            api.state.confirm.activeClientFolderPattern = targetPattern;
+            api.state.confirm.activeClientFolderPattern = comNoNorm;
             openDriveExplorer(targetFolder.id);
         } else {
             console.warn(`[AUTO-DRIVE] Pasta não localizada.`);
-            ui.renderDriveError("Pasta do cliente não encontrada no Drive.", targetPattern, rootId);
+            ui.renderDriveError("Pasta do cliente não encontrada no Drive.", `${cleanCode} ${clientName}`.trim(), rootId);
         }
     } catch (err) {
-        ui.renderDriveError("Erro ao procurar pasta do cliente.", targetPattern, rootId);
+        console.error("[AUTO-DRIVE] Erro ao procurar pasta do cliente:", err);
+        const errMsg = err.message || '';
+        if (err.isAuth || errMsg.includes('AUTH_REQUIRED') || errMsg.includes('invalid_grant')) {
+            ui.renderDriveError("Sessão Google expirada ou inválida.", `${cleanCode} ${clientName}`.trim(), rootId);
+        } else {
+            ui.renderDriveError("Erro ao procurar pasta do cliente.", `${cleanCode} ${clientName}`.trim(), rootId);
+        }
     }
 }
 
 async function handleCreateFolder(name, parentId) {
-    ui.setLoader(true);
+    ui.setLoader(true, "A criar pasta no Google Drive...");
     try {
         const folder = await api.createGDriveFolder(name, parentId);
         // Limpar cache para forçar recarregamento na próxima vez
@@ -2423,48 +2450,135 @@ async function handleCreateFolder(name, parentId) {
         // Abrir a nova pasta
         openDriveExplorer(folder.id);
     } catch (err) {
-        ui.toast("Erro ao criar pasta: " + err.message, "error");
+        console.error("Erro ao criar pasta:", err);
+        if (err.isAuth || String(err.message).includes('AUTH_REQUIRED') || String(err.message).includes('invalid_grant')) {
+            ui.toast("Sessão Google expirada. Por favor reconecte ao Google.", "error");
+            window.location.href = '/api/google/auth';
+        } else {
+            ui.toast("Erro ao criar pasta: " + err.message, "error");
+        }
     } finally {
         ui.setLoader(false);
     }
 }
 
-function triggerFileUpload(folderId) {
+function triggerConfirmSupportUpload() {
+    const driveIdInput = document.getElementById('input-confirm-drive-id');
+    const folderId = (driveIdInput ? driveIdInput.value.trim() : '') || (api.state.confirm?.activeClientFolderId || '');
+    triggerFileUpload(folderId);
+}
+
+function triggerFileUpload(folderId = null) {
     const input = document.getElementById('input-confirm-drive-upload');
     if (input) {
-        input.dataset.parentId = folderId;
+        input.dataset.parentId = folderId || '';
+        input.value = ''; // Reset para disparar onchange mesmo se selecionar o mesmo ficheiro
         input.click();
     }
 }
 
 async function handleFileUpload(input) {
-    const file = input.files[0];
-    const parentId = input.dataset.parentId;
-    if (!file || !parentId) return;
+    const files = Array.from(input.files || []);
+    if (!files || files.length === 0) return;
 
-    ui.setLoader(true);
-    const explorerContainer = document.getElementById('confirm-drive-files');
-    if (explorerContainer) explorerContainer.innerHTML = '<div class="p-4 text-center text-xs animate-pulse font-bold text-gray-400">A ENVIAR FICHEIRO...</div>';
+    let parentId = input.dataset.parentId || document.getElementById('input-confirm-drive-id')?.value?.trim() || api.state.confirm?.activeClientFolderId;
+    const client = window.currentActiveClient;
+    const rootId = currentProjectRootFolderId || api.state.confirm?.folderId;
+
+    ui.setLoader(true, "A preparar envio de ficheiros...");
 
     try {
-        await api.uploadGDriveFile(file, parentId);
+        // Se a pasta do cliente ainda não existir ou não estiver vinculada, criá-la deterministicamente no Drive
+        if (!parentId) {
+            if (!rootId) {
+                throw new Error("Pasta do projeto não configurada no Google Drive.");
+            }
+            if (!client) {
+                throw new Error("Nenhum cliente selecionado para envio de suportes.");
+            }
 
-        const client = window.currentActiveClient;
-        if (client && api.state.confirm?.sheetId) {
-            api.logConfirmAudit(api.state.confirm.sheetId, client.no, client.displayName, 'DOC_UPLOAD', {
-                fileName: file.name,
-                folderId: parentId
-            });
+            const canonicalize = (str) => String(str || '')
+                .normalize('NFD')
+                .replace(/\p{Diacritic}/gu, '')
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            const cleanCode = String(client.no || '').split('.')[0].split(',')[0].trim();
+            const clientName = client.displayName || client.name || '';
+            const newFolderName = `${cleanCode} ${clientName}`.trim();
+            const comNoNorm = canonicalize(newFolderName);
+            const nomeNorm = canonicalize(clientName);
+            const idCodeNorm = canonicalize(client.idCode || client.displayIdCode || '');
+
+            ui.setLoader(true, `A verificar/criar pasta do cliente no Google Drive...`);
+            
+            // Verificar se a pasta já existe no Drive antes de criar duplicado
+            let targetFolder = null;
+            try {
+                const existingFiles = await api.listGDriveFiles(rootId);
+                const folders = (existingFiles || []).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+                if (idCodeNorm) targetFolder = folders.find(f => canonicalize(f.name) === idCodeNorm);
+                if (!targetFolder && comNoNorm) targetFolder = folders.find(f => canonicalize(f.name) === comNoNorm);
+                if (!targetFolder && nomeNorm) targetFolder = folders.find(f => canonicalize(f.name) === nomeNorm);
+                if (!targetFolder) targetFolder = folders.find(f => {
+                    const norm = canonicalize(f.name);
+                    return (comNoNorm && norm.includes(comNoNorm)) || (idCodeNorm && norm.includes(idCodeNorm));
+                });
+            } catch (listErr) {
+                console.warn("[UPLOAD] Não foi possível verificar lista prévia de pastas:", listErr);
+                if (listErr.isAuth || String(listErr.message).includes('AUTH_REQUIRED') || String(listErr.message).includes('invalid_grant')) {
+                    throw listErr;
+                }
+            }
+
+            if (!targetFolder) {
+                ui.setLoader(true, `A criar pasta "${newFolderName}" no Google Drive...`);
+                targetFolder = await api.createGDriveFolder(newFolderName, rootId);
+                projectFoldersCache = null; // invalidar cache
+            }
+
+            parentId = targetFolder.id;
+            if (!api.state.confirm) api.state.confirm = {};
+            api.state.confirm.activeClientFolderId = parentId;
+            api.state.confirm.activeClientFolderPattern = comNoNorm;
+
+            const inputHidden = document.getElementById('input-confirm-drive-id');
+            if (inputHidden) inputHidden.value = parentId;
         }
 
-        // Recarregar pasta
-        openDriveExplorer(parentId);
+        // Fazer upload de todos os ficheiros selecionados
+        const total = files.length;
+        for (let i = 0; i < total; i++) {
+            const file = files[i];
+            const msg = total > 1 ? `A carregar documento (${i + 1}/${total}): ${file.name}...` : `A carregar documento: ${file.name}...`;
+            ui.setLoader(true, msg);
+            await api.uploadGDriveFile(file, parentId);
+
+            if (client && api.state.confirm?.sheetId) {
+                api.logConfirmAudit(api.state.confirm.sheetId, client.no, client.displayName, 'DOC_UPLOAD', {
+                    fileName: file.name,
+                    folderId: parentId
+                });
+            }
+        }
+
+        ui.toast(total > 1 ? `${total} ficheiros carregados com sucesso!` : `Ficheiro carregado com sucesso!`, 'success');
+        await openDriveExplorer(parentId);
     } catch (err) {
-        ui.toast("Erro no upload: " + err.message, "error");
-        openDriveExplorer(parentId);
+        console.error("Erro no upload de suportes:", err);
+        const errMsg = err.message || '';
+        if (err.isAuth || errMsg.includes('AUTH_REQUIRED') || errMsg.includes('invalid_grant')) {
+            ui.toast("Sessão Google expirada. Por favor reconecte ao Google.", "error");
+            window.location.href = '/api/google/auth';
+        } else {
+            ui.toast("Erro no upload: " + errMsg, "error");
+            if (parentId) await openDriveExplorer(parentId);
+        }
     } finally {
         ui.setLoader(false);
-        input.value = ''; // Limpar input
+        input.value = '';
     }
 }
 

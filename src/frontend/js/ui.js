@@ -6854,7 +6854,7 @@ export function renderDriveFiles(files, currentFolderId, containerId = 'confirm-
         container.innerHTML = `
             <div class="p-8 text-center">
                 <p class="text-gray-400 italic mb-4">Nenhum ficheiro encontrado nesta pasta.</p>
-                <button onclick="window.triggerFileUpload('${currentFolderId}')" 
+                <button onclick="window.triggerConfirmSupportUpload('${currentFolderId}')" 
                     class="bg-black text-white px-4 py-2 rounded-xl font-bold uppercase text-[9px] tracking-widest hover:bg-gray-800 transition-all flex items-center justify-center gap-2 mx-auto">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                     ADICIONAR SUPORTE
@@ -6946,12 +6946,17 @@ export function renderDriveError(message, folderName = null, parentId = null, co
     const container = document.getElementById(containerId);
     if (!container) return;
 
+    const isAuth = String(message || '').includes('AUTH_REQUIRED') ||
+                   String(message || '').includes('invalid_grant') ||
+                   String(message || '').includes('expirada') ||
+                   String(message || '').includes('inválida');
+
     let actionHtml = '';
-    if (folderName && parentId) {
+    if (folderName && parentId && !isAuth) {
         actionHtml = `
             <button onclick="window.handleCreateFolder('${folderName.replace(/'/g, "\\'")}', '${parentId}')" 
-                class="mt-4 bg-black text-white px-4 py-2 rounded-xl font-bold uppercase text-[9px] tracking-widest hover:bg-gray-800 transition-all flex items-center justify-center gap-2 mx-auto">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+                class="mt-3 bg-black hover:bg-gray-800 text-white px-4 py-2 rounded-xl font-bold uppercase text-[9px] tracking-widest transition-all flex items-center justify-center gap-2 mx-auto shadow-sm active:scale-95 cursor-pointer">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
                 CRIAR PASTA DO CLIENTE
             </button>
         `;
@@ -6959,17 +6964,23 @@ export function renderDriveError(message, folderName = null, parentId = null, co
 
     const reconnectHtml = `
         <button onclick="window.location.href='/api/google/auth'" 
-            class="mt-3 bg-blue-600/90 text-white px-3.5 py-2 rounded-xl font-extrabold uppercase text-[9px] tracking-widest hover:bg-blue-600 transition-all flex items-center justify-center gap-1.5 mx-auto shadow-sm">
-            <i class="fas fa-plug text-xs"></i>
+            class="mt-3 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-black uppercase text-[9px] tracking-widest transition-all flex items-center justify-center gap-1.5 mx-auto shadow-sm active:scale-95 cursor-pointer">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
             RECONECTAR AO GOOGLE
         </button>
     `;
 
+    const displayMsg = isAuth 
+        ? "A sessão do Google Drive expirou. Por favor, clique abaixo para reconectar a sua conta Google."
+        : message;
+
     container.innerHTML = `
         <div class="p-6 text-center space-y-2">
-            <p class="text-gray-400 italic text-[10px] leading-tight">${message}</p>
-            ${actionHtml}
-            ${reconnectHtml}
+            <div class="${isAuth ? 'text-amber-500' : 'text-slate-400'} flex justify-center mb-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+            <p class="text-slate-500 font-bold text-[10px] leading-tight max-w-xs mx-auto">${displayMsg}</p>
+            ${isAuth ? reconnectHtml : `${actionHtml} ${reconnectHtml}`}
         </div>
     `;
 }

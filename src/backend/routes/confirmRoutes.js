@@ -500,11 +500,17 @@ router.post('/fill-client', upload.array('files', 10), async (req, res) => {
 
   } catch (error) {
     console.error('[CONFIRM API] Erro ao processar preenchimento:', error);
-    if (error.message.includes('invalid_grant') && require('fs').existsSync(TOKENS_PATH)) {
-      require('fs').unlinkSync(TOKENS_PATH);
+    const isAuth = error.message.includes('AUTH_REQUIRED') ||
+                   error.message.includes('invalid_grant') ||
+                   error.message.includes('Token has been expired or revoked');
+    if (isAuth && require('fs').existsSync(TOKENS_PATH)) {
+      try { require('fs').unlinkSync(TOKENS_PATH); } catch (e) {}
     }
-    const status = error.message.includes('AUTH_REQUIRED') ? 401 : 500;
-    return res.status(status).json({ error: error.message || 'Erro interno ao preencher dados.' });
+    const status = isAuth ? 401 : 500;
+    return res.status(status).json({
+      error: isAuth ? 'AUTH_REQUIRED' : error.message,
+      message: isAuth ? 'Sessão Google expirada ou não autorizada. Aceda a /api/google/auth para reconectar.' : error.message
+    });
   }
 });
 
