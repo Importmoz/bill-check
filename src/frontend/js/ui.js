@@ -344,6 +344,13 @@ export function showView(viewId) {
         financeBulkBar.classList.add('hidden');
     }
     
+    // Se sair da tela de detalhes do cliente, parar o polling silencioso do Drive
+    if (viewId !== 'view-confirm-client-detail') {
+        if (typeof window.stopDrivePolling === 'function') {
+            window.stopDrivePolling();
+        }
+    }
+
     // Se estivermos a sair do módulo CONFIRM (GSheet específico), cancelamos a subscrição
     if (!viewId.startsWith('view-confirm-')) {
         if (typeof unsubscribeConfirmEvents === 'function') {
@@ -3952,9 +3959,14 @@ export async function showConfirmDetail(client, clientIndex) {
         showView('view-confirm-client-detail');
     }
 
-    // Abrir pasta automaticamente se existir número e nome (apenas se for um cliente diferente)
+    // Abrir pasta automaticamente se existir número e nome (ou sincronizar silenciosamente se for o mesmo cliente)
     if (window.autoOpenClientFolder && !isSameClient) {
         window.autoOpenClientFolder(client.no || '', client.displayName);
+    } else if (isSameClient) {
+        if (typeof window.startDrivePolling === 'function') window.startDrivePolling();
+        if (state.confirm?.activeClientFolderId && typeof window.refreshDriveExplorerSilent === 'function') {
+            window.refreshDriveExplorerSilent(state.confirm.activeClientFolderId);
+        }
     }
 
     // Atualizar UI dos Locks
@@ -5840,6 +5852,37 @@ export function handleConfirmRealtimeEvent(e) {
     const userName = payload.name || 'Outro utilizador';
 
     console.log(`[SSE-FASE-4][PROCESSAR-UI] Evento '${type}' recebido para linha ${row} (User: ${userName}, ID: ${userId})`);
+
+    // Eventos de atualização em tempo real do Google Drive (SUPORTES)
+    if (type === 'DRIVE_UPDATE') {
+        if (typeof window.applyRealtimeDriveEvent === 'function') {
+            window.applyRealtimeDriveEvent(payload);
+        }
+
+        // Notificar discretamente se outro utilizador alterou documentos do cliente aberto
+        const isOtherUser = userId && userId !== pb.authStore.model?.id;
+        const detailView = document.getElementById('view-confirm-client-detail');
+        const isClientDetailOpen = detailView && !detailView.classList.contains('hidden') && window.currentActiveClient;
+        if (isOtherUser && isClientDetailOpen) {
+            const activeFolderId = state.confirm?.activeClientFolderId || '';
+            const activeNo = String(window.currentActiveClient?.no || '').split('.')[0].split(',')[0].trim();
+            const eventNo = String(payload.clientNo || '').split('.')[0].split(',')[0].trim();
+            const isSameTarget = (activeFolderId && payload.folderId && activeFolderId === payload.folderId) || (activeNo && eventNo && activeNo === eventNo);
+            if (isSameTarget) {
+                if (payload.action === 'UPLOAD') {
+                    toast(`📄 Novo suporte por ${userName}: ${payload.file?.name || payload.fileName || 'Documento'}`, 'success');
+                } else if (payload.action === 'DELETE') {
+                    toast(`🗑️ Suporte removido por ${userName}: ${payload.fileName || 'Documento'}`, 'info');
+                }
+            }
+        }
+        return;
+    }
+
+    // Eventos puramente de auditoria não precisam redesenhar toda a tabela
+    if (typeof type === 'string' && type.startsWith('AUDIT_')) {
+        return;
+    }
 
     // Remove lock se expirado (mais de 5 minutos)
     const now = new Date().getTime();

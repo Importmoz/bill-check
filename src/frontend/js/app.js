@@ -3,7 +3,7 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js?v=20261124_01';
+import * as ui from './ui.js?v=20261124_02';
 import * as etaUi from './etaUi.js?v=20261113_01';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
@@ -2023,8 +2023,10 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
         
         // Carregar cache de pastas em background para abertura instantânea depois
         projectFoldersCache = null;
+        state.confirm.activeClientFolderId = null;
+        state.confirm.activeClientFolderPattern = null;
         if (currentProjectRootFolderId) {
-            api.listGDriveFiles(currentProjectRootFolderId).then(files => {
+            api.listGDriveFiles(currentProjectRootFolderId, { updateState: false }).then(files => {
                 projectFoldersCache = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
                 console.log(`[CACHE] ${projectFoldersCache.length} pastas mapeadas para este projeto.`);
             }).catch(err => console.error("Erro ao carregar cache de pastas:", err));
@@ -2368,6 +2370,222 @@ async function submitAddConfirmClient(e) {
 }
 
 
+// --- SINCRONIZAÇÃO EM TEMPO REAL & OTIMISTA DE SUPORTES (GOOGLE DRIVE) ---
+const recentDriveUploads = new Map(); // folderId -> Array<{ file, expiresAt }>
+const recentDriveDeletes = new Map(); // fileId -> expiresAt
+let lastRenderedDriveSignature = '';
+let drivePollingInterval = null;
+let drivePollingActive = false;
+let driveUploadInFlight = false;
+
+function registerOptimisticDriveUpload(folderId, fileObj) {
+    if (!folderId || !fileObj || !fileObj.id) return;
+    recentDriveDeletes.delete(fileObj.id);
+    const now = Date.now();
+    const list = (recentDriveUploads.get(folderId) || []).filter(item => item.expiresAt > now && item.file?.id !== fileObj.id);
+    list.push({ file: fileObj, expiresAt: now + 45000 }); // 45s TTL contra atraso de indexação do Google Drive
+    recentDriveUploads.set(folderId, list);
+}
+
+function registerOptimisticDriveDelete(folderId, fileId) {
+    if (!fileId) return;
+    const now = Date.now();
+    recentDriveDeletes.set(fileId, now + 20000);
+    if (folderId && recentDriveUploads.has(folderId)) {
+        const filtered = recentDriveUploads.get(folderId).filter(item => item.file?.id !== fileId);
+        recentDriveUploads.set(folderId, filtered);
+    }
+}
+
+function mergeDriveFilesWithOptimistic(folderId, serverFiles) {
+    const now = Date.now();
+    for (const [fId, exp] of recentDriveDeletes.entries()) {
+        if (exp <= now) recentDriveDeletes.delete(fId);
+    }
+
+    const base = (Array.isArray(serverFiles) ? serverFiles : []).filter(f => f && f.id && !recentDriveDeletes.has(f.id));
+    const byId = new Map();
+    base.forEach(f => byId.set(f.id, f));
+
+    if (folderId && recentDriveUploads.has(folderId)) {
+        const validUploads = recentDriveUploads.get(folderId).filter(item => item.expiresAt > now && item.file?.id && !recentDriveDeletes.has(item.file.id));
+        recentDriveUploads.set(folderId, validUploads);
+        validUploads.forEach(({ file }) => {
+            if (!byId.has(file.id)) {
+                byId.set(file.id, file);
+            }
+        });
+    }
+
+    const merged = Array.from(byId.values());
+    merged.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' }));
+    return merged;
+}
+
+function getDriveFilesSignature(folderId, files) {
+    return `${folderId || ''}::` + (files || []).map(f => `${f.id}:${f.name}:${f.modifiedTime || f.createdTime || ''}`).join('|');
+}
+
+function applyDriveFilesToUI(folderId, files, { forceRender = false } = {}) {
+    if (!api.state.confirm) api.state.confirm = {};
+    api.state.confirm.driveFiles = files || [];
+
+    const sig = getDriveFilesSignature(folderId, files);
+    if (!forceRender && sig === lastRenderedDriveSignature) {
+        return false;
+    }
+    lastRenderedDriveSignature = sig;
+
+    ui.renderDriveFiles(files, folderId);
+
+    const miniSide = document.getElementById('mini-filter-drive-side');
+    if (miniSide && miniSide.classList.contains('w-80')) {
+        ui.renderDriveFiles(files, folderId, 'mini-filter-drive-content');
+    }
+    return true;
+}
+
+async function refreshDriveExplorerSilent(folderId = null, { forceRender = false } = {}) {
+    const input = document.getElementById('input-confirm-drive-id');
+    const id = folderId || (input ? input.value.trim() : null) || api.state.confirm?.activeClientFolderId;
+    if (!id) return;
+
+    try {
+        const serverFiles = await api.listGDriveFiles(id, { updateState: false });
+        // Verificar se a pasta ativa ainda é a mesma após o await
+        const currentActiveId = api.state.confirm?.activeClientFolderId || (input ? input.value.trim() : null);
+        if (currentActiveId && currentActiveId !== id) return;
+
+        const merged = mergeDriveFilesWithOptimistic(id, serverFiles);
+        applyDriveFilesToUI(id, merged, { forceRender });
+    } catch (err) {
+        console.warn("[DRIVE-SYNC] Erro na atualização silenciosa:", err.message);
+    }
+}
+
+function applyRealtimeDriveEvent(payload) {
+    if (!payload) return;
+
+    if (payload.folderCreated || payload.action === 'FOLDER_CREATED') {
+        projectFoldersCache = null;
+    }
+
+    const detailView = document.getElementById('view-confirm-client-detail');
+    const isClientDetailOpen = detailView && !detailView.classList.contains('hidden') && window.currentActiveClient;
+    if (!isClientDetailOpen) return;
+
+    const activeFolderId = api.state.confirm?.activeClientFolderId || document.getElementById('input-confirm-drive-id')?.value?.trim() || '';
+    const activeNo = String(window.currentActiveClient?.no || '').split('.')[0].split(',')[0].trim();
+    const activeName = String(window.currentActiveClient?.displayName || window.currentActiveClient?.name || '').trim().toUpperCase();
+    const eventNo = String(payload.clientNo || '').split('.')[0].split(',')[0].trim();
+    const eventName = String(payload.clientName || '').trim().toUpperCase();
+
+    const matchesFolder = Boolean(activeFolderId && payload.folderId && activeFolderId === payload.folderId);
+    const matchesClient = Boolean(
+        (activeNo && eventNo && activeNo === eventNo && (!activeName || !eventName || activeName === eventName)) ||
+        (!activeNo && activeName && eventName && activeName === eventName)
+    );
+
+    if (!matchesFolder && !matchesClient) return;
+
+    const targetFolderId = payload.folderId || activeFolderId;
+    if (!targetFolderId) return;
+
+    // Se o utilizador ainda não tinha pasta vinculada (ex: estava a ver "Pasta não encontrada"), vincular agora!
+    if (!activeFolderId && targetFolderId) {
+        if (!api.state.confirm) api.state.confirm = {};
+        api.state.confirm.activeClientFolderId = targetFolderId;
+        const inputHidden = document.getElementById('input-confirm-drive-id');
+        if (inputHidden) inputHidden.value = targetFolderId;
+        lastRenderedDriveSignature = '';
+    }
+
+    if (payload.action === 'UPLOAD' && payload.file && payload.file.id) {
+        registerOptimisticDriveUpload(targetFolderId, payload.file);
+        const currentFiles = matchesFolder ? (api.state.confirm?.driveFiles || []) : [];
+        const merged = mergeDriveFilesWithOptimistic(targetFolderId, currentFiles);
+        applyDriveFilesToUI(targetFolderId, merged, { forceRender: true });
+        setTimeout(() => refreshDriveExplorerSilent(targetFolderId), 1500);
+    } else if (payload.action === 'DELETE' && payload.fileId) {
+        registerOptimisticDriveDelete(targetFolderId, payload.fileId);
+        const currentFiles = api.state.confirm?.driveFiles || [];
+        const merged = mergeDriveFilesWithOptimistic(targetFolderId, currentFiles);
+        applyDriveFilesToUI(targetFolderId, merged, { forceRender: true });
+        setTimeout(() => refreshDriveExplorerSilent(targetFolderId), 1500);
+    } else {
+        refreshDriveExplorerSilent(targetFolderId, { forceRender: true });
+    }
+}
+
+function startDrivePolling() {
+    if (drivePollingInterval) return;
+    drivePollingInterval = setInterval(async () => {
+        if (drivePollingActive || driveUploadInFlight) return;
+        if (document.visibilityState !== 'visible') return;
+
+        const detailView = document.getElementById('view-confirm-client-detail');
+        if (!detailView || detailView.classList.contains('hidden') || !window.currentActiveClient) return;
+
+        drivePollingActive = true;
+        try {
+            const activeFolderId = api.state.confirm?.activeClientFolderId || document.getElementById('input-confirm-drive-id')?.value?.trim();
+            if (activeFolderId) {
+                await refreshDriveExplorerSilent(activeFolderId);
+            } else {
+                // Caso a pasta ainda não exista, verificar se foi criada externamente no Google Drive
+                const rootId = currentProjectRootFolderId || api.state.confirm?.folderId;
+                if (rootId && window.currentActiveClient) {
+                    const files = await api.listGDriveFiles(rootId, { updateState: false });
+                    const folders = (files || []).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+                    projectFoldersCache = folders;
+
+                    const canonicalize = (str) => String(str || '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().replace(/[^A-Z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+                    const cleanCode = String(window.currentActiveClient.no || '').split('.')[0].split(',')[0].trim();
+                    const clientName = window.currentActiveClient.displayName || window.currentActiveClient.name || '';
+                    const comNoNorm = canonicalize(`${cleanCode} ${clientName}`);
+                    const nomeNorm = canonicalize(clientName);
+                    const idCodeNorm = canonicalize(window.currentActiveClient.idCode || window.currentActiveClient.displayIdCode || '');
+
+                    let targetFolder = (idCodeNorm && folders.find(f => canonicalize(f.name) === idCodeNorm)) ||
+                                       (comNoNorm && folders.find(f => canonicalize(f.name) === comNoNorm)) ||
+                                       (nomeNorm && folders.find(f => canonicalize(f.name) === nomeNorm)) ||
+                                       folders.find(f => {
+                                           const norm = canonicalize(f.name);
+                                           return (comNoNorm && norm.includes(comNoNorm)) || (idCodeNorm && norm.includes(idCodeNorm));
+                                       }) || null;
+
+                    if (targetFolder) {
+                        if (!api.state.confirm) api.state.confirm = {};
+                        api.state.confirm.activeClientFolderId = targetFolder.id;
+                        api.state.confirm.activeClientFolderPattern = `${rootId}::${comNoNorm}`;
+                        const inputHidden = document.getElementById('input-confirm-drive-id');
+                        if (inputHidden) inputHidden.value = targetFolder.id;
+                        lastRenderedDriveSignature = '';
+                        await refreshDriveExplorerSilent(targetFolder.id, { forceRender: true });
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn("[DRIVE-POLL] Erro ao verificar suportes:", err.message);
+        } finally {
+            drivePollingActive = false;
+        }
+    }, 8000);
+}
+
+function stopDrivePolling() {
+    if (drivePollingInterval) {
+        clearInterval(drivePollingInterval);
+        drivePollingInterval = null;
+    }
+    drivePollingActive = false;
+}
+
+window.applyRealtimeDriveEvent = applyRealtimeDriveEvent;
+window.refreshDriveExplorerSilent = refreshDriveExplorerSilent;
+window.startDrivePolling = startDrivePolling;
+window.stopDrivePolling = stopDrivePolling;
+
 async function autoOpenClientFolder(clientCode, clientName, force = false) {
     let rootId = currentProjectRootFolderId || api.state.confirm?.folderId;
     if (!rootId && api.state.confirm?.sheetId) {
@@ -2380,6 +2598,9 @@ async function autoOpenClientFolder(clientCode, clientName, force = false) {
     }
     currentProjectRootFolderId = rootId;
     if (api.state.confirm) api.state.confirm.folderId = rootId;
+
+    // Garantir que o polling silencioso do Drive está ativo enquanto o detalhe do cliente está aberto
+    startDrivePolling();
 
     // Função de normalização/canonicalização para correspondência ultra-robusta de nomes
     const canonicalize = (str) => {
@@ -2395,15 +2616,27 @@ async function autoOpenClientFolder(clientCode, clientName, force = false) {
     // Limpar o código de eventuais decimais (.0) que vêm do Excel
     const cleanCode = String(clientCode || '').split('.')[0].split(',')[0].trim();
     const comNoNorm = canonicalize(`${cleanCode} ${clientName}`);
+    const folderPatternKey = `${rootId}::${comNoNorm}`;
     const nomeNorm = canonicalize(clientName);
     const clientObj = window.currentActiveClient || {};
     const idCodeNorm = canonicalize(clientObj.idCode || clientObj.displayIdCode || '');
 
-    // Se a pasta deste cliente já estiver ativa no card Suportes e não for forçado, manter vista estável sem piscar
-    if (!force && api.state.confirm?.activeClientFolderPattern === comNoNorm && api.state.confirm?.activeClientFolderId) {
-        console.log(`[AUTO-DRIVE] Pasta já carregada e ativa para "${comNoNorm}". Mantendo vista.`);
+    // Se a pasta deste cliente já estiver ativa no card Suportes e não for forçado, manter vista estável e atualizar silenciosamente em background
+    if (!force && api.state.confirm?.activeClientFolderPattern === folderPatternKey && api.state.confirm?.activeClientFolderId) {
+        console.log(`[AUTO-DRIVE] Pasta já carregada para "${comNoNorm}". Sincronizando silenciosamente...`);
+        refreshDriveExplorerSilent(api.state.confirm.activeClientFolderId);
         return;
     }
+
+    // Limpar estado de pasta anterior ao entrar num novo cliente
+    if (api.state.confirm) {
+        api.state.confirm.activeClientFolderId = null;
+        api.state.confirm.activeClientFolderPattern = null;
+        api.state.confirm.driveFiles = [];
+    }
+    lastRenderedDriveSignature = '';
+    const inputHiddenReset = document.getElementById('input-confirm-drive-id');
+    if (inputHiddenReset) inputHiddenReset.value = '';
 
     // Limpar o histórico de navegação ao entrar num novo cliente
     if (typeof driveHistory !== 'undefined') {
@@ -2446,21 +2679,22 @@ async function autoOpenClientFolder(clientCode, clientName, force = false) {
         console.log(`[AUTO-DRIVE] Encontrado no cache!`);
         if (!api.state.confirm) api.state.confirm = {};
         api.state.confirm.activeClientFolderId = targetFolder.id;
-        api.state.confirm.activeClientFolderPattern = comNoNorm;
+        api.state.confirm.activeClientFolderPattern = folderPatternKey;
         openDriveExplorer(targetFolder.id);
         return;
     }
 
     // Se não estiver no cache (ou cache ainda carregando), tenta a API
     try {
-        const files = await api.listGDriveFiles(rootId);
+        const files = await api.listGDriveFiles(rootId, { updateState: false });
         const folders = (files || []).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+        projectFoldersCache = folders;
         targetFolder = matchFolder(folders);
 
         if (targetFolder) {
             if (!api.state.confirm) api.state.confirm = {};
             api.state.confirm.activeClientFolderId = targetFolder.id;
-            api.state.confirm.activeClientFolderPattern = comNoNorm;
+            api.state.confirm.activeClientFolderPattern = folderPatternKey;
             openDriveExplorer(targetFolder.id);
         } else {
             console.warn(`[AUTO-DRIVE] Pasta não localizada.`);
@@ -2484,7 +2718,21 @@ async function handleCreateFolder(name, parentId) {
         // Limpar cache para forçar recarregamento na próxima vez
         projectFoldersCache = null;
         // Abrir a nova pasta
-        openDriveExplorer(folder.id);
+        await openDriveExplorer(folder.id);
+
+        const client = window.currentActiveClient;
+        if (api.state.confirm?.sheetId) {
+            const rowIdx = client?.rows?.[0]?.originalIndex || parseInt(client?.no, 10) || 0;
+            api.emitConfirmEvent(api.state.confirm.sheetId, rowIdx, 'DRIVE_UPDATE', {
+                action: 'FOLDER_CREATED',
+                folderId: folder.id,
+                folderCreated: true,
+                folderName: name,
+                clientNo: String(client?.no || '').trim(),
+                clientName: client?.displayName || client?.name || '',
+                name: api.pb.authStore.model?.name || api.pb.authStore.model?.email || 'Utilizador'
+            });
+        }
     } catch (err) {
         console.error("Erro ao criar pasta:", err);
         if (err.isAuth || String(err.message).includes('AUTH_REQUIRED') || String(err.message).includes('invalid_grant')) {
@@ -2540,6 +2788,8 @@ async function handleFileUpload(input) {
     }
 
     ui.setLoader(true, "A preparar envio de ficheiros...");
+    driveUploadInFlight = true;
+    let folderCreated = false;
 
     try {
         // Se a pasta do cliente ainda não existir ou não estiver vinculada, criá-la deterministicamente no Drive
@@ -2571,7 +2821,7 @@ async function handleFileUpload(input) {
             // Verificar se a pasta já existe no Drive antes de criar duplicado
             let targetFolder = null;
             try {
-                const existingFiles = await api.listGDriveFiles(rootId);
+                const existingFiles = await api.listGDriveFiles(rootId, { updateState: false });
                 const folders = (existingFiles || []).filter(f => f.mimeType === 'application/vnd.google-apps.folder');
                 if (idCodeNorm) targetFolder = folders.find(f => canonicalize(f.name) === idCodeNorm);
                 if (!targetFolder && comNoNorm) targetFolder = folders.find(f => canonicalize(f.name) === comNoNorm);
@@ -2591,12 +2841,13 @@ async function handleFileUpload(input) {
                 ui.setLoader(true, `A criar pasta "${newFolderName}" no Google Drive...`);
                 targetFolder = await api.createGDriveFolder(newFolderName, rootId);
                 projectFoldersCache = null; // invalidar cache
+                folderCreated = true;
             }
 
             parentId = targetFolder.id;
             if (!api.state.confirm) api.state.confirm = {};
             api.state.confirm.activeClientFolderId = parentId;
-            api.state.confirm.activeClientFolderPattern = comNoNorm;
+            api.state.confirm.activeClientFolderPattern = `${rootId}::${comNoNorm}`;
 
             const inputHidden = document.getElementById('input-confirm-drive-id');
             if (inputHidden) inputHidden.value = parentId;
@@ -2604,11 +2855,35 @@ async function handleFileUpload(input) {
 
         // Fazer upload de todos os ficheiros selecionados
         const total = files.length;
+        const uploaderName = api.pb.authStore.model?.name || api.pb.authStore.model?.email || 'Utilizador';
+        const rowIdx = client?.rows?.[0]?.originalIndex || parseInt(client?.no, 10) || 0;
+
         for (let i = 0; i < total; i++) {
             const file = files[i];
             const msg = total > 1 ? `A carregar documento (${i + 1}/${total}): ${file.name}...` : `A carregar documento: ${file.name}...`;
             ui.setLoader(true, msg);
-            await api.uploadGDriveFile(file, parentId);
+            const uploadedFile = await api.uploadGDriveFile(file, parentId);
+
+            // Registar imediatamente no cache otimista e renderizar na UI (evita atraso de indexação do Google Drive)
+            if (uploadedFile && uploadedFile.id) {
+                registerOptimisticDriveUpload(parentId, uploadedFile);
+                const mergedNow = mergeDriveFilesWithOptimistic(parentId, api.state.confirm?.driveFiles || []);
+                applyDriveFilesToUI(parentId, mergedNow, { forceRender: true });
+            }
+
+            // Notificar outros utilizadores em tempo real via PocketBase SSE
+            if (api.state.confirm?.sheetId) {
+                api.emitConfirmEvent(api.state.confirm.sheetId, rowIdx, 'DRIVE_UPDATE', {
+                    action: 'UPLOAD',
+                    folderId: parentId,
+                    folderCreated: folderCreated && i === 0,
+                    file: uploadedFile || null,
+                    fileName: uploadedFile?.name || file.name,
+                    clientNo: String(client?.no || '').trim(),
+                    clientName: client?.displayName || client?.name || '',
+                    name: uploaderName
+                });
+            }
 
             if (client && api.state.confirm?.sheetId) {
                 api.logConfirmAudit(api.state.confirm.sheetId, client.no, client.displayName, 'DOC_UPLOAD', {
@@ -2619,7 +2894,9 @@ async function handleFileUpload(input) {
         }
 
         ui.toast(total > 1 ? `${total} ficheiros carregados com sucesso!` : `Ficheiro carregado com sucesso!`, 'success');
-        await openDriveExplorer(parentId);
+        // Reconciliar silenciosamente com o Google Drive (sem piscar e preservando os ficheiros recém-carregados)
+        await refreshDriveExplorerSilent(parentId, { forceRender: true });
+        setTimeout(() => refreshDriveExplorerSilent(parentId), 2000);
     } catch (err) {
         console.error("Erro no upload de suportes:", err);
         const errMsg = err.message || '';
@@ -2628,9 +2905,10 @@ async function handleFileUpload(input) {
             window.location.href = '/api/google/auth';
         } else {
             ui.toast("Erro no upload: " + errMsg, "error");
-            if (parentId) await openDriveExplorer(parentId);
+            if (parentId) await refreshDriveExplorerSilent(parentId, { forceRender: true });
         }
     } finally {
+        driveUploadInFlight = false;
         ui.setLoader(false);
         input.value = '';
     }
@@ -2643,7 +2921,27 @@ async function confirmAndDeleteFile(fileId, fileName, parentId) {
     try {
         await api.deleteGDriveFile(fileId);
 
+        // Remover imediatamente da UI (otimista)
+        registerOptimisticDriveDelete(parentId, fileId);
+        const mergedAfterDelete = mergeDriveFilesWithOptimistic(parentId, api.state.confirm?.driveFiles || []);
+        applyDriveFilesToUI(parentId, mergedAfterDelete, { forceRender: true });
+
         const client = window.currentActiveClient;
+        const uploaderName = api.pb.authStore.model?.name || api.pb.authStore.model?.email || 'Utilizador';
+        const rowIdx = client?.rows?.[0]?.originalIndex || parseInt(client?.no, 10) || 0;
+
+        if (api.state.confirm?.sheetId) {
+            api.emitConfirmEvent(api.state.confirm.sheetId, rowIdx, 'DRIVE_UPDATE', {
+                action: 'DELETE',
+                folderId: parentId,
+                fileId: fileId,
+                fileName: fileName,
+                clientNo: String(client?.no || '').trim(),
+                clientName: client?.displayName || client?.name || '',
+                name: uploaderName
+            });
+        }
+
         if (client && api.state.confirm?.sheetId) {
             api.logConfirmAudit(api.state.confirm.sheetId, client.no, client.displayName, 'DOC_DELETE', {
                 fileName: fileName,
@@ -2653,21 +2951,11 @@ async function confirmAndDeleteFile(fileId, fileName, parentId) {
 
         ui.toast("Ficheiro apagado com sucesso!", "success");
 
-        // Recarregar pasta
-        await openDriveExplorer(parentId);
-
-        const miniSide = document.getElementById('mini-filter-drive-side');
-        if (miniSide && miniSide.classList.contains('w-80')) {
-            try {
-                const files = await api.listGDriveFiles(parentId);
-                ui.renderDriveFiles(files, parentId, 'mini-filter-drive-content');
-            } catch (e) {
-                console.warn("Erro ao atualizar suportes no mini-filtro:", e);
-            }
-        }
+        // Reconciliar silenciosamente com o Drive
+        await refreshDriveExplorerSilent(parentId, { forceRender: true });
     } catch (err) {
         ui.toast("Erro ao apagar ficheiro: " + err.message, "error");
-        await openDriveExplorer(parentId);
+        await refreshDriveExplorerSilent(parentId, { forceRender: true });
     } finally {
         ui.setLoader(false);
     }
@@ -2689,6 +2977,7 @@ async function openDriveExplorer(folderId = null, isBack = false) {
 
     // Guardar ID globalmente para o mini-filtro
     state.confirm.activeClientFolderId = id; 
+    lastRenderedDriveSignature = '';
 
     
     const explorerContainer = document.getElementById('confirm-drive-files');
@@ -2706,8 +2995,10 @@ async function openDriveExplorer(folderId = null, isBack = false) {
     if (explorerContainer) explorerContainer.innerHTML = '<div class="p-4 text-center text-xs animate-pulse font-bold text-gray-400">A CARREGAR DRIVE...</div>';
 
     try {
-        const files = await api.listGDriveFiles(id);
-        ui.renderDriveFiles(files, id);
+        const serverFiles = await api.listGDriveFiles(id, { updateState: false });
+        const merged = mergeDriveFilesWithOptimistic(id, serverFiles);
+        applyDriveFilesToUI(id, merged, { forceRender: true });
+        startDrivePolling();
     } catch (err) { 
         console.error("Erro ao carregar Drive:", err);
         const errMsg = err.message || '';
@@ -3242,6 +3533,7 @@ function stopGSheetPolling() {
         clearInterval(gsheetPollingInterval);
         gsheetPollingInterval = null;
     }
+    stopDrivePolling();
 }
 
 window.stopGSheetPolling = stopGSheetPolling;

@@ -1362,10 +1362,11 @@ export async function unsubscribeBankEvents() {
     }
 }
 
-export async function listGDriveFiles(folderId) {
+export async function listGDriveFiles(folderId, { updateState = true } = {}) {
     const res = await fetch('/api/google/drive/list', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
         body: JSON.stringify({ folderId })
     });
     if (!res.ok) {
@@ -1380,8 +1381,11 @@ export async function listGDriveFiles(folderId) {
         throw err;
     }
     const files = await res.json();
-    state.confirm.driveFiles = files || [];
-    return state.confirm.driveFiles;
+    const list = files || [];
+    if (updateState && state.confirm) {
+        state.confirm.driveFiles = list;
+    }
+    return list;
 }
 
 export async function createGDriveFolder(name, parentId) {

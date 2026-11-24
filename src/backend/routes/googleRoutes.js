@@ -230,7 +230,7 @@ router.post('/drive/upload', upload.single('file'), async (req, res) => {
         description
       },
       media: { mimeType: file.mimetype, body: bufferStream },
-      fields: 'id, name, webViewLink, appProperties, createdTime, description'
+      fields: 'id, name, mimeType, webViewLink, thumbnailLink, appProperties, createdTime, modifiedTime, description'
     });
 
     // Adicionar permissão pública para poder ser visualizado
@@ -294,6 +294,7 @@ router.post('/drive/list', async (req, res) => {
     
     const files = response.data.files || [];
     files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     
     res.json(files);
   } catch (error) {
