@@ -7483,10 +7483,13 @@ export function showFilePreview(file) {
         const imgUrl = `/api/google/drive/file/${file.id}`;
         content.innerHTML = `
             <div id="preview-img-wrapper" style="min-width: 100%; min-height: 100%; width: max-content; height: max-content; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
-                <img id="preview-img-zoom" src="${imgUrl}" draggable="false" class="rounded-lg shadow-lg select-none" style="display: block; max-width: 100%; max-height: 100%; cursor: zoom-in;" crossorigin="anonymous">
+                <div id="preview-img-stage" style="position: relative; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+                    <img id="preview-img-zoom" src="${imgUrl}" draggable="false" class="rounded-lg shadow-lg select-none" style="display: block; max-width: 100%; max-height: 100%; cursor: zoom-in;" crossorigin="anonymous">
+                </div>
             </div>
         `;
         window.imgZoomScale = 1.0;
+        window.imgRotationDeg = 0;
         window.previewImgBaseWidth = 0;
         window.previewImgBaseHeight = 0;
 
@@ -7501,16 +7504,9 @@ export function showFilePreview(file) {
         if (img) {
             const initBaseSize = () => {
                 if (!img.naturalWidth || !img.naturalHeight) return;
-                const availW = Math.max(240, content.clientWidth - 40);
-                const availH = Math.max(240, content.clientHeight - 40);
-                const fitRatio = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
-                window.previewImgBaseWidth = Math.max(100, Math.round(img.naturalWidth * fitRatio));
-                window.previewImgBaseHeight = Math.max(100, Math.round(img.naturalHeight * fitRatio));
-                img.style.maxWidth = 'none';
-                img.style.maxHeight = 'none';
-                img.style.width = `${window.previewImgBaseWidth}px`;
-                img.style.height = `${window.previewImgBaseHeight}px`;
+                computePreviewBaseSize(img, content, window.imgRotationDeg || 0);
                 window.imgZoomScale = 1.0;
+                applyPreviewImageLayout(1.0, window.imgRotationDeg || 0);
                 content.scrollLeft = 0;
                 content.scrollTop = 0;
             };
@@ -7629,10 +7625,52 @@ export function showFilePreview(file) {
     }
 }
 
-// Controle de Zoom na Imagem (Layout Real + Scroll Completo + Zoom no Cursor)
+// Controle de Zoom e Rotação na Imagem (Layout Real + Scroll Completo + Zoom no Cursor)
 window.imgZoomScale = 1.0;
+window.imgRotationDeg = 0;
 window.previewImgBaseWidth = 0;
 window.previewImgBaseHeight = 0;
+
+function computePreviewBaseSize(img, content, angle = 0) {
+    if (!img || !content) return;
+    const availW = Math.max(240, content.clientWidth - 40);
+    const availH = Math.max(240, content.clientHeight - 40);
+    const natW = img.naturalWidth || img.clientWidth || 600;
+    const natH = img.naturalHeight || img.clientHeight || 400;
+    const isSwapped = (Math.abs(angle) % 180) === 90;
+    const visNatW = isSwapped ? natH : natW;
+    const visNatH = isSwapped ? natW : natH;
+    const fitRatio = Math.min(availW / visNatW, availH / visNatH);
+    window.previewImgBaseWidth = Math.max(100, Math.round(natW * fitRatio));
+    window.previewImgBaseHeight = Math.max(100, Math.round(natH * fitRatio));
+}
+
+function applyPreviewImageLayout(scale, angle) {
+    const img = document.getElementById('preview-img-zoom');
+    const stage = document.getElementById('preview-img-stage');
+    if (!img) return;
+
+    const w = Math.round((window.previewImgBaseWidth || 600) * scale);
+    const h = Math.round((window.previewImgBaseHeight || 400) * scale);
+    const isSwapped = (Math.abs(angle) % 180) === 90;
+    const boxW = isSwapped ? h : w;
+    const boxH = isSwapped ? w : h;
+
+    if (stage) {
+        stage.style.width = `${boxW}px`;
+        stage.style.height = `${boxH}px`;
+    }
+
+    img.style.position = 'absolute';
+    img.style.top = '50%';
+    img.style.left = '50%';
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+    img.style.width = `${w}px`;
+    img.style.height = `${h}px`;
+    img.style.transform = `translate(-50%, -50%) rotate(${angle}deg)`;
+    img.style.cursor = scale > 1.01 ? 'grab' : 'zoom-in';
+}
 
 export function setPreviewZoom(newScale, focalClientX = null, focalClientY = null) {
     const img = document.getElementById('preview-img-zoom');
@@ -7640,18 +7678,9 @@ export function setPreviewZoom(newScale, focalClientX = null, focalClientY = nul
     const zoomLevelEl = document.getElementById('preview-zoom-level');
     if (!img || !content) return;
 
-    // Garantir dimensões base caso a imagem tenha carregado antes do cálculo
+    const angle = window.imgRotationDeg || 0;
     if (!window.previewImgBaseWidth || !window.previewImgBaseHeight) {
-        if (img.naturalWidth && img.naturalHeight) {
-            const availW = Math.max(240, content.clientWidth - 40);
-            const availH = Math.max(240, content.clientHeight - 40);
-            const fitRatio = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
-            window.previewImgBaseWidth = Math.max(100, Math.round(img.naturalWidth * fitRatio));
-            window.previewImgBaseHeight = Math.max(100, Math.round(img.naturalHeight * fitRatio));
-        } else {
-            window.previewImgBaseWidth = img.clientWidth || 600;
-            window.previewImgBaseHeight = img.clientHeight || 400;
-        }
+        computePreviewBaseSize(img, content, angle);
     }
 
     const prevScale = window.imgZoomScale || 1.0;
@@ -7670,11 +7699,7 @@ export function setPreviewZoom(newScale, focalClientX = null, focalClientY = nul
     const ratioY = prevScrollH > 0 ? (contentY / prevScrollH) : 0.5;
 
     window.imgZoomScale = clampedScale;
-    img.style.maxWidth = 'none';
-    img.style.maxHeight = 'none';
-    img.style.width = `${Math.round(window.previewImgBaseWidth * clampedScale)}px`;
-    img.style.height = `${Math.round(window.previewImgBaseHeight * clampedScale)}px`;
-    img.style.cursor = clampedScale > 1.01 ? 'grab' : 'zoom-in';
+    applyPreviewImageLayout(clampedScale, angle);
 
     // Reposicionar scroll mantendo o ponto sob o cursor fixo
     const nextScrollW = content.scrollWidth;
@@ -7685,6 +7710,23 @@ export function setPreviewZoom(newScale, focalClientX = null, focalClientY = nul
     if (zoomLevelEl) {
         zoomLevelEl.innerText = `${Math.round(clampedScale * 100)}%`;
     }
+}
+
+export function rotatePreviewImage(deltaDeg = 90) {
+    const img = document.getElementById('preview-img-zoom');
+    const content = document.getElementById('preview-content');
+    if (!img || !content) return;
+
+    const nextAngle = ((window.imgRotationDeg || 0) + deltaDeg + 360) % 360;
+    window.imgRotationDeg = nextAngle;
+
+    computePreviewBaseSize(img, content, nextAngle);
+    const scale = window.imgZoomScale || 1.0;
+    applyPreviewImageLayout(scale, nextAngle);
+
+    // Centralizar o scroll após mudar a orientação
+    content.scrollLeft = Math.max(0, Math.round((content.scrollWidth - content.clientWidth) / 2));
+    content.scrollTop = Math.max(0, Math.round((content.scrollHeight - content.clientHeight) / 2));
 }
 
 export function zoomImage(delta) {
@@ -7698,18 +7740,9 @@ export function resetZoomImage() {
     if (!img || !content) return;
 
     window.imgZoomScale = 1.0;
-    if (window.previewImgBaseWidth && window.previewImgBaseHeight) {
-        img.style.maxWidth = 'none';
-        img.style.maxHeight = 'none';
-        img.style.width = `${window.previewImgBaseWidth}px`;
-        img.style.height = `${window.previewImgBaseHeight}px`;
-    } else {
-        img.style.width = '';
-        img.style.height = '';
-        img.style.maxWidth = '100%';
-        img.style.maxHeight = '100%';
-    }
-    img.style.cursor = 'zoom-in';
+    window.imgRotationDeg = 0;
+    computePreviewBaseSize(img, content, 0);
+    applyPreviewImageLayout(1.0, 0);
     content.scrollLeft = 0;
     content.scrollTop = 0;
 
