@@ -63,7 +63,7 @@ export function getBankLogoHtml(bankName, extraClass = 'w-4 h-4 rounded-[2px] ob
     if (b.includes('STB') || b.includes('STANDARD')) {
         return `<img src="assets/banks/stb.png" alt="STB" class="${extraClass}">`;
     }
-    if (b.includes('NEDBANK')) {
+    if (b.includes('NEDBANK') || b.includes('NED ')) {
         return `<img src="assets/banks/nedbank.png" alt="NEDBANK" class="${extraClass}">`;
     }
     if (b.includes('EMOLA') || b.includes('MPESA') || b.includes('M-PESA')) {
@@ -2422,6 +2422,16 @@ export function renderConfirmList(data, filterText = "", statusFilter = null, is
             btnWarehouse.classList.remove('hidden');
         } else {
             btnWarehouse.classList.add('hidden');
+        }
+    }
+
+    const btnProjectReport = document.getElementById('btn-project-report');
+    if (btnProjectReport) {
+        const userRole = (pb.authStore.model?.role || 'USER').toUpperCase();
+        if (userRole === 'ADMIN') {
+            btnProjectReport.classList.remove('hidden');
+        } else {
+            btnProjectReport.classList.add('hidden');
         }
     }
 
@@ -19729,4 +19739,450 @@ if (typeof document !== 'undefined') {
             console.warn('[CLICK-LISTENER] Erro suave em click outside:', err);
         }
     });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            const reportModal = document.getElementById('modal-project-report');
+            if (reportModal && !reportModal.classList.contains('hidden')) {
+                closeModal('modal-project-report');
+            }
+        }
+    });
 }
+
+// --- POPUP: RELATÓRIO FINANCEIRO DE DUTY DO PROJETO (APENAS ADMIN) ---
+window._lastProjectReport = null;
+
+export async function openProjectReportModal() {
+    const userRole = (pb.authStore.model?.role || 'USER').toUpperCase();
+    if (userRole !== 'ADMIN') {
+        toast('Apenas administradores podem visualizar este relatório.', 'error');
+        return;
+    }
+
+    const data = state.confirm?.data;
+    if (!data || data.length < 2) {
+        toast('Nenhum dado carregado para este projeto.', 'warning');
+        return;
+    }
+
+    const projectName = state.confirm?.projectName || document.getElementById('confirm-project-active-name')?.innerText || 'PROJETO';
+    const titleEl = document.getElementById('project-report-title');
+    const subtitleEl = document.getElementById('project-report-subtitle');
+    const bodyEl = document.getElementById('project-report-body');
+    const tsEl = document.getElementById('project-report-timestamp');
+
+    if (titleEl) titleEl.innerText = `RELATÓRIO • ${projectName}`;
+    if (subtitleEl) subtitleEl.innerText = 'Resumo Financeiro de Duty • Pago, Por Pagar e Totais por Banco';
+    if (bodyEl) bodyEl.innerHTML = '<div class="py-12 text-center text-xs font-bold text-slate-400 animate-pulse uppercase">A calcular valores de Duty e bancos...</div>';
+
+    openModal('modal-project-report');
+
+    const columns = data[0] || [];
+    const cleanString = (str) => String(str || '')
+        .toUpperCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Z0-9]/g, '')
+        .trim();
+
+    const idCodeIdx = findColumnIndex(columns, ['ID CODE', 'CODE ID', 'ID']);
+    const nameIdx = findColumnIndex(columns, ['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
+    const statusIdx = findColumnIndex(columns, ['CONFIRMATION', 'STATUS', 'CONFIRMACAO', 'CONFIRM']);
+    const dutyIdx = findColumnIndex(columns, ['AMOUNT DUTY', 'DUTY', 'TOTAL DUTY', 'VALOR DUTY']);
+    const dutyPrepaidIdx = findColumnIndex(columns, ['DUTY PREPAID', 'PREPAID']);
+    const balanceIdx = findColumnIndex(columns, ['BALANCE', 'BALANCO', 'SALDO']);
+    const bankDutyIdx = findColumnIndex(columns, ['BANK IN DUTY', 'BANK DUTY', 'BANK', 'BANCO']);
+    const paidIdx = columns.findIndex((c, i) => {
+        const h = cleanString(c);
+        return (h.includes('PAID') || h.includes('PAGO')) && !h.includes('PREPAID') && !h.includes('DUTY') && i !== dutyIdx;
+    });
+
+    // Cruzamento opcional com bank_incomes para linhas pagas em múltiplos bancos (excluindo Armazém)
+    let pbDutyPaymentsByClient = new Map();
+    try {
+        if (projectName && typeof getPaymentsByAllocatedPrefix === 'function') {
+            const allocated = await getPaymentsByAllocatedPrefix(`${projectName} -`);
+            (allocated || []).forEach(p => {
+                const alloc = String(p.allocated_to || '').trim();
+                if (alloc.toUpperCase().startsWith('ARMAZEM')) return;
+                const key = alloc.toUpperCase();
+                if (!pbDutyPaymentsByClient.has(key)) pbDutyPaymentsByClient.set(key, []);
+                pbDutyPaymentsByClient.get(key).push(p);
+            });
+        }
+    } catch (e) {
+        console.warn('[PROJECT-REPORT] Aviso ao consultar pagamentos no PocketBase:', e.message);
+    }
+
+    let totalDuty = 0;
+    let totalPaid = 0;
+    let totalUnpaid = 0;
+    let totalLoads = 0;
+    let paidLoads = 0;
+    let partialLoads = 0;
+    let unpaidLoads = 0;
+
+    const uniqueClients = new Set();
+    const bankTotals = new Map(); // bankName -> { name, amount, count }
+    const statusTotals = new Map(); // status -> { status, count, duty, paid, unpaid }
+
+    let lastIdCode = '';
+    let lastName = '';
+
+    const addBankTotal = (rawBank, amount) => {
+        if (!amount || amount <= 0) return;
+        let bankKey = String(rawBank || '').trim().toUpperCase();
+        if (!bankKey || bankKey === '?' || bankKey === '-' || bankKey === 'NIL' || bankKey === 'SEM BANCO') {
+            bankKey = 'SEM BANCO DEFINIDO';
+        }
+        if (!bankTotals.has(bankKey)) {
+            bankTotals.set(bankKey, { name: bankKey, amount: 0, count: 0 });
+        }
+        const entry = bankTotals.get(bankKey);
+        entry.amount += amount;
+        entry.count += 1;
+    };
+
+    const usedPbClients = new Set();
+
+    for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row || row.length === 0) continue;
+
+        const rowString = row.slice(0, 10).map(c => String(c || '').toUpperCase()).join(' ');
+        if (rowString.includes('TOTAL')) continue;
+
+        let idCode = idCodeIdx !== -1 ? String(row[idCodeIdx] || '').trim() : '';
+        let name = nameIdx !== -1 ? String(row[nameIdx] || '').trim() : '';
+        if (idCode) lastIdCode = idCode; else idCode = lastIdCode;
+        if (name) lastName = name; else name = lastName;
+
+        const rawDuty = dutyIdx !== -1 ? row[dutyIdx] : 0;
+        const dutyVal = parseFloat(String(rawDuty || '0').replace(/[^0-9.-]+/g, '')) || 0;
+        const rawPaid = paidIdx !== -1 ? row[paidIdx] : 0;
+        const paidVal = parseFloat(String(rawPaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
+        const rawPrepaid = dutyPrepaidIdx !== -1 ? row[dutyPrepaidIdx] : 0;
+        const prepaidVal = parseFloat(String(rawPrepaid || '0').replace(/[^0-9.-]+/g, '')) || 0;
+        const rawBalance = balanceIdx !== -1 ? row[balanceIdx] : 0;
+        let balanceVal = parseFloat(String(rawBalance || '0').replace(/[^0-9.-]+/g, '')) || 0;
+
+        // Ignorar linhas totalmente vazias (sem valor e sem cliente)
+        if (dutyVal === 0 && paidVal === 0 && prepaidVal === 0 && !idCode && !name) continue;
+
+        if (balanceVal === 0 && dutyVal > 0 && (paidVal + prepaidVal) < dutyVal) {
+            balanceVal = Math.max(0, dutyVal - prepaidVal - paidVal);
+        }
+        if (dutyVal > 0 && (paidVal + prepaidVal) >= dutyVal) {
+            balanceVal = 0;
+        }
+
+        const rawBankDuty = bankDutyIdx !== -1 ? String(row[bankDutyIdx] || '').trim() : '';
+        const rowStatus = calculateRowStatus(statusIdx !== -1 ? row[statusIdx] : '', balanceVal, rawBankDuty, paidVal, prepaidVal);
+
+        let effectivePaid = paidVal + prepaidVal;
+        if (rowStatus === 'CONFIRMADO' && effectivePaid === 0 && dutyVal > 0) {
+            effectivePaid = dutyVal;
+            balanceVal = 0;
+        }
+
+        const effectiveUnpaid = Math.max(0, balanceVal);
+
+        totalLoads += 1;
+        if (idCode || name) uniqueClients.add(`${idCode}_${name}`);
+
+        totalDuty += dutyVal;
+        totalPaid += effectivePaid;
+        totalUnpaid += effectiveUnpaid;
+
+        if (effectivePaid > 0 && effectiveUnpaid === 0) {
+            paidLoads += 1;
+        } else if (effectivePaid > 0 && effectiveUnpaid > 0) {
+            partialLoads += 1;
+        } else if (effectiveUnpaid > 0) {
+            unpaidLoads += 1;
+        }
+
+        // Agrupar por Banco (apenas o valor efetivamente pago)
+        if (effectivePaid > 0) {
+            const hasMultiBank = /[\/+,&]/.test(rawBankDuty);
+            let splitHandled = false;
+
+            if (hasMultiBank && pbDutyPaymentsByClient.size > 0) {
+                const clientKeyA = `${projectName} - ${name}`.toUpperCase();
+                const clientKeyB = `${projectName} - ${idCode}`.toUpperCase();
+                const matchedKey = pbDutyPaymentsByClient.has(clientKeyA) ? clientKeyA : (pbDutyPaymentsByClient.has(clientKeyB) ? clientKeyB : null);
+                if (matchedKey && !usedPbClients.has(matchedKey)) {
+                    const pmts = pbDutyPaymentsByClient.get(matchedKey) || [];
+                    const pbSum = pmts.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+                    if (pbSum > 0 && Math.abs(pbSum - effectivePaid) < 5) {
+                        pmts.forEach(p => addBankTotal(p.bank || rawBankDuty, parseFloat(p.amount) || 0));
+                        usedPbClients.add(matchedKey);
+                        splitHandled = true;
+                    }
+                }
+            }
+
+            if (!splitHandled) {
+                addBankTotal(rawBankDuty, effectivePaid);
+            }
+        }
+
+        // Agrupar por Status
+        const stKey = rowStatus || 'PENDENTE';
+        if (!statusTotals.has(stKey)) {
+            statusTotals.set(stKey, { status: stKey, count: 0, duty: 0, paid: 0, unpaid: 0 });
+        }
+        const stEntry = statusTotals.get(stKey);
+        stEntry.count += 1;
+        stEntry.duty += dutyVal;
+        stEntry.paid += effectivePaid;
+        stEntry.unpaid += effectiveUnpaid;
+    }
+
+    const paidPct = totalDuty > 0 ? Math.min(100, (totalPaid / totalDuty) * 100) : 0;
+    const unpaidPct = totalDuty > 0 ? Math.max(0, Math.min(100, (totalUnpaid / totalDuty) * 100)) : 0;
+
+    const sortedBanks = Array.from(bankTotals.values()).sort((a, b) => b.amount - a.amount);
+    const statusOrder = ['CONFIRMADO', 'PARCIAL', 'PENDENTE', 'AGUARDA PAGAMENTO', 'RE-VERIFICANDO', 'SEM COMPROVATIVO', 'COMPROVATIVO ERRADO'];
+    const sortedStatuses = Array.from(statusTotals.values()).sort((a, b) => {
+        const ia = statusOrder.indexOf(a.status);
+        const ib = statusOrder.indexOf(b.status);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+
+    const nowStr = new Date().toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    if (tsEl) tsEl.innerText = `Atualizado: ${nowStr} • ${uniqueClients.size} clientes / ${totalLoads} cargas`;
+
+    window._lastProjectReport = {
+        projectName,
+        generatedAt: nowStr,
+        totalClients: uniqueClients.size,
+        totalLoads,
+        paidLoads,
+        partialLoads,
+        unpaidLoads,
+        totalDuty,
+        totalPaid,
+        totalUnpaid,
+        paidPct,
+        unpaidPct,
+        banks: sortedBanks,
+        statuses: sortedStatuses
+    };
+
+    const statusBadgeClass = (st) => {
+        switch (st) {
+            case 'CONFIRMADO': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+            case 'PARCIAL': return 'bg-amber-100 text-amber-800 border-amber-200';
+            case 'PENDENTE': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+            case 'AGUARDA PAGAMENTO': return 'bg-slate-100 text-slate-700 border-slate-200';
+            case 'RE-VERIFICANDO': return 'bg-blue-100 text-blue-800 border-blue-200';
+            case 'SEM COMPROVATIVO': return 'bg-orange-100 text-orange-800 border-orange-200';
+            case 'COMPROVATIVO ERRADO': return 'bg-rose-100 text-rose-800 border-rose-200';
+            default: return 'bg-slate-100 text-slate-600 border-slate-200';
+        }
+    };
+
+    const banksHtml = sortedBanks.length > 0
+        ? sortedBanks.map(b => {
+            const pct = totalPaid > 0 ? ((b.amount / totalPaid) * 100) : 0;
+            const logo = getBankLogoHtml(b.name, 'w-5 h-5 rounded object-contain shrink-0');
+            const fallbackIcon = `<span class="w-5 h-5 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-black text-slate-500 shrink-0">🏦</span>`;
+            return `
+                <div class="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-slate-100 bg-white hover:border-slate-200 transition-all">
+                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                        ${logo || fallbackIcon}
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-[11px] font-black text-slate-800 uppercase truncate">${b.name}</span>
+                                <span class="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md shrink-0">${b.count} ${b.count === 1 ? 'carga' : 'cargas'}</span>
+                            </div>
+                            <div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1.5">
+                                <div class="h-full bg-emerald-500 rounded-full" style="width: ${Math.max(2, Math.min(100, pct)).toFixed(1)}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <p class="text-xs font-black text-slate-900">${formatMZN(b.amount)}</p>
+                        <p class="text-[9px] font-bold text-emerald-600">${pct.toFixed(1)}%</p>
+                    </div>
+                </div>
+            `;
+        }).join('')
+        : `<div class="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-[11px] font-bold text-slate-400 uppercase">Nenhum pagamento de Duty registado ainda.</div>`;
+
+    const statusesHtml = sortedStatuses.map(s => `
+        <div class="flex items-center justify-between gap-2 py-1.5 px-2.5 rounded-lg bg-slate-50/70 border border-slate-100 text-[10px]">
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="px-2 py-0.5 rounded-md border text-[9px] font-black uppercase ${statusBadgeClass(s.status)}">${s.status}</span>
+                <span class="text-slate-500 font-bold">${s.count} ${s.count === 1 ? 'carga' : 'cargas'}</span>
+            </div>
+            <div class="flex items-center gap-3 shrink-0 font-bold">
+                <span class="text-slate-700">${formatMZN(s.duty)}</span>
+                ${s.unpaid > 0 ? `<span class="text-rose-600 text-[9px]">(Falta ${formatMZN(s.unpaid)})</span>` : `<span class="text-emerald-600 text-[9px]">✓ Liquidado</span>`}
+            </div>
+        </div>
+    `).join('');
+
+    if (bodyEl) {
+        bodyEl.innerHTML = `
+            <!-- KPIs Principais (Duty) -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="p-3.5 rounded-2xl bg-slate-900 text-white shadow-sm">
+                    <p class="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Duty do Projeto</p>
+                    <p class="text-lg font-black mt-1 tracking-tight">${formatMZN(totalDuty)}</p>
+                    <p class="text-[9px] font-bold text-slate-300 mt-1">${uniqueClients.size} clientes • ${totalLoads} cargas</p>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
+                    <div class="flex items-center justify-between">
+                        <p class="text-[9px] font-black uppercase tracking-widest text-emerald-700">Já Pago</p>
+                        <span class="text-[10px] font-black bg-emerald-600 text-white px-2 py-0.5 rounded-full">${paidPct.toFixed(1)}%</span>
+                    </div>
+                    <p class="text-lg font-black text-emerald-900 mt-1 tracking-tight">${formatMZN(totalPaid)}</p>
+                    <p class="text-[9px] font-bold text-emerald-700 mt-1">${paidLoads} liquidadas${partialLoads > 0 ? ` • ${partialLoads} parciais` : ''}</p>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200">
+                    <div class="flex items-center justify-between">
+                        <p class="text-[9px] font-black uppercase tracking-widest text-rose-700">Ainda Por Pagar</p>
+                        <span class="text-[10px] font-black bg-rose-600 text-white px-2 py-0.5 rounded-full">${unpaidPct.toFixed(1)}%</span>
+                    </div>
+                    <p class="text-lg font-black text-rose-900 mt-1 tracking-tight">${formatMZN(totalUnpaid)}</p>
+                    <p class="text-[9px] font-bold text-rose-700 mt-1">${unpaidLoads + partialLoads} ${unpaidLoads + partialLoads === 1 ? 'carga em aberto' : 'cargas em aberto'}</p>
+                </div>
+            </div>
+
+            <!-- Barra de Progresso Geral -->
+            <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-3">
+                <div class="flex justify-between items-center text-[10px] font-black uppercase mb-1.5">
+                    <span class="text-emerald-700">Progresso de Cobrança (Duty)</span>
+                    <span class="text-slate-700">${paidPct.toFixed(1)}% Pago / ${unpaidPct.toFixed(1)}% Por Pagar</span>
+                </div>
+                <div class="w-full h-3 bg-rose-200/70 rounded-full overflow-hidden">
+                    <div class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width: ${paidPct.toFixed(1)}%"></div>
+                </div>
+            </div>
+
+            <!-- Somatório por Banco -->
+            <div>
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="text-[10px] font-black uppercase tracking-widest text-slate-500">Somatório por Banco (Onde foi pago)</h4>
+                    <span class="text-[10px] font-black text-emerald-700">Total: ${formatMZN(totalPaid)}</span>
+                </div>
+                <div class="space-y-2">
+                    ${banksHtml}
+                </div>
+            </div>
+
+            <!-- Resumo por Status -->
+            <div>
+                <h4 class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-2">Distribuição por Status</h4>
+                <div class="space-y-1.5">
+                    ${statusesHtml}
+                </div>
+            </div>
+        `;
+    }
+}
+
+export async function copyProjectReportWhatsApp() {
+    const r = window._lastProjectReport;
+    if (!r) return;
+
+    const bankLines = r.banks.length > 0
+        ? r.banks.map(b => {
+            const pct = r.totalPaid > 0 ? ((b.amount / r.totalPaid) * 100).toFixed(1) : '0.0';
+            return `• *${b.name}*: ${formatMZN(b.amount)} (${b.count} ${b.count === 1 ? 'carga' : 'cargas'} • ${pct}%)`;
+        }).join('\n')
+        : '• Nenhum pagamento registado';
+
+    const text = [
+        `📊 *RELATÓRIO DE DUTY — PROJETO ${r.projectName}*`,
+        `🗓️ _${r.generatedAt}_`,
+        ``,
+        `💰 *Total Duty:* ${formatMZN(r.totalDuty)} (${r.totalClients} clientes / ${r.totalLoads} cargas)`,
+        `✅ *Já Pago:* ${formatMZN(r.totalPaid)} (${r.paidPct.toFixed(1)}%)`,
+        `⏳ *Por Pagar:* ${formatMZN(r.totalUnpaid)} (${r.unpaidPct.toFixed(1)}%)`,
+        ``,
+        `🏦 *SOMATÓRIO POR BANCO:*`,
+        bankLines
+    ].join('\n');
+
+    if (typeof window.copyToClipboard === 'function') {
+        await window.copyToClipboard(text, 'Resumo copiado para WhatsApp!');
+    } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(text);
+        toast('Resumo copiado para WhatsApp!', 'success');
+    }
+}
+
+export function printProjectReport() {
+    const r = window._lastProjectReport;
+    if (!r) return;
+
+    const bankRows = r.banks.map(b => {
+        const pct = r.totalPaid > 0 ? ((b.amount / r.totalPaid) * 100).toFixed(1) : '0.0';
+        return `<tr><td><strong>${b.name}</strong></td><td style="text-align:center">${b.count}</td><td style="text-align:right">${pct}%</td><td style="text-align:right"><strong>${formatMZN(b.amount)}</strong></td></tr>`;
+    }).join('');
+
+    const statusRows = r.statuses.map(s => `<tr><td>${s.status}</td><td style="text-align:center">${s.count}</td><td style="text-align:right">${formatMZN(s.duty)}</td><td style="text-align:right">${formatMZN(s.unpaid)}</td></tr>`).join('');
+
+    const win = window.open('', '_blank', 'width=850,height=700');
+    if (!win) {
+        toast('Permita pop-ups para imprimir o relatório.', 'warning');
+        return;
+    }
+    win.document.write(`
+        <!DOCTYPE html>
+        <html lang="pt">
+        <head>
+            <meta charset="UTF-8">
+            <title>Relatório Duty - ${r.projectName}</title>
+            <style>
+                body { font-family: Arial, sans-serif; color: #0f172a; padding: 28px; max-width: 780px; margin: 0 auto; }
+                h1 { font-size: 20px; margin: 0 0 4px 0; text-transform: uppercase; }
+                .sub { font-size: 11px; color: #64748b; margin-bottom: 20px; }
+                .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px; }
+                .kpi { border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px; }
+                .kpi.paid { background: #ecfdf5; border-color: #a7f3d0; }
+                .kpi.unpaid { background: #fff1f2; border-color: #fecdd3; }
+                .kpi-label { font-size: 10px; font-weight: bold; text-transform: uppercase; color: #475569; }
+                .kpi-val { font-size: 18px; font-weight: 900; margin-top: 4px; }
+                h2 { font-size: 12px; text-transform: uppercase; color: #475569; margin: 20px 0 8px 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+                table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                th, td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+                th { background: #f8fafc; font-size: 10px; text-transform: uppercase; color: #64748b; }
+                tfoot td { font-weight: 900; background: #f8fafc; border-top: 2px solid #0f172a; }
+            </style>
+        </head>
+        <body>
+            <h1>Relatório Financeiro de Duty — Projeto ${r.projectName}</h1>
+            <div class="sub">Gerado em ${r.generatedAt} • ${r.totalClients} clientes / ${r.totalLoads} cargas</div>
+            <div class="kpis">
+                <div class="kpi"><div class="kpi-label">Total Duty</div><div class="kpi-val">${formatMZN(r.totalDuty)}</div></div>
+                <div class="kpi paid"><div class="kpi-label">Já Pago (${r.paidPct.toFixed(1)}%)</div><div class="kpi-val">${formatMZN(r.totalPaid)}</div></div>
+                <div class="kpi unpaid"><div class="kpi-label">Por Pagar (${r.unpaidPct.toFixed(1)}%)</div><div class="kpi-val">${formatMZN(r.totalUnpaid)}</div></div>
+            </div>
+            <h2>Somatório por Banco (Onde foi pago)</h2>
+            <table>
+                <thead><tr><th>Banco / Meio</th><th style="text-align:center">Cargas</th><th style="text-align:right">%</th><th style="text-align:right">Total Pago</th></tr></thead>
+                <tbody>${bankRows || '<tr><td colspan="4">Nenhum pagamento registado.</td></tr>'}</tbody>
+                <tfoot><tr><td>TOTAL PAGO</td><td style="text-align:center">${r.paidLoads + r.partialLoads}</td><td style="text-align:right">100%</td><td style="text-align:right">${formatMZN(r.totalPaid)}</td></tr></tfoot>
+            </table>
+            <h2>Distribuição por Status</h2>
+            <table>
+                <thead><tr><th>Status</th><th style="text-align:center">Cargas</th><th style="text-align:right">Total Duty</th><th style="text-align:right">Por Pagar</th></tr></thead>
+                <tbody>${statusRows}</tbody>
+            </table>
+            <script>window.onload = function() { window.print(); };</script>
+        </body>
+        </html>
+    `);
+    win.document.close();
+}
+
+window.openProjectReportModal = openProjectReportModal;
+window.copyProjectReportWhatsApp = copyProjectReportWhatsApp;
+window.printProjectReport = printProjectReport;
