@@ -3,7 +3,7 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js?v=20261123_01';
+import * as ui from './ui.js?v=20261124_01';
 import * as etaUi from './etaUi.js?v=20261113_01';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
@@ -13,6 +13,8 @@ const { state, pb } = api;
 // --- EXPOSIÇÃO GLOBAL (Compatibilidade com onclick no HTML) ---
 window.ui = ui;
 window.api = api;
+window.state = state;
+window.pb = pb;
 window.printService = printService;
 window.printDeliveryNote = ui.printDeliveryNote;
 window.directPrintDeliveryNote = ui.directPrintDeliveryNote;
@@ -151,6 +153,7 @@ window.autoOpenClientFolder = autoOpenClientFolder;
 window.handleCreateFolder = handleCreateFolder;
 window.handleFileUpload = handleFileUpload;
 window.triggerFileUpload = triggerFileUpload;
+window.prepareConfirmSupportUpload = prepareConfirmSupportUpload;
 window.triggerConfirmSupportUpload = triggerConfirmSupportUpload;
 window.openAddConfirmArticleModal = openAddConfirmArticleModal;
 window.submitAddConfirmArticle = submitAddConfirmArticle;
@@ -1900,10 +1903,34 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
     ui.setLoader(true);
     currentProjectSheetId = sheetId; // Guardar para recarregar depois
     
+    if (!state.confirm) state.confirm = {};
+    state.confirm.sheetId = sheetId;
+    state.confirm.projectName = projectName;
+
+    // Se folderId não foi fornecido ou veio vazio, tentar resolver pelo projeto
+    if (!folderId) {
+        const found = state.confirm.projects?.find(x => x.sheetId === sheetId || x.id === sheetId || x.name === projectName);
+        if (found && found.folderId) {
+            folderId = found.folderId;
+        } else {
+            try {
+                const list = await pb.collection('confirm_projects').getFullList({ filter: `sheetId = "${sheetId}" || name = "${projectName}"` });
+                if (list && list.length > 0 && list[0].folderId) {
+                    folderId = list[0].folderId;
+                }
+            } catch (e) {
+                console.warn("[SELECT-PROJECT] Erro ao buscar folderId:", e);
+            }
+        }
+    }
+
+    state.confirm.folderId = folderId || '';
+    currentProjectRootFolderId = folderId || '';
+    driveHistory = folderId ? [folderId] : [];
+
     // Atualizar título da página
     const nameEl = document.getElementById('confirm-project-active-name');
     if (nameEl) nameEl.innerText = projectName;
-    if (state.confirm) state.confirm.projectName = projectName;
 
     try {
         const projectRecord = state.confirm?.projects?.find(x => x.sheetId === sheetId);
@@ -1989,16 +2016,19 @@ async function selectConfirmProject(sheetId, folderId, projectName = "CONFIRM") 
         startGSheetPolling(sheetId);
         
         // Configura o explorador de Drive
-        currentProjectRootFolderId = folderId;
-        driveHistory = [folderId]; 
+        currentProjectRootFolderId = folderId || state.confirm?.folderId || currentProjectRootFolderId;
+        state.confirm.folderId = currentProjectRootFolderId;
+        driveHistory = currentProjectRootFolderId ? [currentProjectRootFolderId] : []; 
         ui.showView('view-confirm-table');
         
         // Carregar cache de pastas em background para abertura instantânea depois
         projectFoldersCache = null;
-        api.listGDriveFiles(folderId).then(files => {
-            projectFoldersCache = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
-            console.log(`[CACHE] ${projectFoldersCache.length} pastas mapeadas para este projeto.`);
-        }).catch(err => console.error("Erro ao carregar cache de pastas:", err));
+        if (currentProjectRootFolderId) {
+            api.listGDriveFiles(currentProjectRootFolderId).then(files => {
+                projectFoldersCache = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+                console.log(`[CACHE] ${projectFoldersCache.length} pastas mapeadas para este projeto.`);
+            }).catch(err => console.error("Erro ao carregar cache de pastas:", err));
+        }
 
         // Carrega o drive explorer somente ao abrir um cliente (autoOpenClientFolder cuidará disso)
         // if (folderId && folderId.trim() !== "") {
@@ -2339,11 +2369,17 @@ async function submitAddConfirmClient(e) {
 
 
 async function autoOpenClientFolder(clientCode, clientName, force = false) {
-    const rootId = currentProjectRootFolderId || api.state.confirm?.folderId;
+    let rootId = currentProjectRootFolderId || api.state.confirm?.folderId;
+    if (!rootId && api.state.confirm?.sheetId) {
+        const found = api.state.confirm?.projects?.find(p => p.sheetId === api.state.confirm.sheetId || p.name === api.state.confirm.projectName);
+        if (found && found.folderId) rootId = found.folderId;
+    }
     if (!rootId) {
         ui.renderDriveError("Pasta raiz do projeto não configurada no Google Drive.");
         return;
     }
+    currentProjectRootFolderId = rootId;
+    if (api.state.confirm) api.state.confirm.folderId = rootId;
 
     // Função de normalização/canonicalização para correspondência ultra-robusta de nomes
     const canonicalize = (str) => {
@@ -2462,19 +2498,22 @@ async function handleCreateFolder(name, parentId) {
     }
 }
 
-function triggerConfirmSupportUpload() {
+function prepareConfirmSupportUpload(folderId = null) {
+    const input = document.getElementById('input-confirm-drive-upload');
+    if (!input) return;
     const driveIdInput = document.getElementById('input-confirm-drive-id');
-    const folderId = (driveIdInput ? driveIdInput.value.trim() : '') || (api.state.confirm?.activeClientFolderId || '');
-    triggerFileUpload(folderId);
+    const targetFolderId = folderId || (driveIdInput ? driveIdInput.value.trim() : '') || (api.state.confirm?.activeClientFolderId || '');
+    input.dataset.parentId = targetFolderId || '';
+    input.value = ''; // Reset para disparar onchange mesmo se selecionar o mesmo ficheiro
+    input.click();
+}
+
+function triggerConfirmSupportUpload(folderId = null) {
+    prepareConfirmSupportUpload(folderId);
 }
 
 function triggerFileUpload(folderId = null) {
-    const input = document.getElementById('input-confirm-drive-upload');
-    if (input) {
-        input.dataset.parentId = folderId || '';
-        input.value = ''; // Reset para disparar onchange mesmo se selecionar o mesmo ficheiro
-        input.click();
-    }
+    triggerConfirmSupportUpload(folderId);
 }
 
 async function handleFileUpload(input) {
@@ -2483,7 +2522,22 @@ async function handleFileUpload(input) {
 
     let parentId = input.dataset.parentId || document.getElementById('input-confirm-drive-id')?.value?.trim() || api.state.confirm?.activeClientFolderId;
     const client = window.currentActiveClient;
-    const rootId = currentProjectRootFolderId || api.state.confirm?.folderId;
+    let rootId = currentProjectRootFolderId || api.state.confirm?.folderId;
+    if (!rootId && api.state.confirm?.sheetId) {
+        const found = api.state.confirm?.projects?.find(p => p.sheetId === api.state.confirm.sheetId || p.name === api.state.confirm.projectName);
+        if (found && found.folderId) rootId = found.folderId;
+    }
+    if (!rootId && api.state.confirm?.sheetId) {
+        try {
+            const pbProj = await api.pb.collection('confirm_projects').getFirstListItem(`sheetId = "${api.state.confirm.sheetId}" || name = "${api.state.confirm?.projectName || ''}"`);
+            if (pbProj && pbProj.folderId) rootId = pbProj.folderId;
+        } catch (_) {}
+    }
+
+    if (rootId) {
+        currentProjectRootFolderId = rootId;
+        if (api.state.confirm) api.state.confirm.folderId = rootId;
+    }
 
     ui.setLoader(true, "A preparar envio de ficheiros...");
 
@@ -2656,11 +2710,13 @@ async function openDriveExplorer(folderId = null, isBack = false) {
         ui.renderDriveFiles(files, id);
     } catch (err) { 
         console.error("Erro ao carregar Drive:", err);
-        if (err.message.includes('AUTH_REQUIRED')) {
-            ui.toast("Sessão Google expirada ou não autorizada. Por favor, re-autorize a aplicação.", "error");
-            window.location.href = '/api/google/auth';
+        const errMsg = err.message || '';
+        const isAuth = err.isAuth || errMsg.includes('AUTH_REQUIRED') || errMsg.includes('invalid_grant');
+        ui.renderDriveError(isAuth ? "Sessão Google expirada ou inválida." : (errMsg || "Erro ao aceder à pasta do Drive."), null, currentProjectRootFolderId || api.state.confirm?.folderId);
+        if (isAuth) {
+            ui.toast("Sessão Google expirada. Por favor, reconecte a conta Google.", "error");
         } else {
-            ui.toast("Não foi possível aceder à pasta. Verifique se o ID está correto e se autorizou o acesso à sua conta Google.", "error");
+            ui.toast("Não foi possível aceder à pasta. Verifique se autorizou o acesso à sua conta Google.", "error");
         }
     }
 }

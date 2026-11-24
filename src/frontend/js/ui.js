@@ -6854,8 +6854,8 @@ export function renderDriveFiles(files, currentFolderId, containerId = 'confirm-
         container.innerHTML = `
             <div class="p-8 text-center">
                 <p class="text-gray-400 italic mb-4">Nenhum ficheiro encontrado nesta pasta.</p>
-                <button onclick="window.triggerConfirmSupportUpload('${currentFolderId}')" 
-                    class="bg-black text-white px-4 py-2 rounded-xl font-bold uppercase text-[9px] tracking-widest hover:bg-gray-800 transition-all flex items-center justify-center gap-2 mx-auto">
+                <button type="button" onclick="window.triggerConfirmSupportUpload('${currentFolderId}')" 
+                    class="bg-black text-white px-4 py-2 rounded-xl font-bold uppercase text-[9px] tracking-widest hover:bg-gray-800 transition-all flex items-center justify-center gap-2 mx-auto cursor-pointer select-none">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                     ADICIONAR SUPORTE
                 </button>
@@ -12409,7 +12409,8 @@ export function vincularPagamentoArmazem() {
         return;
     }
     const client = window.currentActiveClient;
-    const container = document.getElementById('armazem-form-container') || document;
+    const container = document.getElementById('armazem-form-container');
+    if (!container) return;
     const payInput = container.querySelector('#input-storage-pay-amount');
     const isExempt = Boolean(container.querySelector('#check-has-isencao')?.checked || window.currentClientStorageInfo?.isExempt);
     if (isExempt) {
@@ -12760,7 +12761,8 @@ export function fillSameClientData() {
         return;
     }
 
-    const container = document.getElementById('armazem-form-container') || document;
+    const container = document.getElementById('armazem-form-container');
+    if (!container) return;
     const deliverToInput = container.querySelector('input[name="deliverTo"]');
     const contactoInput = container.querySelector('input[name="contacto"]');
 
@@ -12831,7 +12833,8 @@ export function toggleIsencao(checkbox) {
         if (checkbox) checkbox.checked = !checkbox.checked;
         return;
     }
-    const container = document.getElementById('armazem-form-container') || document;
+    const container = document.getElementById('armazem-form-container');
+    if (!container) return;
     const isencaoFields = container.querySelector('#isencao-fields-container');
     const isencaoHint = container.querySelector('#isencao-active-hint');
     const motivoSelect = container.querySelector('#select-isencao');
@@ -12867,7 +12870,8 @@ window.toggleIsencao = toggleIsencao;
 
 export function handleIsencaoChange(selectEl) {
     if (!requireProjectDischargeDate()) return;
-    const container = document.getElementById('armazem-form-container') || document;
+    const container = document.getElementById('armazem-form-container');
+    if (!container) return;
     const motivoInput = container.querySelector('input[name="motivoIsencao"]');
     if (!motivoInput) return;
 
@@ -12884,7 +12888,8 @@ window.handleIsencaoChange = handleIsencaoChange;
 
 export function resetStorageAmount() {
     if (!requireProjectDischargeDate()) return;
-    const container = document.getElementById('armazem-form-container') || document;
+    const container = document.getElementById('armazem-form-container');
+    if (!container) return;
     const input = container.querySelector('#input-storage-pay-amount');
     if (input) {
         const standard = input.getAttribute('data-standard-cost') || '0';
@@ -12896,7 +12901,8 @@ export function resetStorageAmount() {
 window.resetStorageAmount = resetStorageAmount;
 
 export function updateArmazemCalculations() {
-    const container = document.getElementById('armazem-form-container') || document;
+    const container = document.getElementById('armazem-form-container');
+    if (!container) return;
     const isencaoCheckbox = container.querySelector('#check-has-isencao');
     const isencaoFields = container.querySelector('#isencao-fields-container');
     const isencaoHint = container.querySelector('#isencao-active-hint');
