@@ -405,6 +405,10 @@ export function showView(viewId) {
  * Fecha um modal por ID
  */
 export function closeModal(id) {
+    if (id === 'modal-file-preview' && typeof window._cleanupPreviewInteractions === 'function') {
+        window._cleanupPreviewInteractions();
+        window._cleanupPreviewInteractions = null;
+    }
     const el = document.getElementById(id);
     if (el) el.classList.add('hidden');
 }
@@ -7450,14 +7454,24 @@ export function showFilePreview(file) {
     const filenameEl = document.getElementById('preview-filename');
     const downloadLink = document.getElementById('preview-download-link');
     const zoomControls = document.getElementById('preview-zoom-controls');
+    const zoomHint = document.getElementById('preview-zoom-hint');
 
     if (!modal || !content || !filenameEl) return;
 
+    // Limpar listeners anteriores do visualizador para evitar duplicação
+    if (typeof window._cleanupPreviewInteractions === 'function') {
+        window._cleanupPreviewInteractions();
+        window._cleanupPreviewInteractions = null;
+    }
+
     filenameEl.innerText = file.name;
     if (downloadLink) downloadLink.href = `/api/google/drive/file/${file.id}`;
-    content.innerHTML = '<div class="text-xs font-bold animate-pulse">A CARREGAR PRÉ-VISUALIZAÇÃO...</div>';
+    content.innerHTML = '<div class="w-full h-full flex items-center justify-center"><div class="text-xs font-bold animate-pulse text-slate-500">A CARREGAR PRÉ-VISUALIZAÇÃO...</div></div>';
+    content.scrollLeft = 0;
+    content.scrollTop = 0;
 
     if (zoomControls) zoomControls.classList.add('hidden');
+    if (zoomHint) zoomHint.classList.add('hidden');
 
     openModal('modal-file-preview');
 
@@ -7468,21 +7482,112 @@ export function showFilePreview(file) {
     if (isImage) {
         const imgUrl = `/api/google/drive/file/${file.id}`;
         content.innerHTML = `
-            <div id="preview-img-wrapper" class="flex items-center justify-center w-full h-full p-4" style="width: 100%; height: 100%;">
-                <img id="preview-img-zoom" src="${imgUrl}" class="max-w-full max-h-full object-contain rounded-lg shadow-lg transition-transform duration-200" style="transform: scale(1.0); transform-origin: center;" crossorigin="anonymous">
+            <div id="preview-img-wrapper" style="min-width: 100%; min-height: 100%; width: max-content; height: max-content; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box;">
+                <img id="preview-img-zoom" src="${imgUrl}" draggable="false" class="rounded-lg shadow-lg select-none" style="display: block; max-width: 100%; max-height: 100%; cursor: zoom-in;" crossorigin="anonymous">
             </div>
         `;
         window.imgZoomScale = 1.0;
+        window.previewImgBaseWidth = 0;
+        window.previewImgBaseHeight = 0;
+
         if (zoomControls) {
             zoomControls.classList.remove('hidden');
             const zoomLevelEl = document.getElementById('preview-zoom-level');
             if (zoomLevelEl) zoomLevelEl.innerText = "100%";
         }
+        if (zoomHint) zoomHint.classList.remove('hidden');
+
+        const img = document.getElementById('preview-img-zoom');
+        if (img) {
+            const initBaseSize = () => {
+                if (!img.naturalWidth || !img.naturalHeight) return;
+                const availW = Math.max(240, content.clientWidth - 40);
+                const availH = Math.max(240, content.clientHeight - 40);
+                const fitRatio = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
+                window.previewImgBaseWidth = Math.max(100, Math.round(img.naturalWidth * fitRatio));
+                window.previewImgBaseHeight = Math.max(100, Math.round(img.naturalHeight * fitRatio));
+                img.style.maxWidth = 'none';
+                img.style.maxHeight = 'none';
+                img.style.width = `${window.previewImgBaseWidth}px`;
+                img.style.height = `${window.previewImgBaseHeight}px`;
+                window.imgZoomScale = 1.0;
+                content.scrollLeft = 0;
+                content.scrollTop = 0;
+            };
+
+            if (img.complete && img.naturalWidth > 0) {
+                requestAnimationFrame(initBaseSize);
+            } else {
+                img.onload = () => requestAnimationFrame(initBaseSize);
+            }
+
+            // Zoom com a roda do rato centrado no cursor
+            const onWheel = (e) => {
+                if (!document.getElementById('preview-img-zoom')) return;
+                e.preventDefault();
+                const factor = e.deltaY < 0 ? 1.15 : (1 / 1.15);
+                setPreviewZoom((window.imgZoomScale || 1.0) * factor, e.clientX, e.clientY);
+            };
+
+            // Duplo clique para alternar rapidamente entre 100% e 220%
+            const onDblClick = (e) => {
+                if ((window.imgZoomScale || 1.0) <= 1.05) {
+                    setPreviewZoom(2.2, e.clientX, e.clientY);
+                } else {
+                    resetZoomImage();
+                }
+            };
+
+            // Arrastar com o rato (Pan) para percorrer todo o documento em zoom
+            let isDragging = false;
+            let startX = 0;
+            let startY = 0;
+            let startScrollLeft = 0;
+            let startScrollTop = 0;
+
+            const onMouseDown = (e) => {
+                if (e.button !== 0) return;
+                if (content.scrollWidth <= content.clientWidth && content.scrollHeight <= content.clientHeight) return;
+                isDragging = true;
+                startX = e.clientX;
+                startY = e.clientY;
+                startScrollLeft = content.scrollLeft;
+                startScrollTop = content.scrollTop;
+                img.style.cursor = 'grabbing';
+                e.preventDefault();
+            };
+
+            const onMouseMove = (e) => {
+                if (!isDragging) return;
+                content.scrollLeft = startScrollLeft - (e.clientX - startX);
+                content.scrollTop = startScrollTop - (e.clientY - startY);
+            };
+
+            const onMouseUp = () => {
+                if (!isDragging) return;
+                isDragging = false;
+                img.style.cursor = (window.imgZoomScale || 1.0) > 1.01 ? 'grab' : 'zoom-in';
+            };
+
+            content.addEventListener('wheel', onWheel, { passive: false });
+            img.addEventListener('dblclick', onDblClick);
+            content.addEventListener('mousedown', onMouseDown);
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+
+            window._cleanupPreviewInteractions = () => {
+                content.removeEventListener('wheel', onWheel);
+                img.removeEventListener('dblclick', onDblClick);
+                content.removeEventListener('mousedown', onMouseDown);
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
+            };
+        }
     } else if (isPDF) {
         // Para PDFs, usamos o endpoint local para que o browser utilize o seu visualizador nativo.
-        // O visualizador nativo (Chrome/Edge/Firefox) permite selecionar e copiar texto.
+        // O visualizador nativo (Chrome/Edge/Firefox) permite selecionar e copiar texto, zoom com Ctrl+Scroll e scroll completo.
         const fileUrl = `/api/google/drive/file/${file.id}`;
-        content.innerHTML = `<iframe src="${fileUrl}" class="w-full h-full border-0 rounded-lg shadow-lg bg-white"></iframe>`;
+        content.innerHTML = `<iframe src="${fileUrl}" class="w-full h-full border-0 bg-white block"></iframe>`;
     } else if (isMD) {
         const fileUrl = `/api/google/drive/file/${file.id}`;
         content.innerHTML = `<div class="p-10 flex justify-center items-center h-full w-full bg-[#efeae2] rounded-lg"><div class="animate-pulse font-bold text-gray-500">A processar formato WhatsApp...</div></div>`;
@@ -7524,45 +7629,90 @@ export function showFilePreview(file) {
     }
 }
 
-// Controle de Zoom na Imagem
+// Controle de Zoom na Imagem (Layout Real + Scroll Completo + Zoom no Cursor)
 window.imgZoomScale = 1.0;
+window.previewImgBaseWidth = 0;
+window.previewImgBaseHeight = 0;
+
+export function setPreviewZoom(newScale, focalClientX = null, focalClientY = null) {
+    const img = document.getElementById('preview-img-zoom');
+    const content = document.getElementById('preview-content');
+    const zoomLevelEl = document.getElementById('preview-zoom-level');
+    if (!img || !content) return;
+
+    // Garantir dimensões base caso a imagem tenha carregado antes do cálculo
+    if (!window.previewImgBaseWidth || !window.previewImgBaseHeight) {
+        if (img.naturalWidth && img.naturalHeight) {
+            const availW = Math.max(240, content.clientWidth - 40);
+            const availH = Math.max(240, content.clientHeight - 40);
+            const fitRatio = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
+            window.previewImgBaseWidth = Math.max(100, Math.round(img.naturalWidth * fitRatio));
+            window.previewImgBaseHeight = Math.max(100, Math.round(img.naturalHeight * fitRatio));
+        } else {
+            window.previewImgBaseWidth = img.clientWidth || 600;
+            window.previewImgBaseHeight = img.clientHeight || 400;
+        }
+    }
+
+    const prevScale = window.imgZoomScale || 1.0;
+    const clampedScale = Math.max(0.25, Math.min(6.0, newScale));
+    if (Math.abs(clampedScale - prevScale) < 0.001) return;
+
+    const rect = content.getBoundingClientRect();
+    const relX = focalClientX !== null ? (focalClientX - rect.left) : (content.clientWidth / 2);
+    const relY = focalClientY !== null ? (focalClientY - rect.top) : (content.clientHeight / 2);
+
+    const prevScrollW = content.scrollWidth;
+    const prevScrollH = content.scrollHeight;
+    const contentX = content.scrollLeft + relX;
+    const contentY = content.scrollTop + relY;
+    const ratioX = prevScrollW > 0 ? (contentX / prevScrollW) : 0.5;
+    const ratioY = prevScrollH > 0 ? (contentY / prevScrollH) : 0.5;
+
+    window.imgZoomScale = clampedScale;
+    img.style.maxWidth = 'none';
+    img.style.maxHeight = 'none';
+    img.style.width = `${Math.round(window.previewImgBaseWidth * clampedScale)}px`;
+    img.style.height = `${Math.round(window.previewImgBaseHeight * clampedScale)}px`;
+    img.style.cursor = clampedScale > 1.01 ? 'grab' : 'zoom-in';
+
+    // Reposicionar scroll mantendo o ponto sob o cursor fixo
+    const nextScrollW = content.scrollWidth;
+    const nextScrollH = content.scrollHeight;
+    content.scrollLeft = Math.max(0, Math.round(ratioX * nextScrollW - relX));
+    content.scrollTop = Math.max(0, Math.round(ratioY * nextScrollH - relY));
+
+    if (zoomLevelEl) {
+        zoomLevelEl.innerText = `${Math.round(clampedScale * 100)}%`;
+    }
+}
 
 export function zoomImage(delta) {
-    const img = document.getElementById('preview-img-zoom');
-    const wrapper = document.getElementById('preview-img-wrapper');
-    const zoomLevelEl = document.getElementById('preview-zoom-level');
-    if (!img || !wrapper) return;
-
-    window.imgZoomScale = Math.max(0.4, Math.min(4.0, window.imgZoomScale + delta));
-    
-    // Atualizar transform scale na imagem
-    img.style.transform = `scale(${window.imgZoomScale})`;
-    
-    // Ajustar o tamanho do wrapper para habilitar scroll no container overflow-auto
-    if (window.imgZoomScale > 1.0) {
-        wrapper.style.width = `${100 * window.imgZoomScale}%`;
-        wrapper.style.height = `${100 * window.imgZoomScale}%`;
-    } else {
-        wrapper.style.width = '100%';
-        wrapper.style.height = '100%';
-    }
-    
-    if (zoomLevelEl) {
-        zoomLevelEl.innerText = `${Math.round(window.imgZoomScale * 100)}%`;
-    }
+    setPreviewZoom((window.imgZoomScale || 1.0) + delta);
 }
 
 export function resetZoomImage() {
     const img = document.getElementById('preview-img-zoom');
-    const wrapper = document.getElementById('preview-img-wrapper');
+    const content = document.getElementById('preview-content');
     const zoomLevelEl = document.getElementById('preview-zoom-level');
-    if (!img || !wrapper) return;
+    if (!img || !content) return;
 
     window.imgZoomScale = 1.0;
-    img.style.transform = 'scale(1.0)';
-    wrapper.style.width = '100%';
-    wrapper.style.height = '100%';
-    
+    if (window.previewImgBaseWidth && window.previewImgBaseHeight) {
+        img.style.maxWidth = 'none';
+        img.style.maxHeight = 'none';
+        img.style.width = `${window.previewImgBaseWidth}px`;
+        img.style.height = `${window.previewImgBaseHeight}px`;
+    } else {
+        img.style.width = '';
+        img.style.height = '';
+        img.style.maxWidth = '100%';
+        img.style.maxHeight = '100%';
+    }
+    img.style.cursor = 'zoom-in';
+    content.scrollLeft = 0;
+    content.scrollTop = 0;
+
     if (zoomLevelEl) {
         zoomLevelEl.innerText = '100%';
     }

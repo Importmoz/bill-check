@@ -17,10 +17,11 @@
         </button>
     </div>
 <div id="modal-file-preview" class="modal-bg fixed inset-0 z-[150] hidden flex items-center justify-center p-4 backdrop-blur-md">
-        <div class="bg-white w-full max-w-4xl h-[90vh] rounded-3xl shadow-2xl border border-gray-200 text-black flex flex-col overflow-hidden scale-in">
+        <div class="bg-white w-[96vw] max-w-6xl h-[92vh] rounded-3xl shadow-2xl border border-gray-200 text-black flex flex-col overflow-hidden scale-in">
             <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
                 <h3 id="preview-filename" class="font-black uppercase text-xs truncate pr-4 text-gray-700">PRÉ-VISUALIZAÇÃO</h3>
-                <div class="flex gap-2">
+                <div class="flex items-center gap-2 shrink-0">
+                    <span id="preview-zoom-hint" class="hidden md:inline-block text-[9px] font-bold text-slate-400 bg-white border border-slate-200 px-2 py-1 rounded-lg select-none">Roda do rato: Zoom • Arraste ou use scroll</span>
                     <!-- Controles de Zoom (Apenas para imagens) -->
                     <div id="preview-zoom-controls" class="hidden flex items-center gap-1 border border-gray-200 bg-white rounded-xl p-1 shadow-sm">
                         <button onclick="ui.zoomImage(-0.2)" class="p-1.5 hover:bg-gray-100 rounded-lg text-gray-600 transition-colors" title="Diminuir Zoom">
@@ -41,7 +42,7 @@
                     <button onclick="closeModal('modal-file-preview')" class="bg-white border border-gray-200 px-4 py-2 rounded-xl font-bold hover:bg-red-50 hover:text-red-600 transition-all text-xs">✕</button>
                 </div>
             </div>
-            <div id="preview-content" class="flex-1 bg-gray-100 flex items-center justify-center overflow-auto p-4">
+            <div id="preview-content" class="flex-1 bg-gray-100 overflow-auto relative">
                 <!-- Conteúdo do ficheiro será inserido aqui -->
             </div>
         </div>
