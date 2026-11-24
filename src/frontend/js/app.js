@@ -3,7 +3,7 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js?v=20261124_06';
+import * as ui from './ui.js?v=20261124_07';
 import * as etaUi from './etaUi.js?v=20261113_01';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
@@ -271,8 +271,6 @@ async function handleLogin() {
 
 function handleLogout() {
     api.logout();
-    const btn = document.getElementById('btn-global-news');
-    if (btn) btn.remove();
     ui.showView('view-login');
 }
 
@@ -318,9 +316,6 @@ async function showHub() {
                     settingsCard.classList.add('hidden');
                 }
             }
-        }
-        if (window.__SYSTEM_VERSION__) {
-            ui.checkAndShowNewsIcon(window.__SYSTEM_VERSION__);
         }
     } catch (err) {
         console.error(err);
@@ -3761,11 +3756,6 @@ async function checkSystemVersion() {
                 // Primeira verificação na carga da página
                 loadedSystemVersion = currentVersion;
                 console.log(`[VERSÃO] Versão inicial do sistema carregada: ${loadedSystemVersion}`);
-                
-                // Mostrar ícone de novidades se já estiver logado
-                if (api.pb && api.pb.authStore && api.pb.authStore.isValid) {
-                    ui.checkAndShowNewsIcon(currentVersion);
-                }
             } else if (loadedSystemVersion !== currentVersion) {
                 // Versão mudou! Mostrar alerta de atualização
                 showSystemUpdateNotification(currentVersion, updates);
