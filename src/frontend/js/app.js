@@ -3,7 +3,7 @@
  */
 import { initializeApp } from './init.js';
 import * as api from './api.js';
-import * as ui from './ui.js?v=20261124_05';
+import * as ui from './ui.js?v=20261124_06';
 import * as etaUi from './etaUi.js?v=20261113_01';
 import * as utils from './utils.js';
 import { printService } from './printService.js';
@@ -3418,17 +3418,25 @@ let gsheetPollingActive = false;
 function startGSheetPolling(spreadsheetId) {
     stopGSheetPolling();
     gsheetPollingActive = false;
-    
-    console.log(`[POLLING] Iniciando verificação de atualizações para o GSheet: ${spreadsheetId}`);
+
+    const setLiveBadgeState = (active) => {
+        ['confirm-live-badge', 'confirm-client-live-badge'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (active) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        });
+    };
+    setLiveBadgeState(true);
+
+    console.log(`[POLLING] Iniciando sincronização em tempo real por Hash para o GSheet: ${spreadsheetId}`);
     gsheetPollingInterval = setInterval(async () => {
-        if (gsheetPollingActive) {
-            console.log("[POLLING] Ignorando verificação: leitura anterior ainda activa.");
-            return;
-        }
+        if (gsheetPollingActive) return;
+        if (document.visibilityState !== 'visible') return;
 
         const isConfirmTableVisible = !document.getElementById('view-confirm-table')?.classList.contains('hidden');
         const isClientDetailVisible = !document.getElementById('view-confirm-client-detail')?.classList.contains('hidden');
-        
+
         if (!isConfirmTableVisible && !isClientDetailVisible) {
             return;
         }
@@ -3440,91 +3448,121 @@ function startGSheetPolling(spreadsheetId) {
 
         try {
             gsheetPollingActive = true;
-            
-            const lastTime = api.state.confirm.lastModifiedTime;
-            const res = await fetch('/api/google/sheet/check-update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ spreadsheetId, lastModifiedTime: lastTime })
-            });
-            if (res.ok) {
-                const checkData = await res.json();
-                console.log(`[POLLING-DEBUG] lastTime enviado: ${lastTime} | Drive modifiedTime: ${checkData.modifiedTime} | updated: ${checkData.updated}`);
-                
-                // Se estávamos offline ou com alterações pendentes e o Google Sheets respondeu, sincronizar automaticamente!
-                if (api.state.confirm.hasPendingSync) {
-                    console.log("[POLLING] Google Sheets reconectado! Sincronizando alterações pendentes do PocketBase...");
-                    try {
-                        await api.syncPendingChangesToGSheet();
-                        ui.toast("Google Sheets reconectado! Alterações sincronizadas com sucesso. ✅", "success");
-                    } catch (syncErr) {
-                        console.warn("[POLLING] Erro ao sincronizar automaticamente com Google Sheets:", syncErr.message);
-                    }
-                }
 
-                if (checkData.updated) {
-                    console.log(`[POLLING] Planilha modificada externamente! Novo modifiedTime: ${checkData.modifiedTime}. Recarregando silenciosamente...`);
-                    
-                    // Sincronizar o lastModifiedTime local de imediato para evitar que a próxima iteração use a data antiga
-                    api.state.confirm.lastModifiedTime = checkData.modifiedTime;
-                    
-                    const projectRecord = api.state.confirm?.projects?.find(x => x.id === api.state.confirm.projectId) || spreadsheetId;
-                    const freshData = await api.readGSheet(projectRecord, 'A1:AZ1000', true);
-                    
-                    // Atualiza a tabela principal se activa
-                    if (isConfirmTableVisible) {
-                        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
-                        const searchEl = document.getElementById('input-confirm-search');
-                        const searchText = searchEl?.value || '';
-                        ui.renderConfirmList(freshData, searchText, statusFilter);
-                    }
-                    
-                    // Se estiver no detalhe do cliente ativo, atualiza suas ordens
-                    if (isClientDetailVisible && window.currentActiveClient) {
-                        const clientIndex = window.currentActiveClientIndex;
-                        const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
-                        const searchEl = document.getElementById('input-confirm-search');
-                        const searchText = searchEl?.value || '';
-                        ui.renderConfirmList(freshData, searchText, statusFilter);
-                        
-                        const freshClient = api.state.confirm.groupedClients?.find(c => 
-                            (c.groupId && window.currentActiveClient.groupId && c.groupId === window.currentActiveClient.groupId) || 
-                            (c.displayIdCode && c.displayIdCode === window.currentActiveClient.displayIdCode)
-                        );
-                        if (freshClient) {
-                            console.log("[POLLING] Comparando e atualizando pontualmente faturas do cliente ativo:", freshClient.groupId);
-                            
-                            // Atualizar apenas as faturas/ordens que sofreram alterações reais no GSheet
-                            if (window.currentActiveClient.rows && freshClient.rows) {
-                                freshClient.rows.forEach(newRow => {
-                                    const oldRow = window.currentActiveClient.rows.find(r => r.originalIndex === newRow.originalIndex);
-                                    if (oldRow) {
-                                        const hasChanged = JSON.stringify(oldRow.originalRow) !== JSON.stringify(newRow.originalRow);
-                                        if (hasChanged) {
-                                            console.log(`[POLLING] Linha ${newRow.originalIndex} modificada. Atualizando suavemente no DOM.`);
-                                            ui.updateConfirmDetailRow(newRow.originalIndex, newRow.originalRow);
-                                        }
-                                    }
-                                });
-                            }
-                            
-                            // Manter a referência sincronizada na memória
-                            window.currentActiveClient = freshClient;
-                        }
-                    }
-                }
-            } else {
-                console.warn(`[POLLING] Falha na resposta da API check-update. Status: ${res.status}`);
-                if (res.status === 401) {
-                    window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
+            // Se estávamos offline com alterações pendentes, tentar sincronizar primeiro
+            if (api.state.confirm.hasPendingSync) {
+                try {
+                    await api.syncPendingChangesToGSheet();
+                    ui.toast("Google Sheets reconectado! Alterações sincronizadas com sucesso. ✅", "success");
+                } catch (syncErr) {
+                    console.warn("[POLLING] Erro ao sincronizar automaticamente com Google Sheets:", syncErr.message);
                 }
             }
+
+            const res = await fetch('/api/google/sheet/poll', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                cache: 'no-store',
+                body: JSON.stringify({
+                    spreadsheetId,
+                    range: 'A1:AZ1000',
+                    lastHash: api.state.confirm.lastSheetHash || null
+                })
+            });
+
+            if (res.ok) {
+                const pollData = await res.json();
+                if (!api.state.confirm.lastSheetHash && pollData.hash) {
+                    api.state.confirm.lastSheetHash = pollData.hash;
+                }
+
+                if (pollData.changed && Array.isArray(pollData.values)) {
+                    console.log(`[POLLING] Alteração detetada em tempo real no GSheet (hash: ${pollData.hash.slice(0, 8)}). Atualizando UI...`);
+
+                    const prevScrollY = window.scrollY;
+                    api.state.confirm.lastSheetHash = pollData.hash;
+                    api.state.confirm.data = pollData.values;
+                    api.state.confirm.notes = pollData.notes || [];
+                    if (pollData.range) api.state.confirm.range = pollData.range;
+                    if (pollData.values.length > 0) api.state.confirm.columns = pollData.values[0];
+
+                    const statusFilter = document.getElementById('confirm-status-filter')?.value || 'PENDENTE';
+                    const searchText = document.getElementById('input-confirm-search')?.value || '';
+
+                    // Atualiza a lista do projeto (view-confirm-table) e reconstrói groupedClients
+                    ui.renderConfirmList(pollData.values, searchText, statusFilter);
+
+                    if (isConfirmTableVisible) {
+                        window.scrollTo(0, prevScrollY);
+                    }
+
+                    // Se estiver dentro de um cliente, atualiza linhas modificadas, novas, removidas, notas e card de totais
+                    if (isClientDetailVisible && window.currentActiveClient) {
+                        const freshClient = api.state.confirm.groupedClients?.find(c =>
+                            (c.groupId && window.currentActiveClient.groupId && c.groupId === window.currentActiveClient.groupId) ||
+                            (c.displayIdCode && c.displayIdCode === window.currentActiveClient.displayIdCode)
+                        );
+
+                        if (freshClient) {
+                            const oldRows = window.currentActiveClient.rows || [];
+                            const newRows = freshClient.rows || [];
+                            const oldIndexSig = oldRows.map(r => r.originalIndex).join(',');
+                            const newIndexSig = newRows.map(r => r.originalIndex).join(',');
+
+                            if (oldIndexSig !== newIndexSig) {
+                                // Foram adicionadas ou removidas cargas/linhas para este cliente: re-renderizar mantendo Suportes/Armazém intactos
+                                console.log(`[POLLING] Linhas do cliente alteradas (${oldRows.length} -> ${newRows.length}). Re-renderizando detalhe suavemente.`);
+                                await ui.showConfirmDetail(freshClient, window.currentActiveClientIndex);
+                            } else {
+                                let anyRowChanged = false;
+                                newRows.forEach(newRow => {
+                                    const oldRow = oldRows.find(r => r.originalIndex === newRow.originalIndex);
+                                    if (!oldRow) return;
+                                    const dataChanged = JSON.stringify(oldRow.originalRow) !== JSON.stringify(newRow.originalRow);
+                                    const noteChanged = (oldRow.confirmNote || '') !== (newRow.confirmNote || '');
+                                    if (dataChanged || noteChanged) {
+                                        anyRowChanged = true;
+                                        ui.updateConfirmDetailRow(newRow.originalIndex, newRow.originalRow);
+                                    }
+                                });
+
+                                window.currentActiveClient = freshClient;
+                                if (anyRowChanged) {
+                                    if (typeof ui.updatePaymentCardUI === 'function') ui.updatePaymentCardUI();
+                                    if (typeof ui.updateLocksUI === 'function') ui.updateLocksUI();
+                                }
+                            }
+                        }
+                    }
+
+                    // Se o popup de relatório estiver aberto, atualizar automaticamente também
+                    const reportModal = document.getElementById('modal-project-report');
+                    if (reportModal && !reportModal.classList.contains('hidden') && typeof ui.openProjectReportModal === 'function') {
+                        ui.openProjectReportModal();
+                    }
+
+                    // Atualizar snapshot no PocketBase em background (sem bloquear a UI)
+                    if (api.state.confirm.projectId) {
+                        api.pb.collection('confirm_projects').update(api.state.confirm.projectId, {
+                            sheet_data: {
+                                values: pollData.values,
+                                notes: pollData.notes || [],
+                                range: api.state.confirm.range || 'Sheet1!A1:AZ1000'
+                            },
+                            last_sync: new Date().toISOString(),
+                            has_pending_sync: false
+                        }).catch(() => {});
+                    }
+                }
+            } else if (res.status === 401) {
+                window.dispatchEvent(new CustomEvent('confirmModeChanged', { detail: { offline: true } }));
+            }
         } catch (pollErr) {
-            console.warn("[POLLING] Erro ao verificar atualizações do GSheet:", pollErr);
+            console.warn("[POLLING] Erro ao verificar atualizações do GSheet:", pollErr.message);
         } finally {
             gsheetPollingActive = false;
         }
-    }, 5000);
+    }, 4000);
 }
 
 function stopGSheetPolling() {
@@ -3533,6 +3571,10 @@ function stopGSheetPolling() {
         clearInterval(gsheetPollingInterval);
         gsheetPollingInterval = null;
     }
+    ['confirm-live-badge', 'confirm-client-live-badge'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
     stopDrivePolling();
 }
 

@@ -782,6 +782,7 @@ export async function readGSheet(projectRecord, range = 'A1:AZ1000', skipModifie
         const data = await res.json();
         state.confirm.data = data.values || data;
         state.confirm.notes = data.notes || [];
+        state.confirm.lastSheetHash = data.hash || null;
         state.confirm.range = data.range || 'Sheet1!A1:AZ1000';
         if (state.confirm.range && state.confirm.range.includes('!')) {
             state.confirm.sheetTitle = state.confirm.range.split('!')[0].replace(/'/g, '');

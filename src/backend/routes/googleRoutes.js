@@ -3,6 +3,116 @@ const router = express.Router();
 const { google } = require('googleapis');
 const multer = require('multer');
 const fs = require('fs');
+const crypto = require('crypto');
+
+// Cache leve em memória (2.5s) para partilhar leituras de polling entre múltiplos utilizadores sem esgotar quota da Google Sheets API
+const sheetReadCache = new Map();
+const SHEET_POLL_CACHE_TTL_MS = 2500;
+
+function invalidateSheetCache(spreadsheetId) {
+  if (!spreadsheetId) return;
+  for (const key of sheetReadCache.keys()) {
+    if (key.startsWith(`${spreadsheetId}::`)) {
+      sheetReadCache.delete(key);
+    }
+  }
+}
+
+async function readSpreadsheetWithNotes(spreadsheetId, range, { bypassCache = false } = {}) {
+  const effectiveRange = range || 'A1:AZ1000';
+  const cacheKey = `${spreadsheetId}::${effectiveRange}`;
+  const now = Date.now();
+
+  if (!bypassCache) {
+    const cached = sheetReadCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+  }
+
+  const auth = await getGoogleAuth();
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  let result;
+  try {
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId,
+      ranges: [effectiveRange],
+      includeGridData: true,
+      fields: 'sheets(properties(title,sheetId),data(rowData(values(note,formattedValue))))'
+    });
+
+    const sheet = response.data.sheets?.[0];
+    const values = [];
+    const notes = [];
+
+    if (sheet && sheet.data && sheet.data[0]) {
+      const gridData = sheet.data[0];
+      const rowData = gridData.rowData || [];
+
+      let maxCols = 0;
+      for (let r = 0; r < rowData.length; r++) {
+        const cellValues = rowData[r].values || [];
+        if (cellValues.length > maxCols) maxCols = cellValues.length;
+      }
+
+      for (let r = 0; r < rowData.length; r++) {
+        const row = rowData[r];
+        const rowValues = [];
+        const rowNotes = [];
+        const cellValues = row.values || [];
+
+        for (let c = 0; c < maxCols; c++) {
+          const cell = cellValues[c];
+          if (cell) {
+            const val = cell.formattedValue !== undefined ? cell.formattedValue : '';
+            rowValues.push(val);
+            rowNotes.push(cell.note || '');
+          } else {
+            rowValues.push('');
+            rowNotes.push('');
+          }
+        }
+        values.push(rowValues);
+        notes.push(rowNotes);
+      }
+    }
+
+    let finalRange = effectiveRange;
+    const sheetTitle = sheet?.properties?.title;
+    if (sheetTitle && !finalRange.includes('!')) {
+      const formattedTitle = (sheetTitle.includes(' ') || sheetTitle.includes('-') || /\W/.test(sheetTitle))
+        ? `'${sheetTitle}'`
+        : sheetTitle;
+      finalRange = `${formattedTitle}!${finalRange}`;
+    }
+
+    const hash = crypto.createHash('sha1').update(JSON.stringify({ values, notes })).digest('hex');
+    result = {
+      values,
+      notes,
+      range: finalRange,
+      sheetId: sheet?.properties?.sheetId ?? null,
+      hash
+    };
+  } catch (getErr) {
+    console.warn('[BACKEND] Falha ao ler com includeGridData. Usando fallback values.get. Erro:', getErr.message);
+    const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: effectiveRange });
+    const values = response.data.values || [];
+    const notes = [];
+    const hash = crypto.createHash('sha1').update(JSON.stringify({ values, notes })).digest('hex');
+    result = {
+      values,
+      notes,
+      range: response.data.range,
+      sheetId: null,
+      hash
+    };
+  }
+
+  sheetReadCache.set(cacheKey, { data: result, expiresAt: Date.now() + SHEET_POLL_CACHE_TTL_MS });
+  return result;
+}
 const { getOAuthClient, getGoogleAuth, TOKENS_PATH } = require('../utils/googleAuth');
 
 // Configuração Multer em Memória (seguro apenas para ficheiros muito pequenos de integração c/ drive, 
@@ -463,7 +573,8 @@ router.post('/sheet/read', async (req, res) => {
         values,
         notes,
         range: finalRange,
-        sheetId: sheet?.properties?.sheetId
+        sheetId: sheet?.properties?.sheetId,
+        hash: crypto.createHash('sha1').update(JSON.stringify({ values, notes })).digest('hex')
       });
     } catch (getErr) {
       console.warn('[BACKEND] Falha ao ler com includeGridData. Usando fallback values.get. Erro:', getErr.message, getErr.response?.data || getErr);
@@ -803,6 +914,36 @@ router.post('/sheet/check-update', async (req, res) => {
     });
   } catch (error) {
     console.error('SERVER ERROR (Sheet Check Update):', error.message);
+    if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
+    const status = (error.message.includes('AUTH_REQUIRED') || error.message.includes('invalid_grant')) ? 401 : 500;
+    res.status(status).json({ error: error.message });
+  }
+});
+
+// Polling direto de conteúdo da planilha por Hash SHA-1 (sem atraso do modifiedTime do Drive)
+router.post('/sheet/poll', async (req, res) => {
+  try {
+    let { spreadsheetId, range, lastHash } = req.body;
+    spreadsheetId = extractSpreadsheetId(spreadsheetId);
+    if (!spreadsheetId) return res.status(400).json({ error: "Spreadsheet ID is required" });
+
+    const data = await readSpreadsheetWithNotes(spreadsheetId, range, { bypassCache: false });
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+
+    if (lastHash && lastHash === data.hash) {
+      return res.json({ changed: false, hash: data.hash });
+    }
+
+    return res.json({
+      changed: true,
+      hash: data.hash,
+      values: data.values,
+      notes: data.notes,
+      range: data.range,
+      sheetId: data.sheetId
+    });
+  } catch (error) {
+    console.error('SERVER ERROR (Sheet Poll):', error.message);
     if (error.message.includes('invalid_grant') && fs.existsSync(TOKENS_PATH)) fs.unlinkSync(TOKENS_PATH);
     const status = (error.message.includes('AUTH_REQUIRED') || error.message.includes('invalid_grant')) ? 401 : 500;
     res.status(status).json({ error: error.message });

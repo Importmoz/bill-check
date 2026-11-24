@@ -5988,7 +5988,7 @@ export function handleBankRealtimeEvent(e) {
     }
 }
 
-function updateLocksUI() {
+export function updateLocksUI() {
     const trs = document.querySelectorAll('#orders-tbody tr');
     console.log(`[SSE-FASE-5][LOCKS-DETALHE] Atualizando estado de bloqueio visual para ${trs.length} linhas de ordens.`);
     trs.forEach(tr => {
