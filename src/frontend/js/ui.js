@@ -20083,3 +20083,330 @@ export function printProjectReport() {
 window.openProjectReportModal = openProjectReportModal;
 window.copyProjectReportWhatsApp = copyProjectReportWhatsApp;
 window.printProjectReport = printProjectReport;
+
+// --- EXPORTAR LISTA GERAL DE DESCARGA EM PDF HORIZONTAL (FIEL DE ARMAZÉM) ---
+export function exportDischargeListPDF() {
+    try {
+        const data = state.confirm?.data;
+        if (!data || data.length < 2) {
+            toast('Nenhum dado carregado para gerar a Lista de Descarga.', 'warning');
+            return;
+        }
+
+        if (typeof window.jspdf === 'undefined' || !window.jspdf.jsPDF) {
+            toast('Biblioteca jsPDF não está carregada. Recarregue a página.', 'error');
+            return;
+        }
+
+        setLoader(true, 'A gerar Lista Geral de Descarga (PDF Horizontal)...');
+
+        const columns = data[0] || [];
+        const cleanHeader = (str) => String(str || '')
+            .toUpperCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^A-Z0-9]/g, '')
+            .trim();
+
+        const findCol = (targets, exclude = []) => {
+            const cleanedTargets = targets.map(cleanHeader);
+            const cleanedExcl = exclude.map(cleanHeader);
+            const isExcluded = (col) => cleanedExcl.some(ex => cleanHeader(col).includes(ex));
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => !isExcluded(c) && cleanHeader(c) === target);
+                if (idx !== -1) return idx;
+            }
+            for (const target of cleanedTargets) {
+                const idx = columns.findIndex(c => !isExcluded(c) && cleanHeader(c).includes(target));
+                if (idx !== -1) return idx;
+            }
+            return -1;
+        };
+
+        let noIdx = columns.findIndex(c => {
+            const h = String(c || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+            return h === 'NO' || h === 'N' || h === 'NUMERO' || h.startsWith('NO.') || h.startsWith('N.');
+        });
+        if (noIdx === -1 && columns.length > 0) noIdx = 0;
+
+        const idCodeIdx = findCol(['ID CODE', 'CODE ID', 'ID']);
+        const nameIdx = findCol(['NAME', 'NOME', 'CLIENTE', 'CLIENT']);
+        const refIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'N HF2', 'N ORDEM'], ['NO']);
+        const cargoIdx = findCol(['CARGO', 'DESCRIPTION', 'DESCRICAO', 'GOODS', 'MERCADORIA', 'ITEMS', 'PRODUCT', 'ARTIGO']);
+        const pkgsIdx = findCol(['PACKAGES', 'VOLUMES', 'QTIES', 'QTY', 'PKGS', 'CTNS', 'VOL', 'QUANTIDADE']);
+        const cbmIdx = findCol(['CBM', 'M3'], ['UNIT', 'DUTY', 'FREIGHT', 'RATE']);
+
+        const sanitizePdfText = (val) => String(val ?? '')
+            .normalize('NFC')
+            .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+            .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+            .replace(/[\u2012\u2013\u2014\u2015\u2212]/g, '-')
+            .replace(/\u2026/g, '...')
+            .replace(/\u2022/g, '*')
+            .replace(/\u00D7/g, 'x')
+            .replace(/\u20AC/g, 'EUR')
+            .replace(/[\u00A0\u200B\u200C\u200D\uFEFF\t\r\n]/g, ' ')
+            .replace(/[^\x20-\x7E\xA1-\xFF]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const groupedByClient = new Map();
+        let lastNo = '';
+        let lastIdCode = '';
+        let lastName = '';
+        let totalVolumes = 0;
+        let totalCbm = 0;
+        let totalLoads = 0;
+
+        for (let i = 1; i < data.length; i++) {
+            const row = data[i];
+            if (!row || row.length === 0) continue;
+
+            const rowString = row.slice(0, 10).map(c => String(c || '').toUpperCase()).join(' ');
+            if (rowString.includes('TOTAL')) continue;
+
+            let noVal = noIdx !== -1 ? sanitizePdfText(row[noIdx]).split('.')[0] : '';
+            let idCode = idCodeIdx !== -1 ? sanitizePdfText(row[idCodeIdx]) : '';
+            let name = nameIdx !== -1 ? sanitizePdfText(row[nameIdx]) : '';
+
+            if (noVal) lastNo = noVal; else noVal = lastNo;
+            if (idCode) lastIdCode = idCode; else idCode = lastIdCode;
+            if (name) lastName = name; else name = lastName;
+
+            const refVal = refIdx !== -1 ? sanitizePdfText(row[refIdx]) : '';
+            const cargoVal = cargoIdx !== -1 ? sanitizePdfText(row[cargoIdx]) : '';
+            const rawPkgs = pkgsIdx !== -1 ? sanitizePdfText(row[pkgsIdx]) : '';
+            const rawCbm = cbmIdx !== -1 ? sanitizePdfText(row[cbmIdx]) : '';
+
+            // Ignorar linhas completamente vazias
+            if (!idCode && !name && !cargoVal && !rawPkgs && !rawCbm) continue;
+
+            // Calcular volumes (da coluna PACKAGES ou extraindo número inicial da descrição ex: "36SOLAR LAMP")
+            let volNum = parseFloat(String(rawPkgs).replace(/[^0-9.]+/g, '')) || 0;
+            if (volNum === 0 && cargoVal) {
+                const match = cargoVal.match(/^(\d+)\s*[A-Za-z]/);
+                if (match) volNum = parseInt(match[1], 10) || 0;
+            }
+            const cbmNum = parseFloat(String(rawCbm).replace(',', '.').replace(/[^0-9.-]+/g, '')) || 0;
+
+            totalVolumes += volNum;
+            totalCbm += cbmNum;
+            totalLoads += 1;
+
+            const clientKey = `${(noVal || '').toUpperCase()}||${(idCode || '').toUpperCase()}||${(name || '').toUpperCase()}`;
+            if (!groupedByClient.has(clientKey)) {
+                groupedByClient.set(clientKey, {
+                    no: noVal || String(groupedByClient.size + 1),
+                    idCode: idCode || '-',
+                    name: name || '-',
+                    items: []
+                });
+            }
+
+            const itemCells = [];
+            if (refIdx !== -1) itemCells.push(refVal || '-');
+            itemCells.push(
+                cargoVal || '-',
+                volNum > 0 ? String(volNum) : (rawPkgs || '-'),
+                cbmNum > 0 ? cbmNum.toFixed(2) : (rawCbm || '-'),
+                '',                        // QTD REC. (preenchimento manual)
+                '[  ] OK   [  ] FALTA',    // CONFERÊNCIA
+                ''                         // OBSERVAÇÕES (preenchimento manual)
+            );
+            groupedByClient.get(clientKey).items.push(itemCells);
+        }
+
+        if (totalLoads === 0) {
+            toast('Nenhuma carga encontrada neste projeto para exportar.', 'warning');
+            return;
+        }
+
+        // Construir linhas da tabela com rowSpan nas colunas N., ID CODE e CLIENTE
+        const rows = [];
+        let groupIndex = 0;
+        for (const group of groupedByClient.values()) {
+            const span = group.items.length;
+            const bgFill = groupIndex % 2 === 1 ? [248, 250, 252] : [255, 255, 255];
+
+            group.items.forEach((itemCells, idx) => {
+                const styledItems = itemCells.map(cellVal => ({
+                    content: cellVal,
+                    styles: { fillColor: bgFill }
+                }));
+
+                if (idx === 0) {
+                    rows.push([
+                        { content: group.no, rowSpan: span, styles: { valign: 'middle', halign: 'center', fillColor: bgFill } },
+                        { content: group.idCode, rowSpan: span, styles: { valign: 'middle', halign: 'center', fontStyle: 'bold', fillColor: bgFill } },
+                        { content: group.name, rowSpan: span, styles: { valign: 'middle', halign: 'center', fillColor: bgFill } },
+                        ...styledItems
+                    ]);
+                } else {
+                    rows.push(styledItems);
+                }
+            });
+            groupIndex += 1;
+        }
+
+        const uniqueClientCount = groupedByClient.size;
+
+        const { jsPDF } = window.jspdf;
+        // A4 Horizontal (Landscape): 841.89 x 595.28 pt
+        const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const marginX = 28;
+
+        const projectName = sanitizePdfText(state.confirm?.projectName || document.getElementById('confirm-project-active-name')?.innerText || 'PROJETO');
+        const safeName = projectName.replace(/[^a-z0-9_-]/gi, '_').toUpperCase();
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('pt-PT');
+        const timeStr = now.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+        const fileDate = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+        const dischargeDate = state.confirm?.dischargeDate ? formatDateDisplay(state.confirm.dischargeDate) : '____/____/________';
+
+        // Cabeçalho principal
+        doc.setFillColor(15, 23, 42); // slate-900
+        doc.rect(marginX, 22, pageWidth - marginX * 2, 46, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(14);
+        doc.text(`LISTA GERAL DE DESCARGA - CONTENTOR / PROJETO: ${projectName.toUpperCase()}`, marginX + 12, 42);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(203, 213, 225); // slate-300
+        doc.text(
+            `Emissao: ${dateStr} ${timeStr}   |   Data Descarga: ${dischargeDate}   |   Clientes: ${uniqueClientCount}   |   Cargas: ${totalLoads}   |   Total Volumes: ${totalVolumes}   |   Total CBM: ${totalCbm.toFixed(2)}`,
+            marginX + 12,
+            58
+        );
+
+        const headCols = ['N.', 'ID CODE', 'CLIENTE'];
+        if (refIdx !== -1) headCols.push('REF / HF2');
+        headCols.push('DESCRICAO DA CARGA', 'VOL', 'CBM', 'QTD REC.', 'CONFERENCIA', 'OBSERVACOES');
+
+        const footCells = ['', 'TOTAL GERAL', `${uniqueClientCount} Clientes / ${totalLoads} Cargas`];
+        if (refIdx !== -1) footCells.push('');
+        footCells.push('', String(totalVolumes), totalCbm.toFixed(2), '', '', '');
+
+        const colStyles = refIdx !== -1
+            ? {
+                0: { cellWidth: 28, halign: 'center' },  // N.
+                1: { cellWidth: 74, halign: 'center', fontStyle: 'bold' }, // ID CODE
+                2: { cellWidth: 108, halign: 'center' },                   // CLIENTE
+                3: { cellWidth: 105, halign: 'center' }, // REF / HF2
+                4: { cellWidth: 138 },                   // DESCRICAO
+                5: { cellWidth: 36, halign: 'center', fontStyle: 'bold' }, // VOL
+                6: { cellWidth: 42, halign: 'center' },  // CBM
+                7: { cellWidth: 48, halign: 'center' },  // QTD REC.
+                8: { cellWidth: 84, halign: 'center', fontSize: 7.5 }, // CONFERENCIA
+                9: { cellWidth: 'auto' }                 // OBSERVACOES
+            }
+            : {
+                0: { cellWidth: 30, halign: 'center' },  // N.
+                1: { cellWidth: 82, halign: 'center', fontStyle: 'bold' }, // ID CODE
+                2: { cellWidth: 125, halign: 'center' },                   // CLIENTE
+                3: { cellWidth: 180 },                   // DESCRICAO
+                4: { cellWidth: 42, halign: 'center', fontStyle: 'bold' }, // VOL
+                5: { cellWidth: 48, halign: 'center' },  // CBM
+                6: { cellWidth: 56, halign: 'center' },  // QTD REC.
+                7: { cellWidth: 92, halign: 'center', fontSize: 7.5 }, // CONFERENCIA
+                8: { cellWidth: 'auto' }                 // OBSERVACOES
+            };
+
+        doc.autoTable({
+            head: [headCols],
+            body: rows,
+            foot: [footCells],
+            startY: 78,
+            margin: { left: marginX, right: marginX, bottom: 38 },
+            theme: 'grid',
+            showFoot: 'lastPage',
+            headStyles: {
+                fillColor: [30, 41, 59], // slate-800
+                textColor: [255, 255, 255],
+                fontStyle: 'bold',
+                fontSize: 8,
+                halign: 'center',
+                valign: 'middle',
+                cellPadding: 5
+            },
+            bodyStyles: {
+                textColor: [30, 41, 59],
+                fontSize: 8,
+                valign: 'middle',
+                cellPadding: { top: 5, right: 4, bottom: 5, left: 4 },
+                lineColor: [203, 213, 225],
+                lineWidth: 0.5
+            },
+            footStyles: {
+                fillColor: [226, 232, 240],
+                textColor: [15, 23, 42],
+                fontStyle: 'bold',
+                fontSize: 8.5,
+                valign: 'middle',
+                cellPadding: 5
+            },
+            columnStyles: colStyles,
+            didDrawPage: (hookData) => {
+                // Rodapé em todas as páginas
+                doc.setFontSize(7.5);
+                doc.setTextColor(100, 116, 139);
+                doc.setFont('helvetica', 'normal');
+                doc.text(
+                    `Lista Geral de Descarga - Projeto ${projectName.toUpperCase()} (Uso Exclusivo Fiel de Armazem)`,
+                    marginX,
+                    pageHeight - 16
+                );
+            }
+        });
+
+        // Bloco de assinaturas no final da última página
+        let finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 24 : 140;
+        if (finalY + 62 > pageHeight - 28) {
+            doc.addPage();
+            finalY = 48;
+        }
+
+        doc.setDrawColor(203, 213, 225);
+        doc.setFillColor(248, 250, 252);
+        doc.roundedRect(marginX, finalY, pageWidth - marginX * 2, 58, 6, 6, 'FD');
+
+        doc.setTextColor(30, 41, 59);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text('CONFIRMACAO DE DESCARGA FISICA (ARMAZEM)', marginX + 12, finalY + 15);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.text('Fiel de Armazem: ___________________________________________', marginX + 12, finalY + 34);
+        doc.text('Assinatura: _______________________________', marginX + 340, finalY + 34);
+        doc.text('Data: _____/_____/________', marginX + 585, finalY + 34);
+
+        doc.text('Supervisor / Conferente: ____________________________________', marginX + 12, finalY + 50);
+        doc.text('Hora Inicio: _____:_____', marginX + 340, finalY + 50);
+        doc.text('Hora Fim: _____:_____', marginX + 495, finalY + 50);
+        doc.text('Total Rec.: ___________', marginX + 635, finalY + 50);
+
+        // Adicionar numeração "Pagina X de Y" em todas as páginas
+        const totalPages = doc.internal.getNumberOfPages();
+        for (let p = 1; p <= totalPages; p++) {
+            doc.setPage(p);
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 116, 139);
+            doc.setFont('helvetica', 'bold');
+            doc.text(`Pagina ${p} de ${totalPages}`, pageWidth - marginX, pageHeight - 16, { align: 'right' });
+        }
+
+        doc.save(`Lista_Geral_Descarga_${safeName}_${fileDate}.pdf`);
+        toast('Lista Geral de Descarga (PDF Horizontal) baixada com sucesso!', 'success');
+    } catch (err) {
+        console.error('[EXPORT-DISCHARGE-PDF] Erro ao gerar PDF:', err);
+        toast('Erro ao gerar PDF de descarga: ' + err.message, 'error');
+    } finally {
+        setLoader(false);
+    }
+}
+window.exportDischargeListPDF = exportDischargeListPDF;
