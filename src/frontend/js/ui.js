@@ -2,7 +2,7 @@
  * Módulo de Interface e UI para Bill Check
  */
 import { formatMZN, formatDateDisplay } from './utils.js';
-import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, unallocatePayment, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, insertGSheetColumn, syncPendingChangesToGSheet, debouncedSyncToPocketBase, getPaymentsByAllocatedTo, getPaymentsByAllocatedPrefix, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, buildSearchFilter } from './api.js';
+import { state, pb, emitConfirmEvent, subscribeConfirmEvents, unsubscribeConfirmEvents, unsubscribeBankEvents, getSettingsUsers, uploadBankStatement, saveBankIncome, listBankIncomes, searchPayments, markPaymentReconciled, unallocatePayment, logConfirmAudit, getClientAuditLogs, readGSheet, updateGSheet, updateGSheetBatch, updateGSheetNote, insertGSheetColumn, syncPendingChangesToGSheet, debouncedSyncToPocketBase, getPaymentsByAllocatedTo, getPaymentsByAllocatedPrefix, getPaymentsByMasterRef, listGDriveFiles, saveQuote, deleteQuote, listQuotes, searchPauta, saveQuoteClient, getQuoteClient, getAllClients, getConfirmClientProfile, saveConfirmClientProfile, buildSearchFilter } from './api.js';
 import { cleanHeaderString, findWarehouseCol, formatLocalYMD, parseWarehouseDate, hasValidDischargeDate, formatFeeSheetStatus, parseStorageInfo, calculateClientStorage, parseDespachoCopyInfo, calculateClientDespachoCopy } from './warehouseStorage.js?v=20261112_01';
 
 const DESPACHO_DEFAULT_PRICE_KEY = 'despacho_copy_default_price';
@@ -4339,7 +4339,7 @@ export async function openWarehouseStatusModal() {
     
     const deliveredIdx = findCol(['DELIVERED', 'ENTREGUE']);
     const balanceFreightIdx = findCol(['BALANCE FREIGHT', 'SALDO FRETE']);
-    const packagesIdx = findCol(['PACKAGES', 'VOLUMES', 'QTIES']);
+    const packagesIdx = findCol(['PACKAGES', 'VOLUMES', 'QTIES'], { exclude: ['DESCRIPTION', 'DESCRICAO', 'CARGO'] });
 
     const phoneIdx = findCol(['PHONE NUMBER', 'PHONE', 'TELEFONE', 'CELULAR', 'PHONE_NUMBER', 'TEL', 'MOBILE']);
     const contactoIdx = findCol(['CONTACTO', 'CONTACT']);
@@ -13162,7 +13162,7 @@ export function updateArmazemCalculations() {
         let totalOriginal = 0;
         if (client && client.rows) {
             const columns = state.confirm?.columns || [];
-            const pkgsIdx = findWarehouseCol(columns, ['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
+            const pkgsIdx = findWarehouseCol(columns, ['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD'], { exclude: ['DESCRIPTION', 'DESCRICAO', 'CARGO'] });
             client.rows.forEach(r => {
                 const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
                 totalOriginal += pkgsIdx !== -1 ? (parseFloat(rowData[pkgsIdx]) || 0) : 0;
@@ -13417,7 +13417,8 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         }
 
         const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
-        const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
+        const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD'], { exclude: ['DESCRIPTION', 'DESCRICAO', 'CARGO'] });
+        const cargoDescIdx = findCol(['CARGO DESCRIPTION', 'DESCRIPTION', 'DESCRICAO', 'CARGO', 'MERCADORIA', 'GOODS']);
         const dischargeIdx = findCol(['DISCHARGE', 'DESCARGA', 'DESCARREGADO']);
         const deliverIdx = findCol(['DELIVER', 'ENTREGUE', 'ENTREGA'], { exclude: ['DATE', 'TO', 'STATUS', 'ED'] });
         const deliverDateIdx = findCol(['DELIVER DATE']);
@@ -13447,19 +13448,30 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
         const totalPaidFrt = (window.currentClientRows || []).reduce((acc, r) => acc + (r.pdFreight || 0), 0);
         const isFreightPaid = totalBalanceFreight <= 0 || (totalAmountFreight > 0 && totalPaidFrt >= totalAmountFreight);
 
-        // Calcular agregados
+        // Calcular agregados por ordem (com fallback para número inicial na descrição da carga se PACKAGES estiver vazio)
         let totalOriginal = 0;
         const ordersList = [];
+        const ordersDetailedList = [];
         client.rows.forEach(r => {
             const rowData = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
             const orderNum = orderNumIdx !== -1 ? String(rowData[orderNumIdx] || '').trim() : '';
-            if (orderNum && orderNum !== '—') ordersList.push(orderNum);
 
-            const pkgs = packagesIdx !== -1 ? parseFloat(rowData[packagesIdx]) || 0 : 0;
+            let pkgs = packagesIdx !== -1 ? (parseFloat(String(rowData[packagesIdx] || '').replace(/[^0-9.]+/g, '')) || 0) : 0;
+            if (pkgs === 0 && cargoDescIdx !== -1 && rowData[cargoDescIdx]) {
+                const m = String(rowData[cargoDescIdx]).trim().match(/^(\d+)\s*[A-Za-z]/);
+                if (m) pkgs = parseInt(m[1], 10) || 0;
+            }
             totalOriginal += pkgs;
+
+            if (orderNum && orderNum !== '—') {
+                ordersList.push(orderNum);
+                ordersDetailedList.push(`${orderNum} (${pkgs} Vol)`);
+            } else if (pkgs > 0) {
+                ordersDetailedList.push(`${pkgs} Vol`);
+            }
         });
 
-        const ordersString = ordersList.join(', ') || '—';
+        const ordersString = ordersDetailedList.join(', ') || ordersList.join(', ') || '—';
 
         // Calcular agregados de Discharge e Deliver
         let totalDischarged = 0;
@@ -13537,6 +13549,23 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             if (!localDescargaVal && meta.localDescarga) localDescargaVal = meta.localDescarga;
             if (!localCargaRaw && meta.localCarga) localCargaVal = meta.localCarga;
         } catch(e) {}
+
+        // Puxar NUIT e Local de Descarga (Morada) do Banco de Dados (PocketBase) caso ainda não estejam preenchidos
+        if (!clientNuit || !localDescargaVal) {
+            try {
+                const dbProfile = await getConfirmClientProfile({
+                    idCode: client.displayIdCode || '',
+                    name: client.displayName || '',
+                    phone: client.clientPhone || contactoVal || ''
+                });
+                if (dbProfile) {
+                    if (!clientNuit && dbProfile.nuit) clientNuit = String(dbProfile.nuit).trim();
+                    if (!localDescargaVal && dbProfile.address) localDescargaVal = String(dbProfile.address).trim();
+                }
+            } catch (dbErr) {
+                console.warn('[ARMAZEM] Aviso ao consultar NUIT/Morada no banco de dados:', dbErr.message);
+            }
+        }
         const storagePaidVal = storagePaidIdx !== -1 ? String(firstRowData[storagePaidIdx] || '').trim().toUpperCase() : 'NAO';
         const deliveredVal = deliveredIdx !== -1 ? String(firstRowData[deliveredIdx] || '').trim().toUpperCase() : 'NAO';
         const isDelivered = (deliveredVal === 'SIM' || deliveredVal === 'ENTREGUE' || deliveredVal === 'YES');
@@ -14029,6 +14058,21 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
             }
         }
 
+        const hasVolumeMismatch = hasAnyDischarge && totalOriginal > 0 && Math.abs(totalDischarged - totalOriginal) > 0.01;
+        const volumeMismatchAlertHtml = hasVolumeMismatch ? `
+            <div class="bg-amber-50 border border-amber-300 text-amber-900 px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-3 flex-wrap text-[10.5px]">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm">⚠️</span>
+                    <span><strong>Divergência de Volumes:</strong> As ordens somam <strong>${totalOriginal} Vol</strong> (${ordersString}), mas está gravado <strong>${totalDischarged} Vol</strong> em Descarregado${hasAnyDeliver ? ` e <strong>${totalDelivered} Vol</strong> em Entregue` : ''}.</span>
+                </div>
+                ${isEditable ? `
+                    <button type="button" onclick="(() => { const f = document.getElementById('armazem-form-container'); if (!f) return; const d = f.querySelector('input[name=discharge]'); const e = f.querySelector('input[name=deliver]'); if (d) d.value = '${totalOriginal}'; if (e) e.value = '${totalOriginal}'; window.updateArmazemCalculations(); })()" class="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[9px] font-black uppercase tracking-wider cursor-pointer transition-all shadow-xs">
+                        Corrigir para ${totalOriginal} Vol
+                    </button>
+                ` : `<span class="text-[9px] font-black uppercase text-amber-700">Clique em "Reabrir" para corrigir</span>`}
+            </div>
+        ` : '';
+
         container.innerHTML = `
             ${bannerHtml}
             
@@ -14043,19 +14087,20 @@ export async function renderArmazemDetails(client, totalBalanceFreight, totalAmo
                             Ordens: <strong class="text-slate-700 ml-1 font-extrabold">${ordersString}</strong>
                         </span>
                         <span class="text-slate-400 font-bold uppercase text-[9px] bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg">
-                            Total Carga: <strong class="text-indigo-900 ml-1 font-extrabold">${parseFloat(dischargeVal) || totalOriginal || 0} Vol</strong>
+                            Total Ordens: <strong class="text-indigo-900 ml-1 font-extrabold">${totalOriginal || parseFloat(dischargeVal) || 0} Vol</strong>
                         </span>
                         <span class="text-slate-400 font-bold uppercase text-[9px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg">
                             Entregue: <strong class="text-emerald-900 ml-1 font-extrabold" id="armazem-badge-entregue">${deliverVal || '0'} Vol</strong>
                         </span>
                         <span class="text-slate-400 font-bold uppercase text-[9px] bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg border border-amber-200">
-                            Saldo em Armazém: <strong class="text-amber-900 ml-1 font-extrabold" id="armazem-calc-saldo">${Math.max(0, (parseFloat(dischargeVal || totalOriginal) || 0) - (parseFloat(deliverVal) || 0))} Vol</strong>
+                            Saldo em Armazém: <strong class="text-amber-900 ml-1 font-extrabold" id="armazem-calc-saldo">${Math.max(0, (totalOriginal || parseFloat(dischargeVal) || 0) - (parseFloat(deliverVal) || 0))} Vol</strong>
                         </span>
                         ${dischargeDateBadge}
                         ${storageBadgesHtml}
                         ${deliveryStatusBadge}
                     </div>
                 </div>
+                ${volumeMismatchAlertHtml}
                 
                 <div id="armazem-form-container" data-client-key="${clientKey}" class="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-end bg-slate-50/50 p-3 rounded-xl border border-slate-100 ${!hasDischargeDate ? 'opacity-70' : ''}">
                     <!-- Linha 1: Informações de Carga & Destinatário -->
@@ -14477,7 +14522,7 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
     const columns = state.confirm.columns || [];
     const findCol = (targets, opts) => findWarehouseCol(columns, targets, opts);
 
-    const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
+    const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD'], { exclude: ['DESCRIPTION', 'DESCRICAO', 'CARGO'] });
     const dischargeIdx = findCol(['DISCHARGE', 'DESCARGA', 'DESCARREGADO']);
     const deliverIdx = findCol(['DELIVER', 'ENTREGUE', 'ENTREGA'], { exclude: ['DATE', 'TO', 'STATUS', 'ED'] });
     const deliverDateIdx = findCol(['DELIVER DATE']);
@@ -14709,6 +14754,17 @@ export async function saveArmazemRow(originalIndex, buttonEl) {
                 rObj.originalRow = item.rowData;
             }
         });
+
+        // 1b. Salvar NUIT e Local de Descarga (Morada) no Banco de Dados (PocketBase) para preenchimento automático futuro
+        if (clientNuit || localDescargaVal) {
+            saveConfirmClientProfile({
+                idCode: client.displayIdCode || '',
+                name: client.displayName || '',
+                nuit: clientNuit,
+                address: localDescargaVal,
+                phone: client.clientPhone || contactoVal || ''
+            }).catch(() => {});
+        }
 
         // 2. Gravar no Google Sheets em lote
         await updateGSheetBatch(state.confirm.sheetId, batchUpdates);
@@ -14952,7 +15008,7 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
     const findCol = (targets, opts) => findWarehouseCol(columns, targets, opts);
 
     const orderNumIdx = findCol(['HF2', 'REF', 'REFERENCIA', 'ORDER NUMBER', 'ORDER NUM', 'ORDER', 'CONV', 'CONTENTOR', 'Nº HF2', 'Nº ORDEM', 'NO.', 'N.O', 'N.º', 'Nº', 'N°', 'NO']);
-    const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD']);
+    const packagesIdx = findCol(['PACKAGES', 'PKGS', 'PKG', 'VOLUMES', 'VOLUME', 'VOL', 'QUANTIDADE', 'QUANT', 'QTD'], { exclude: ['DESCRIPTION', 'DESCRICAO', 'CARGO'] });
     const dischargeIdx = findCol(['DISCHARGE', 'DESCARGA', 'DESCARREGADO']);
     const deliverIdx = findCol(['DELIVER', 'ENTREGUE', 'ENTREGA'], { exclude: ['DATE', 'TO', 'STATUS', 'ED'] });
     const deliverDateIdx = findCol(['DELIVER DATE']);
@@ -15070,6 +15126,23 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         if (!localCargaVal && meta.localCarga) localCargaVal = meta.localCarga;
     } catch(e) {}
 
+    // Fallback no Banco de Dados (PocketBase) para NUIT e Local de Descarga
+    if (!clientNuit || !clientAddress) {
+        try {
+            const dbProfile = await getConfirmClientProfile({
+                idCode: client.displayIdCode || '',
+                name: client.displayName || '',
+                phone: client.clientPhone || receiverContact || ''
+            });
+            if (dbProfile) {
+                if (!clientNuit && dbProfile.nuit) clientNuit = String(dbProfile.nuit).trim();
+                if (!clientAddress && dbProfile.address) clientAddress = String(dbProfile.address).trim();
+            }
+        } catch (dbErr) {
+            console.warn('[GUIA] Aviso ao consultar NUIT/Morada no banco de dados:', dbErr.message);
+        }
+    }
+
     if (!localCargaVal) localCargaVal = 'Armazém Júpiter - Matola A, Maputo';
 
     // =========================================================================
@@ -15124,11 +15197,20 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         return;
     }
 
-    // Persistir os valores validados no cliente e no localStorage para reutilização futura
+    // Persistir os valores validados no cliente, no localStorage e no Banco de Dados (PocketBase) para reutilização futura
     client.duVal = duVal;
     client.nuitVal = clientNuit;
     client.moradaVal = clientAddress;
     client.localCargaVal = localCargaVal;
+    if (clientNuit || clientAddress) {
+        saveConfirmClientProfile({
+            idCode: client.displayIdCode || '',
+            name: client.displayName || '',
+            nuit: clientNuit,
+            address: clientAddress,
+            phone: client.clientPhone || receiverContact || ''
+        }).catch(() => {});
+    }
     try {
         if (clientKey) {
             localStorage.setItem(`guia_meta_${clientKey}`, JSON.stringify({
@@ -15193,7 +15275,48 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
         dataEntrega: deliveryDate
     }).catch(err => console.warn('[Audit] Erro ao registar emissão de guia:', err));
 
-    const totalCarga = totalDischarged > 0 ? totalDischarged : totalOriginal;
+    const totalCarga = totalOriginal > 0 ? totalOriginal : totalDischarged;
+
+    // Calcular a quantidade exata entregue por cada ordem de forma 100% consistente com totalDelivered
+    const sheetDeliverSum = (client.rows || []).reduce((acc, r) => {
+        const rd = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+        const d = deliverIdx !== -1 ? parseFloat(rd[deliverIdx]) : NaN;
+        return acc + (!isNaN(d) && d > 0 ? d : 0);
+    }, 0);
+    const hasExplicitSheetDeliver = (client.rows || []).some(r => {
+        const rd = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+        return deliverIdx !== -1 && rd[deliverIdx] !== undefined && String(rd[deliverIdx]).trim() !== '';
+    });
+
+    const computedRowDeliverMap = new Map();
+    if (hasExplicitSheetDeliver && Math.abs(sheetDeliverSum - totalDelivered) < 0.01) {
+        // Respeitar exatamente o valor gravado em cada linha (incluindo 0, nunca inventar pkgs quando DELIVER = 0!)
+        (client.rows || []).forEach(r => {
+            const rd = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+            const rawD = deliverIdx !== -1 ? String(rd[deliverIdx] ?? '').trim() : '';
+            const numD = rawD !== '' ? (parseFloat(rawD) || 0) : 0;
+            computedRowDeliverMap.set(r.originalIndex, numD);
+        });
+    } else {
+        // Distribuir totalDelivered (ex: valor ao vivo no formulário) pela capacidade real de cada ordem
+        let rem = totalDelivered;
+        (client.rows || []).forEach((r, i) => {
+            const rd = (state.confirm?.data && state.confirm.data[r.originalIndex]) || r.originalRow || [];
+            let pkgs = packagesIdx !== -1 ? (parseFloat(String(rd[packagesIdx] || '').replace(/[^0-9.]+/g, '')) || 0) : 0;
+            if (pkgs === 0 && descIdx !== -1 && rd[descIdx]) {
+                const m = String(rd[descIdx]).trim().match(/^(\d+)\s*[A-Za-z]/);
+                if (m) pkgs = parseInt(m[1], 10) || 0;
+            }
+            if (i === (client.rows || []).length - 1) {
+                computedRowDeliverMap.set(r.originalIndex, Math.max(0, rem));
+            } else {
+                const cap = pkgs > 0 ? pkgs : 1;
+                const alloc = Math.min(rem, cap);
+                computedRowDeliverMap.set(r.originalIndex, alloc);
+                rem = Math.max(0, rem - alloc);
+            }
+        });
+    }
 
     // --- CÁLCULO UNIFICADO DE ARMAZENAGEM PARA IMPRESSÃO ---
     const dischargeDateStr = state.confirm?.dischargeDate || '';
@@ -15287,10 +15410,10 @@ export async function printDeliveryNote(clientParam = null, silentDirect = false
             const desc = descIdx !== -1 ? String(rowData[descIdx] || '').trim() : '';
             const cleanOrder = (orderNum && orderNum !== '—') ? orderNum : '';
             const cleanDesc = (desc && desc !== '—') ? desc : '';
-            const pkgs = packagesIdx !== -1 ? (parseFloat(rowData[packagesIdx]) || 0) : 0;
-            const discharged = dischargeIdx !== -1 ? (parseFloat(rowData[dischargeIdx]) || 0) : 0;
-            const delivered = deliverIdx !== -1 ? (parseFloat(rowData[deliverIdx]) || 0) : 0;
-            const rowQty = delivered > 0 ? delivered : (discharged > 0 ? discharged : pkgs);
+            const pkgs = packagesIdx !== -1 ? (parseFloat(String(rowData[packagesIdx] || '').replace(/[^0-9.]+/g, '')) || 0) : 0;
+            const rowQty = computedRowDeliverMap.has(r.originalIndex)
+                ? computedRowDeliverMap.get(r.originalIndex)
+                : pkgs;
 
             let title = cleanOrder ? 'Ordem: ' + cleanOrder : (client.rows.length === 1 ? 'Mercadoria do Cliente' : 'Item ' + (globalIdx + 1));
 

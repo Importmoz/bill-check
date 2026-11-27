@@ -2790,10 +2790,128 @@ export async function saveQuoteClient(quoteId, clientData) {
             await pb.collection('quotes').update(quoteId, { client_ref: clientRecord.id, client_name: clientData.name || quote.client_name });
         }
         
+        _confirmClientProfilesCache = null;
         return clientRecord;
     } catch (err) {
         console.error("[QUOTE CLIENT API] Erro ao gravar cliente da cotação:", err);
         throw err;
+    }
+}
+
+// --- BASE DE DADOS DE CLIENTES (NUIT & LOCAL DE DESCARGA NO POCKETBASE) ---
+let _confirmClientProfilesCache = null;
+let _confirmClientProfilesCacheTime = 0;
+
+function normalizeClientMatchName(str) {
+    return String(str || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function normalizePhoneTail(str) {
+    const digits = String(str || '').replace(/\D/g, '');
+    return digits.length >= 9 ? digits.slice(-9) : digits;
+}
+
+async function fetchConfirmClientProfiles(force = false) {
+    const now = Date.now();
+    if (!force && _confirmClientProfilesCache && (now - _confirmClientProfilesCacheTime) < 60000) {
+        return _confirmClientProfilesCache;
+    }
+    try {
+        const records = await pb.collection('quotes_clients').getFullList({ sort: '-updated' });
+        _confirmClientProfilesCache = records || [];
+        _confirmClientProfilesCacheTime = now;
+        return _confirmClientProfilesCache;
+    } catch (err) {
+        console.warn('[CLIENT-DB] Aviso ao carregar perfis de clientes do PocketBase:', err.message);
+        return _confirmClientProfilesCache || [];
+    }
+}
+
+export async function getConfirmClientProfile({ idCode = '', name = '', phone = '' } = {}) {
+    const normName = normalizeClientMatchName(name);
+    const normId = normalizeClientMatchName(idCode);
+    const phoneTail = normalizePhoneTail(phone);
+    if (!normName && !normId && !phoneTail) return null;
+
+    const list = await fetchConfirmClientProfiles(false);
+    if (!list.length) return null;
+
+    // 1. Correspondência exata por Nome
+    if (normName) {
+        const byName = list.find(r => normalizeClientMatchName(r.name) === normName);
+        if (byName) return byName;
+    }
+
+    // 2. Correspondência exata por ID Code (caso tenha sido gravado como nome ou id_code)
+    if (normId) {
+        const byId = list.find(r =>
+            normalizeClientMatchName(r.id_code) === normId ||
+            normalizeClientMatchName(r.name) === normId
+        );
+        if (byId) return byId;
+    }
+
+    // 3. Correspondência por Telefone (últimos 9 dígitos)
+    if (phoneTail && phoneTail.length >= 9) {
+        const byPhone = list.find(r => {
+            const rPhone = normalizePhoneTail(r.phone);
+            return rPhone && rPhone === phoneTail;
+        });
+        if (byPhone) return byPhone;
+    }
+
+    return null;
+}
+
+export async function saveConfirmClientProfile({ idCode = '', name = '', nuit = '', address = '', phone = '' } = {}) {
+    const cleanNuit = String(nuit || '').trim();
+    const cleanAddress = String(address || '').trim();
+    const cleanName = String(name || idCode || '').trim();
+    const cleanPhone = String(phone || '').trim();
+    if (!cleanName || (!cleanNuit && !cleanAddress)) return null;
+
+    try {
+        const existing = await getConfirmClientProfile({ idCode, name: cleanName, phone: cleanPhone });
+        let saved = null;
+
+        if (existing && existing.id) {
+            const updatePayload = {
+                name: existing.name || cleanName,
+                nuit: cleanNuit || existing.nuit || '',
+                address: cleanAddress || existing.address || '',
+                phone: cleanPhone || existing.phone || ''
+            };
+            // Evitar escrita desnecessária se nada mudou
+            if (
+                String(existing.nuit || '').trim() === updatePayload.nuit &&
+                String(existing.address || '').trim() === updatePayload.address &&
+                String(existing.phone || '').trim() === updatePayload.phone
+            ) {
+                return existing;
+            }
+            saved = await pb.collection('quotes_clients').update(existing.id, updatePayload);
+        } else {
+            saved = await pb.collection('quotes_clients').create({
+                name: cleanName,
+                nuit: cleanNuit,
+                address: cleanAddress,
+                phone: cleanPhone,
+                email: ''
+            });
+        }
+
+        // Atualizar cache em memória imediatamente
+        _confirmClientProfilesCache = null;
+        return saved;
+    } catch (err) {
+        console.warn('[CLIENT-DB] Aviso ao guardar NUIT/Morada no PocketBase:', err.message);
+        return null;
     }
 }
 
